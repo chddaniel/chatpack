@@ -3,8 +3,8 @@
  * whole Chatpack design (MVP §6).
  *
  * Core depends on this interface, never on a concrete database. Reference
- * implementations: `@chatpack/adapter-memory` (Maps) and, from M4,
- * `@chatpack/adapter-drizzle` (Postgres).
+ * implementations: `@chatpack/adapter-memory` (Maps) and
+ * `@chatpack/adapter-drizzle` (Drizzle/Postgres).
  *
  * Adapter authors: see the "Writing a storage adapter" section of
  * CONTRIBUTING.md. Key rules:

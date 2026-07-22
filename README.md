@@ -49,6 +49,19 @@ export const chat = chatpack({
 });
 ```
 
+For production, swap the storage line for Postgres —
+[`@chatpack/adapter-drizzle`](./packages/adapter-drizzle):
+
+```ts
+import { drizzle } from "drizzle-orm/node-postgres";
+import { drizzleAdapter } from "@chatpack/adapter-drizzle";
+
+export const chat = chatpack({
+  storage: drizzleAdapter(drizzle(process.env.DATABASE_URL!)),
+  auth: async (req) => getSessionUser(req),
+});
+```
+
 ### 3. Mount the API (Next.js App Router)
 
 ```ts
@@ -115,7 +128,7 @@ customizable via the `permissions` hooks.
 | In-memory storage adapter               | ✅ Done (M1) |
 | HTTP handler (Next.js App Router)       | ✅ Done (M2) |
 | Real-time delivery (SSE)                | ✅ Done (M3) |
-| Drizzle/Postgres adapter                | 🔜 M4        |
+| Drizzle/Postgres adapter                | ✅ Done (M4) |
 
 Deliberately **not** in v0: groups, typing indicators, presence, file uploads,
 push notifications, React UI. See [docs/MVP.md](./docs/MVP.md) for the full
@@ -123,11 +136,12 @@ scope and reasoning.
 
 ## Packages
 
-| Package                                                 | Description                                     |
-| ------------------------------------------------------- | ----------------------------------------------- |
-| [`@chatpack/core`](./packages/core)                     | The chat engine: domain logic, permissions, API |
-| [`@chatpack/adapter-memory`](./packages/adapter-memory) | In-memory storage (demos, tests)                |
-| [`@chatpack/next`](./packages/next)                     | Next.js App Router integration                  |
+| Package                                                   | Description                                     |
+| --------------------------------------------------------- | ----------------------------------------------- |
+| [`@chatpack/core`](./packages/core)                       | The chat engine: domain logic, permissions, API |
+| [`@chatpack/adapter-drizzle`](./packages/adapter-drizzle) | Drizzle/Postgres storage (production)           |
+| [`@chatpack/adapter-memory`](./packages/adapter-memory)   | In-memory storage (demos, tests)                |
+| [`@chatpack/next`](./packages/next)                       | Next.js App Router integration                  |
 
 ## Design principles
 

@@ -2,7 +2,7 @@
   "name": "example-node-server",
   "private": true,
   "version": "0.0.0",
-  "description": "Minimal curl-able Chatpack server (M2 demo) — Node http bridged to the Web-standard handler",
+  "description": "Minimal curl-able Chatpack server — Node http bridged to the Web-standard handler; in-memory or Postgres storage",
   "license": "MIT",
   "type": "module",
   "scripts": {
@@ -10,11 +10,15 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@chatpack/adapter-drizzle": "workspace:*",
     "@chatpack/adapter-memory": "workspace:*",
-    "@chatpack/core": "workspace:*"
+    "@chatpack/core": "workspace:*",
+    "drizzle-orm": "^0.45.2",
+    "pg": "^8.22.0"
   },
   "devDependencies": {
     "@types/node": "^25.3.1",
+    "@types/pg": "^8.15.4",
     "typescript": "^5.7.2"
   }
 }

@@ -1,8 +1,8 @@
 # example-node-server
 
-The smallest possible Chatpack deployment: one file, in-memory storage, and a
-header-based demo auth hook — so you can exercise the whole REST API **and the
-live SSE stream** with curl.
+The smallest possible Chatpack deployment: one file, a header-based demo auth
+hook — so you can exercise the whole REST API **and the live SSE stream** with
+curl. Runs on in-memory storage by default, or real Postgres with one env var.
 
 > Auth here trusts an `x-user-id` header. **Demo only.** In a real app your
 > `auth` hook verifies a session or JWT.
@@ -12,6 +12,23 @@ live SSE stream** with curl.
 ```sh
 pnpm install
 pnpm --filter example-node-server start
+```
+
+### On Postgres (M4 DoD)
+
+Point `DATABASE_URL` at any Postgres and the server switches to
+`@chatpack/adapter-drizzle`, creating the tables on boot (idempotent):
+
+```sh
+DATABASE_URL=postgres://localhost:5432/chatpack_demo \
+  pnpm --filter example-node-server start
+```
+
+Everything below works identically — but now messages survive a server
+restart, and you can watch rows land:
+
+```sh
+psql -d chatpack_demo -c "select seq, sender_id, body from chatpack_messages order by seq;"
 ```
 
 ## The curl walkthrough (M2 DoD)

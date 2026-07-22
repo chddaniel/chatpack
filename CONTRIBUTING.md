@@ -11,6 +11,7 @@ chatpack/
 │   └── decisions/         # Short ADRs — one file per non-obvious decision
 ├── packages/
 │   ├── core/              # @chatpack/core — the chat engine + HTTP handler
+│   ├── adapter-drizzle/   # @chatpack/adapter-drizzle — Drizzle/Postgres storage
 │   ├── adapter-memory/    # @chatpack/adapter-memory — in-memory storage
 │   └── next/              # @chatpack/next — Next.js App Router integration
 ├── examples/
@@ -71,13 +72,18 @@ logic — they only persist and retrieve.
 
 Implement the `StorageAdapter` interface exported from `@chatpack/core`. The
 in-memory adapter ([packages/adapter-memory](./packages/adapter-memory)) is the
-reference implementation and the easiest place to start reading.
+reference implementation and the easiest place to start reading; the Drizzle
+adapter ([packages/adapter-drizzle](./packages/adapter-drizzle)) shows what the
+contract looks like on a real database (atomic `seq` assignment, idempotent
+pair-key creation — see [ADR 0007](./docs/decisions/0007-postgres-adapter.md)).
 
 Rules of thumb:
 
 - Adapters never enforce permissions — core does that before calling you.
 - `getOrCreateDirectConversation` must be idempotent per user pair (core hands
-  you a deterministic `pairKey`).
+  you a deterministic `pairKey`) — including under concurrency.
+- `addMessage` must assign a strictly increasing per-conversation `seq` —
+  including under concurrency.
 - Message listing is **newest-first** with cursor pagination.
 
 ## Code style
@@ -99,6 +105,8 @@ Docs are a first-class deliverable:
 
 - Vitest everywhere.
 - Core is tested against the in-memory adapter — fast and deterministic.
+- The Drizzle adapter is tested against **real Postgres via PGlite** (Postgres
+  in WASM) — `pnpm test` needs no Docker or database setup.
 - New features need tests; bug fixes need a regression test.
 
 ## Submitting changes

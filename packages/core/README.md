@@ -111,8 +111,10 @@ is a future `Transport` implementation (e.g. Redis) — same public API.
 ## Writing a storage adapter
 
 Implement the exported `StorageAdapter` interface. The
-[in-memory adapter](../adapter-memory) is the reference implementation.
-See the [contributing guide](../../CONTRIBUTING.md) for the contract rules.
+[in-memory adapter](../adapter-memory) is the reference implementation, and
+the [Drizzle/Postgres adapter](../adapter-drizzle) shows the contract on a
+real database. See the [contributing guide](../../CONTRIBUTING.md) for the
+contract rules.
 
 ## License
 

@@ -1,19 +1,42 @@
 /**
- * Minimal curl-able Chatpack server — the M2 + M3 demo (REST + SSE).
+ * Minimal curl-able Chatpack server — REST + SSE, on in-memory or Postgres
+ * storage (the M2/M3/M4 demo).
+ *
+ * Storage:
+ *   - default            → in-memory (zero setup, data lost on exit)
+ *   - DATABASE_URL set   → Postgres via @chatpack/adapter-drizzle (M4).
+ *     Tables are created automatically on boot (idempotent).
  *
  * Auth here is a deliberately naive `x-user-id` header so you can play with
  * the API from curl. In a real app the auth hook resolves a session/JWT.
  *
  * Run:   pnpm --filter example-node-server start
+ * Or:    DATABASE_URL=postgres://localhost:5432/chatpack pnpm --filter example-node-server start
  * Then:  see README.md for the curl walkthrough (including live SSE).
  */
 import { createServer } from "node:http";
 
-import { chatpack } from "@chatpack/core";
+import { chatpack, type StorageAdapter } from "@chatpack/core";
 import { memoryAdapter } from "@chatpack/adapter-memory";
+import { drizzleAdapter, migrationSql } from "@chatpack/adapter-drizzle";
+import { drizzle } from "drizzle-orm/node-postgres";
+import pg from "pg";
+
+async function createStorage(): Promise<StorageAdapter> {
+  const databaseUrl = process.env.DATABASE_URL;
+  if (!databaseUrl) {
+    console.log("storage: in-memory (set DATABASE_URL for Postgres)");
+    return memoryAdapter();
+  }
+
+  const pool = new pg.Pool({ connectionString: databaseUrl });
+  await pool.query(migrationSql); // idempotent CREATE TABLE IF NOT EXISTS
+  console.log(`storage: Postgres (${databaseUrl.replace(/\/\/[^@]*@/, "//***@")})`);
+  return drizzleAdapter(drizzle(pool));
+}
 
 const chat = chatpack({
-  storage: memoryAdapter(),
+  storage: await createStorage(),
   // DEMO ONLY: trust an x-user-id header. Real apps verify a session here.
   auth: (request) => {
     const userId = request.headers.get("x-user-id");
