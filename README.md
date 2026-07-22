@@ -49,7 +49,21 @@ export const chat = chatpack({
 });
 ```
 
-### 3. Use it
+### 3. Mount the API (Next.js App Router)
+
+```ts
+// app/api/chat/[...chatpack]/route.ts
+import { chat } from "@/lib/chat";
+export const { GET, POST, PATCH, DELETE } = chat.handler();
+```
+
+Your chat backend is now live at `/api/chat` — find-or-create conversations,
+send/list/edit/delete messages, and read-state, with your auth enforced on
+every request. Not on Next.js? The handler is Web-standard
+(`Request` → `Response`): pass `chat.handler().fetch` to Bun/Deno/Workers, or
+see [`examples/node-server`](./examples/node-server) for plain Node.
+
+### 4. Or call it straight from server code
 
 ```ts
 // find-or-create a 1:1 conversation between two users
@@ -84,7 +98,7 @@ customizable via the `permissions` hooks.
 | Participant-only permissions + hooks    | ✅ Done (M1) |
 | Durable read-state (`last_read`)        | ✅ Done (M1) |
 | In-memory storage adapter               | ✅ Done (M1) |
-| HTTP handler (Next.js App Router)       | 🔜 M2        |
+| HTTP handler (Next.js App Router)       | ✅ Done (M2) |
 | Real-time delivery (SSE)                | 🔜 M3        |
 | Drizzle/Postgres adapter                | 🔜 M4        |
 
@@ -98,6 +112,7 @@ scope and reasoning.
 | ------------------------------------------------------- | ----------------------------------------------- |
 | [`@chatpack/core`](./packages/core)                     | The chat engine: domain logic, permissions, API |
 | [`@chatpack/adapter-memory`](./packages/adapter-memory) | In-memory storage (demos, tests)                |
+| [`@chatpack/next`](./packages/next)                     | Next.js App Router integration                  |
 
 ## Design principles
 

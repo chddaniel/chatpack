@@ -1,0 +1,20 @@
+{
+  "name": "example-node-server",
+  "private": true,
+  "version": "0.0.0",
+  "description": "Minimal curl-able Chatpack server (M2 demo) — Node http bridged to the Web-standard handler",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "start": "node --experimental-strip-types server.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@chatpack/adapter-memory": "workspace:*",
+    "@chatpack/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.1",
+    "typescript": "^5.7.2"
+  }
+}

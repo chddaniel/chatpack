@@ -10,9 +10,11 @@ chatpack/
 ├── docs/                  # Project docs: vision, MVP scope, architecture, ADRs
 │   └── decisions/         # Short ADRs — one file per non-obvious decision
 ├── packages/
-│   ├── core/              # @chatpack/core — the chat engine
-│   └── adapter-memory/    # @chatpack/adapter-memory — in-memory storage
-├── examples/              # Example apps (added in later milestones)
+│   ├── core/              # @chatpack/core — the chat engine + HTTP handler
+│   ├── adapter-memory/    # @chatpack/adapter-memory — in-memory storage
+│   └── next/              # @chatpack/next — Next.js App Router integration
+├── examples/
+│   └── node-server/       # Curl-able demo server (plain Node)
 └── .github/workflows/     # CI
 ```
 

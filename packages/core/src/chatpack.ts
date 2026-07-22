@@ -7,6 +7,7 @@
 
 import type { ChatpackOptions, ChatpackUser, PermissionContext } from "./config";
 import { ChatpackError } from "./errors";
+import { createHandler, type ChatpackHandler, type HandlerOptions } from "./handler";
 import type { StorageAdapter } from "./storage";
 import { TelemetryCounters, resolveTelemetryEnabled } from "./telemetry";
 import type { Conversation, Message, Metadata, MessageRole } from "./types";
@@ -139,6 +140,19 @@ export interface ChatpackApi {
 export interface ChatpackInstance {
   /** The server-side core API. */
   api: ChatpackApi;
+  /**
+   * Mount the whole REST API on one route (M2). Web-standard
+   * `Request`/`Response`, so it works on Next.js App Router, Bun, Deno, and
+   * Workers alike. Requires the `auth` option.
+   *
+   * @example Next.js App Router
+   * ```ts
+   * // app/api/chat/[...chatpack]/route.ts
+   * import { chat } from "@/lib/chat";
+   * export const { GET, POST, PATCH, DELETE } = chat.handler();
+   * ```
+   */
+  handler(options?: HandlerOptions): ChatpackHandler;
   /** In-process anonymous telemetry counters (MVP §12). */
   telemetry: TelemetryCounters;
   /** The options this instance was created with (used by handlers in M2+). */
@@ -381,5 +395,10 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
     },
   };
 
-  return { api, telemetry, options };
+  return {
+    api,
+    handler: (handlerOptions?: HandlerOptions) => createHandler(api, options.auth, handlerOptions),
+    telemetry,
+    options,
+  };
 }

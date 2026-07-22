@@ -52,6 +52,37 @@ await chat.api.sendMessage({
 All failures throw `ChatpackError` with a stable `code`
 (`FORBIDDEN_READ`, `MESSAGE_NOT_FOUND`, `INVALID_INPUT`, ...).
 
+## REST API
+
+`chat.handler()` mounts everything on one route using Web-standard
+`Request`/`Response` — works on Next.js App Router
+(see [`@chatpack/next`](../next)), Bun, Deno, Workers, or Node via a tiny
+bridge (see [`examples/node-server`](../../examples/node-server)).
+
+```ts
+// app/api/chat/[...chatpack]/route.ts  (Next.js App Router)
+import { chat } from "@/lib/chat";
+export const { GET, POST, PATCH, DELETE } = chat.handler();
+```
+
+Routes (relative to `basePath`, default `/api/chat`):
+
+| Method | Path                          | Action                  |
+| ------ | ----------------------------- | ----------------------- |
+| POST   | `/conversations`              | find-or-create a 1:1 DM |
+| GET    | `/conversations`              | list my conversations   |
+| GET    | `/conversations/:id`          | fetch one conversation  |
+| POST   | `/conversations/:id/messages` | send a message          |
+| GET    | `/conversations/:id/messages` | list messages           |
+| POST   | `/conversations/:id/read`     | update my last-read     |
+| PATCH  | `/messages/:id`               | edit my message         |
+| DELETE | `/messages/:id`               | soft-delete my message  |
+
+The `auth` hook runs on every request; unauthenticated requests get `401`.
+Errors are JSON — `{ "error": { "code", "message" } }` — with statuses mapped
+from the error code (`INVALID_INPUT` 400, `FORBIDDEN_*` 403, `*_NOT_FOUND`
+404, `MESSAGE_DELETED` 409).
+
 ## Writing a storage adapter
 
 Implement the exported `StorageAdapter` interface. The

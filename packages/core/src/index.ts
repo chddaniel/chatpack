@@ -52,6 +52,9 @@ export type {
   UpdateLastReadInput,
 } from "./storage";
 
+// HTTP handler (M2)
+export { createHandler, type ChatpackHandler, type HandlerOptions } from "./handler";
+
 // Errors
 export { ChatpackError, type ChatpackErrorCode } from "./errors";
 
