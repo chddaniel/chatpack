@@ -23,3 +23,6 @@ coverage/
 
 # Local tooling state
 .qodo/
+
+# Standalone consumer test app (has its own git repo)
+test_project/
