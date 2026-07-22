@@ -79,7 +79,76 @@ The handler is Web-standard (`Request` → `Response`): pass
 `chat.handler().fetch` to Bun/Deno/Workers, or see
 [`examples/node-server`](./examples/node-server) for plain Node.
 
-### 4. Go live in the browser
+### 4. Call it over HTTP
+
+Find-or-create a conversation (the authenticated user + `otherUserId`):
+
+```sh
+curl -X POST /api/chat/conversations \
+  -H 'content-type: application/json' \
+  -d '{"otherUserId": "bob"}'
+```
+
+```json
+{
+  "conversation": {
+    "id": "conv_1",
+    "pairKey": "alice:bob",
+    "createdAt": "2026-07-22T19:47:47.945Z",
+    "metadata": {},
+    "participants": [
+      { "conversationId": "conv_1", "userId": "alice", "joinedAt": "…", "lastReadMessageId": null },
+      { "conversationId": "conv_1", "userId": "bob", "joinedAt": "…", "lastReadMessageId": null }
+    ]
+  }
+}
+```
+
+Send a message — note the field is **`body`**:
+
+```sh
+curl -X POST /api/chat/conversations/conv_1/messages \
+  -H 'content-type: application/json' \
+  -d '{"body": "hey bob!"}'
+```
+
+```json
+{
+  "message": {
+    "id": "msg_1",
+    "conversationId": "conv_1",
+    "senderId": "alice",
+    "body": "hey bob!",
+    "role": "user",
+    "seq": 1,
+    "createdAt": "2026-07-22T19:48:06.416Z",
+    "editedAt": null,
+    "deletedAt": null,
+    "metadata": {}
+  }
+}
+```
+
+List history (newest first, keyset-paginated):
+
+```sh
+curl '/api/chat/conversations/conv_1/messages?limit=50'
+```
+
+```json
+{ "messages": [{ "id": "msg_1", "body": "hey bob!", "seq": 1, "…": "…" }], "nextCursor": null }
+```
+
+Errors are JSON with a stable machine-readable code and a mapped HTTP status:
+
+```json
+{ "error": { "code": "FORBIDDEN_READ", "message": "…" } }
+```
+
+The full endpoint reference (all 9 routes, request/response shapes, error
+codes) lives in [`@chatpack/core`'s README](./packages/core#rest-api).
+
+### 5. Go live in the browser
 
 ```ts
 const events = new EventSource("/api/chat/stream");
@@ -93,7 +162,7 @@ If the connection drops, `EventSource` reconnects with `Last-Event-ID` and
 Chatpack replays whatever was missed **from storage** — durable-first delivery,
 no lost messages.
 
-### 5. Or call it straight from server code
+### 6. Or call it straight from server code
 
 ```ts
 // find-or-create a 1:1 conversation between two users

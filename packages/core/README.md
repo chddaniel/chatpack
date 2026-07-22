@@ -66,19 +66,46 @@ import { chat } from "@/lib/chat";
 export const { GET, POST, PATCH, DELETE } = chat.handler();
 ```
 
-Routes (relative to `basePath`, default `/api/chat`):
+Routes (relative to `basePath`, default `/api/chat`). Response envelopes are
+keyed by resource — `{ conversation }`, `{ message }`, `{ conversations, nextCursor }`,
+`{ messages, nextCursor }`:
 
-| Method | Path                          | Action                  |
-| ------ | ----------------------------- | ----------------------- |
-| POST   | `/conversations`              | find-or-create a 1:1 DM |
-| GET    | `/conversations`              | list my conversations   |
-| GET    | `/conversations/:id`          | fetch one conversation  |
-| POST   | `/conversations/:id/messages` | send a message          |
-| GET    | `/conversations/:id/messages` | list messages           |
-| POST   | `/conversations/:id/read`     | update my last-read     |
-| PATCH  | `/messages/:id`               | edit my message         |
-| DELETE | `/messages/:id`               | soft-delete my message  |
-| GET    | `/stream`                     | SSE: live events for me |
+| Method | Path                          | Request body / query                   | Response (200/201)              |
+| ------ | ----------------------------- | -------------------------------------- | ------------------------------- |
+| POST   | `/conversations`              | `{ otherUserId, metadata? }`           | `{ conversation }`              |
+| GET    | `/conversations`              | `?limit=&cursor=`                      | `{ conversations, nextCursor }` |
+| GET    | `/conversations/:id`          | —                                      | `{ conversation }`              |
+| POST   | `/conversations/:id/messages` | `{ body, role?, metadata? }`           | `{ message }` (201)             |
+| GET    | `/conversations/:id/messages` | `?limit=&cursor=` (newest first)       | `{ messages, nextCursor }`      |
+| POST   | `/conversations/:id/read`     | `{ messageId }`                        | `{ ok: true }`                  |
+| PATCH  | `/messages/:id`               | `{ body }`                             | `{ message }`                   |
+| DELETE | `/messages/:id`               | —                                      | `{ message }` (soft-deleted)    |
+| GET    | `/stream`                     | SSE; auto `Last-Event-ID` on reconnect | `text/event-stream`             |
+
+Example — send a message (the text field is **`body`**):
+
+```sh
+curl -X POST /api/chat/conversations/conv_1/messages \
+  -H 'content-type: application/json' \
+  -d '{"body": "hey bob!"}'
+```
+
+```json
+{
+  "message": {
+    "id": "msg_1",
+    "conversationId": "conv_1",
+    "senderId": "alice",
+    "body": "hey bob!",
+    "role": "user",
+    "seq": 1,
+    "createdAt": "2026-07-22T19:48:06.416Z",
+    "editedAt": null,
+    "deletedAt": null,
+    "metadata": {}
+  }
+}
+```
 
 The `auth` hook runs on every request; unauthenticated requests get `401`.
 Errors are JSON — `{ "error": { "code", "message" } }` — with statuses mapped
