@@ -1,0 +1,55 @@
+{
+  "name": "@chatpack/adapter-memory",
+  "version": "0.0.0",
+  "description": "In-memory storage adapter for Chatpack — zero-setup demos and fast, deterministic tests",
+  "license": "MIT",
+  "homepage": "https://github.com/chddaniel/chatpack#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chddaniel/chatpack.git",
+    "directory": "packages/adapter-memory"
+  },
+  "bugs": "https://github.com/chddaniel/chatpack/issues",
+  "keywords": [
+    "chat",
+    "chatpack",
+    "storage-adapter",
+    "in-memory"
+  ],
+  "sideEffects": false,
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src"
+  },
+  "dependencies": {
+    "@chatpack/core": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2",
+    "vitest": "^3.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

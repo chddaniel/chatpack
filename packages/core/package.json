@@ -1,0 +1,53 @@
+{
+  "name": "@chatpack/core",
+  "version": "0.0.0",
+  "description": "Open-source chat infrastructure for developers — the Chatpack core engine",
+  "license": "MIT",
+  "homepage": "https://github.com/chddaniel/chatpack#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chddaniel/chatpack.git",
+    "directory": "packages/core"
+  },
+  "bugs": "https://github.com/chddaniel/chatpack/issues",
+  "keywords": [
+    "chat",
+    "messaging",
+    "chat-backend",
+    "realtime",
+    "chatpack"
+  ],
+  "sideEffects": false,
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.1",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2",
+    "vitest": "^3.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}
