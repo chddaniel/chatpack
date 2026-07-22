@@ -108,6 +108,25 @@ at-least-once — dedupe by `message.id`. Details in
 The default transport is in-process (single server node). Multi-node fan-out
 is a future `Transport` implementation (e.g. Redis) — same public API.
 
+## Telemetry (anonymous, opt-out)
+
+Chatpack reports **aggregate counters only** — deltas of `messagesSent` and
+`conversationsCreated`, the library version, and a random per-process id —
+at most twice a day, fire-and-forget. Never message content, user ids,
+conversation ids, or hostnames. The exact payload is the exported
+`TelemetryPayload` type; the flush timer is `unref`'d and can never keep your
+process alive or affect chat.
+
+Opt out with either:
+
+```ts
+chatpack({ storage, telemetry: false });
+```
+
+```sh
+CHATPACK_TELEMETRY=0
+```
+
 ## Writing a storage adapter
 
 Implement the exported `StorageAdapter` interface. The

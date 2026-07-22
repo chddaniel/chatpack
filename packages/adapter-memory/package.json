@@ -1,6 +1,6 @@
 {
   "name": "@chatpack/adapter-memory",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "In-memory storage adapter for Chatpack — zero-setup demos and fast, deterministic tests",
   "license": "MIT",
   "homepage": "https://github.com/chddaniel/chatpack#readme",
@@ -41,7 +41,7 @@
     "lint": "eslint src"
   },
   "dependencies": {
-    "@chatpack/core": "workspace:*"
+    "@chatpack/core": "workspace:^"
   },
   "devDependencies": {
     "@types/node": "^26.1.1",

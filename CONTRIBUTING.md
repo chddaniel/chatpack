@@ -15,6 +15,7 @@ chatpack/
 │   ├── adapter-memory/    # @chatpack/adapter-memory — in-memory storage
 │   └── next/              # @chatpack/next — Next.js App Router integration
 ├── examples/
+│   ├── next-backend/      # The quickstart as a runnable Next.js app
 │   └── node-server/       # Curl-able demo server (plain Node)
 └── .github/workflows/     # CI
 ```

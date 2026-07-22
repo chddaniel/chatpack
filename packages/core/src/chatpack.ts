@@ -10,7 +10,7 @@ import { ChatpackError } from "./errors";
 import { createHandler, type ChatpackHandler, type HandlerOptions } from "./handler";
 import type { StorageAdapter } from "./storage";
 import { inProcessTransport, type ChatEvent, type Transport } from "./transport";
-import { TelemetryCounters, resolveTelemetryEnabled } from "./telemetry";
+import { TelemetryCounters, resolveTelemetryEnabled, startTelemetryFlusher } from "./telemetry";
 import type { Conversation, Message, Metadata, MessageRole } from "./types";
 
 /** Default page size for list endpoints. */
@@ -200,6 +200,9 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
   const storage: StorageAdapter = options.storage;
   const transport: Transport = options.transport ?? inProcessTransport();
   const telemetry = new TelemetryCounters(resolveTelemetryEnabled(options.telemetry));
+  // Fire-and-forget aggregate flush (MVP §12). No-op when disabled; the timer
+  // is unref'd, so it never keeps the process alive.
+  startTelemetryFlusher(telemetry);
 
   const defaultPermission = (ctx: PermissionContext): boolean =>
     ctx.conversation.participantIds.includes(ctx.user.id);

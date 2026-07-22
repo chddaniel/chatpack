@@ -32,7 +32,7 @@ Reference adapters shipped with v0:
 
 Product / trust (small, but decide early):
 
-- **Anonymous opt-out telemetry** — aggregate usage counters only (e.g. messages sent per month) for social proof. See §12. Counter hooks land with core; the flush + docs land in launch polish (M5).
+- **Anonymous opt-out telemetry** — aggregate usage counters only (e.g. messages sent per month) for social proof. See §12. Shipped: counter hooks in core plus a fire-and-forget flusher (M5).
 
 That's the entire surface. Everything else is deferred.
 
@@ -181,11 +181,11 @@ Documented v0 limitations: single-node fan-out only; SSE is server→client (sen
 
 ## 11. Milestones (each independently shippable/demoable)
 
-1. **M1 — Core + in-memory, no real-time.** 1:1 data model, storage adapter interface, in-memory adapter, find-or-create DM, send/list messages, permissions, last-read, unit tests. _DoD: two users get a conversation and exchange messages via the core API in a test._
-2. **M2 — Framework handler + REST + auth hook.** `chat.handler()`, Next.js route, validation, permissions enforced. _DoD: curl can find-or-create, send, and list over HTTP with auth enforced._
-3. **M3 — Server-side SSE.** One SSE connection per client, live delivery, reconnection/gap-fill. _DoD: two SSE clients see each other’s messages live; drop the connection, messages backfill on reconnect._
-4. **M4 — Drizzle/Postgres adapter.** Real persistence + integration tests. _DoD: example app runs on Postgres._
-5. **M5 — Launch polish.** README quickstart (including telemetry + how to opt out), anonymous telemetry flush endpoint + docs, `examples/next-backend`, Changesets, CI, publish `0.1.0` to npm.
+1. **M1 — Core + in-memory, no real-time.** ✅ **Done.** 1:1 data model, storage adapter interface, in-memory adapter, find-or-create DM, send/list messages, permissions, last-read, unit tests. _DoD: two users get a conversation and exchange messages via the core API in a test._
+2. **M2 — Framework handler + REST + auth hook.** ✅ **Done.** `chat.handler()`, Next.js route, validation, permissions enforced. _DoD: curl can find-or-create, send, and list over HTTP with auth enforced._
+3. **M3 — Server-side SSE.** ✅ **Done.** One SSE connection per client, live delivery, reconnection/gap-fill. _DoD: two SSE clients see each other’s messages live; drop the connection, messages backfill on reconnect._
+4. **M4 — Drizzle/Postgres adapter.** ✅ **Done.** Real persistence + integration tests (PGlite). _DoD: example app runs on Postgres._
+5. **M5 — Launch polish.** ✅ **Done.** README quickstart (including telemetry + how to opt out), anonymous telemetry flusher + docs, `examples/next-backend`, Changesets, CI, publish `0.1.0` to npm.
 
 ## 12. Anonymous telemetry (opt-out) — decide early
 

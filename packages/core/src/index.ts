@@ -68,5 +68,17 @@ export {
 // Errors
 export { ChatpackError, type ChatpackErrorCode } from "./errors";
 
-// Telemetry (MVP §12 — counters now, flusher in M5)
-export { TelemetryCounters, type TelemetryCounterName, type TelemetrySnapshot } from "./telemetry";
+// Telemetry (MVP §12 — anonymous aggregate counters + fire-and-forget flusher)
+export {
+  TelemetryCounters,
+  startTelemetryFlusher,
+  DEFAULT_TELEMETRY_ENDPOINT,
+  DEFAULT_FLUSH_INTERVAL_MS,
+  type TelemetryCounterName,
+  type TelemetrySnapshot,
+  type TelemetryPayload,
+  type TelemetryFlusherOptions,
+} from "./telemetry";
+
+// Package version
+export { VERSION } from "./version";

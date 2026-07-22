@@ -1,6 +1,6 @@
 {
   "name": "@chatpack/adapter-drizzle",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Drizzle ORM (Postgres) storage adapter for Chatpack — real persistence for production",
   "license": "MIT",
   "homepage": "https://github.com/chddaniel/chatpack#readme",
@@ -42,7 +42,7 @@
     "lint": "eslint src"
   },
   "dependencies": {
-    "@chatpack/core": "workspace:*"
+    "@chatpack/core": "workspace:^"
   },
   "peerDependencies": {
     "drizzle-orm": ">=0.40.0 <1"

@@ -15,8 +15,10 @@ real-time delivery — without rebuilding it from scratch.
 
 ---
 
-> **Status: early development (pre-0.1).** The API below is the target we are
-> building toward. Follow along or [contribute](./CONTRIBUTING.md).
+> **Status: `0.1.0` — the v0 MVP is complete.** All five milestones (core
+> engine, HTTP handler, real-time SSE, Postgres adapter, launch polish) are
+> shipped and on npm. The API is young — expect minor breaking changes before
+> `1.0`. Follow along or [contribute](./CONTRIBUTING.md).
 
 ## Why
 
@@ -129,6 +131,7 @@ customizable via the `permissions` hooks.
 | HTTP handler (Next.js App Router)       | ✅ Done (M2) |
 | Real-time delivery (SSE)                | ✅ Done (M3) |
 | Drizzle/Postgres adapter                | ✅ Done (M4) |
+| Launch polish + npm release             | ✅ Done (M5) |
 
 Deliberately **not** in v0: groups, typing indicators, presence, file uploads,
 push notifications, React UI. See [docs/MVP.md](./docs/MVP.md) for the full
@@ -143,6 +146,13 @@ scope and reasoning.
 | [`@chatpack/adapter-memory`](./packages/adapter-memory)   | In-memory storage (demos, tests)                |
 | [`@chatpack/next`](./packages/next)                       | Next.js App Router integration                  |
 
+## Examples
+
+| Example                                            | What it shows                                         |
+| -------------------------------------------------- | ----------------------------------------------------- |
+| [`examples/next-backend`](./examples/next-backend) | The quickstart, runnable: Next.js App Router + SSE    |
+| [`examples/node-server`](./examples/node-server)   | Plain Node http server, in-memory or Postgres storage |
+
 ## Design principles
 
 - **Developers bring their own auth** — Chatpack never owns a users table.
@@ -156,10 +166,26 @@ Read more in [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md).
 
 ## Telemetry
 
-Chatpack will ship **anonymous, opt-out telemetry**: aggregate counters only
-(messages sent, conversations created, library version). Never message bodies,
-user ids, or anything identifying. Disable with `telemetry: false` or
-`CHATPACK_TELEMETRY=0`. Details in [docs/MVP.md §12](./docs/MVP.md).
+Chatpack ships **anonymous, opt-out telemetry**: aggregate counters only.
+Twice a day (at most) it POSTs a small JSON body — counter deltas
+(`messagesSent`, `conversationsCreated`), the library version, and a random
+per-process id that is never persisted. Never message bodies, user ids,
+conversation ids, or hostnames. The payload shape is a documented public type
+([`TelemetryPayload`](./packages/core/src/telemetry.ts)) so you can audit
+exactly what leaves your server.
+
+Opt out any time — either works:
+
+```ts
+chatpack({ storage, telemetry: false });
+```
+
+```sh
+CHATPACK_TELEMETRY=0
+```
+
+Failures are silently ignored and the flush timer never keeps your process
+alive. Details in [docs/MVP.md §12](./docs/MVP.md).
 
 ## Contributing
 

@@ -1,6 +1,6 @@
 {
   "name": "@chatpack/next",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Next.js App Router integration for Chatpack — mount the chat API on one route",
   "license": "MIT",
   "homepage": "https://github.com/chddaniel/chatpack#readme",
@@ -41,7 +41,7 @@
     "lint": "eslint src"
   },
   "dependencies": {
-    "@chatpack/core": "workspace:*"
+    "@chatpack/core": "workspace:^"
   },
   "devDependencies": {
     "@types/node": "^25.3.1",
