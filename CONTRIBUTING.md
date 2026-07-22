@@ -58,7 +58,7 @@ Two interfaces carry the whole design (see [docs/MVP.md](./docs/MVP.md) §6):
 - **`StorageAdapter`** — durable reads/writes (conversations, messages,
   read-state). Core depends on the interface, never on a specific database.
 - **`Transport`** — publish/subscribe of live message events to connected SSE
-  clients. The engine publishes only *after* the storage write succeeds
+  clients. The engine publishes only _after_ the storage write succeeds
   (durable-first); v0 ships a single-node in-process transport, and the SSE
   endpoint recovers missed messages on reconnect from storage via
   `Last-Event-ID` (see [ADR 0006](./docs/decisions/0006-sse-gap-fill.md)).

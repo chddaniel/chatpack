@@ -18,10 +18,10 @@ means lost messages.
 
 ## Decision
 
-1. **Durable-first publishing.** The engine writes to storage, *then*
+1. **Durable-first publishing.** The engine writes to storage, _then_
    publishes a `ChatEvent` on the `Transport`. The transport is fire-and-forget:
    a slow or crashing subscriber can never fail or block a send. Delivery is
-   therefore *at-least-once*; clients reconcile by `message.id` + `seq`.
+   therefore _at-least-once_; clients reconcile by `message.id` + `seq`.
 
 2. **The event stream is a hint; storage is the truth.** SSE event ids are
    `conversationId:seq`. On reconnect, the client presents its last seen id
@@ -61,8 +61,8 @@ means lost messages.
 - **Trade-off:** at-least-once means clients must dedupe by message id. This is
   the standard, simple contract; exactly-once would require server-side
   delivery tracking that v0 does not need.
-- **Trade-off:** gap-fill covers *the conversation named in the last event id*.
-  A client offline long enough to miss activity in *other* conversations
+- **Trade-off:** gap-fill covers _the conversation named in the last event id_.
+  A client offline long enough to miss activity in _other_ conversations
   should re-sync via `GET /conversations` + `GET .../messages` (which clients
   do on cold start anyway). Good enough for v0; a multi-conversation resume
   token can come later without breaking the wire format.

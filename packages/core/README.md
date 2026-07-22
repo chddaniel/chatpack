@@ -98,7 +98,7 @@ events.addEventListener("message.created", (e) => {
 });
 ```
 
-**No lost messages:** events are published only *after* the storage write
+**No lost messages:** events are published only _after_ the storage write
 (durable-first), and every event id is `conversationId:seq`. On reconnect,
 `EventSource` sends `Last-Event-ID` automatically and the server replays what
 was missed from storage before resuming live delivery. Delivery is
