@@ -9,6 +9,7 @@ import type { ChatpackOptions, ChatpackUser, PermissionContext } from "./config"
 import { ChatpackError } from "./errors";
 import { createHandler, type ChatpackHandler, type HandlerOptions } from "./handler";
 import type { StorageAdapter } from "./storage";
+import { inProcessTransport, type ChatEvent, type Transport } from "./transport";
 import { TelemetryCounters, resolveTelemetryEnabled } from "./telemetry";
 import type { Conversation, Message, Metadata, MessageRole } from "./types";
 
@@ -103,6 +104,16 @@ export interface MarkReadInput {
   messageId: string;
 }
 
+/** Input for {@link ChatpackApi.listMessagesAfter}. */
+export interface ListMessagesAfterInput {
+  userId: string;
+  conversationId: string;
+  /** Return messages with `seq` strictly greater than this. */
+  afterSeq: number;
+  /** Max messages to return. */
+  limit?: number;
+}
+
 /**
  * The server-side core API. Every method takes the acting `userId` explicitly
  * and enforces permissions before touching storage.
@@ -134,6 +145,13 @@ export interface ChatpackApi {
 
   /** Update the caller's durable read-state in a conversation. */
   markRead(input: MarkReadInput): Promise<void>;
+
+  /**
+   * Messages in a conversation with `seq` greater than `afterSeq`, oldest
+   * first. Used for SSE reconnection gap-fill (MVP §9); requires read
+   * permission.
+   */
+  listMessagesAfter(input: ListMessagesAfterInput): Promise<Message[]>;
 }
 
 /** The object returned by {@link chatpack}. */
@@ -153,6 +171,11 @@ export interface ChatpackInstance {
    * ```
    */
   handler(options?: HandlerOptions): ChatpackHandler;
+  /**
+   * The live-event transport (M3). Defaults to the single-node in-process
+   * implementation; the SSE endpoint subscribes to it.
+   */
+  transport: Transport;
   /** In-process anonymous telemetry counters (MVP §12). */
   telemetry: TelemetryCounters;
   /** The options this instance was created with (used by handlers in M2+). */
@@ -175,6 +198,7 @@ export interface ChatpackInstance {
  */
 export function chatpack(options: ChatpackOptions): ChatpackInstance {
   const storage: StorageAdapter = options.storage;
+  const transport: Transport = options.transport ?? inProcessTransport();
   const telemetry = new TelemetryCounters(resolveTelemetryEnabled(options.telemetry));
 
   const defaultPermission = (ctx: PermissionContext): boolean =>
@@ -239,6 +263,16 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
     }
   }
 
+  /** Publish a live event. Durable-first: storage write has already succeeded. */
+  function publish(type: ChatEvent["type"], conversation: Conversation, message: Message): void {
+    transport.publish({
+      type,
+      conversationId: conversation.id,
+      recipientIds: conversation.participants.map((p) => p.userId),
+      message,
+    });
+  }
+
   const api: ChatpackApi = {
     async getOrCreateConversation(input) {
       requireNonEmptyId(input.userId, "userId");
@@ -296,7 +330,8 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
       });
 
       telemetry.increment("messagesSent");
-      // M3: publish `message.created` on the transport here (durable-first).
+      // Durable-first (MVP §9): the message exists before anyone is told.
+      publish("message.created", conversation, message);
       return message;
     },
 
@@ -338,7 +373,7 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
         body: input.body,
         editedAt: new Date(),
       });
-      // M3: publish `message.updated` on the transport here.
+      publish("message.updated", conversation, updated);
       return updated;
     },
 
@@ -362,7 +397,7 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
         body: "",
         deletedAt: new Date(),
       });
-      // M3: publish `message.deleted` on the transport here.
+      publish("message.deleted", conversation, updated);
       return updated;
     },
 
@@ -393,11 +428,31 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
         messageId: message.id,
       });
     },
+
+    async listMessagesAfter(input) {
+      requireNonEmptyId(input.userId, "userId");
+      if (!Number.isInteger(input.afterSeq) || input.afterSeq < 0) {
+        throw new ChatpackError(
+          "INVALID_INPUT",
+          `"afterSeq" must be a non-negative integer, got ${input.afterSeq}.`,
+        );
+      }
+      const conversation = await requireConversation(input.conversationId);
+      await requireRead(input.userId, conversation);
+
+      return storage.listMessagesAfterSeq({
+        conversationId: conversation.id,
+        afterSeq: input.afterSeq,
+        limit: normalizeLimit(input.limit),
+      });
+    },
   };
 
   return {
     api,
-    handler: (handlerOptions?: HandlerOptions) => createHandler(api, options.auth, handlerOptions),
+    handler: (handlerOptions?: HandlerOptions) =>
+      createHandler(api, options.auth, handlerOptions, transport),
+    transport,
     telemetry,
     options,
   };

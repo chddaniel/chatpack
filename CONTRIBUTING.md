@@ -57,8 +57,11 @@ Two interfaces carry the whole design (see [docs/MVP.md](./docs/MVP.md) §6):
 
 - **`StorageAdapter`** — durable reads/writes (conversations, messages,
   read-state). Core depends on the interface, never on a specific database.
-- **`Transport`** (from M3) — publish/subscribe of live message events to
-  connected SSE clients.
+- **`Transport`** — publish/subscribe of live message events to connected SSE
+  clients. The engine publishes only *after* the storage write succeeds
+  (durable-first); v0 ships a single-node in-process transport, and the SSE
+  endpoint recovers missed messages on reconnect from storage via
+  `Last-Event-ID` (see [ADR 0006](./docs/decisions/0006-sse-gap-fill.md)).
 
 The core engine (`@chatpack/core`) contains all domain logic: 1:1
 conversations, permission checks, validation. Adapters contain **no** domain

@@ -100,6 +100,15 @@ export interface UpdateMessageInput {
   deletedAt?: Date | undefined;
 }
 
+/** Input for {@link StorageAdapter.listMessagesAfterSeq}. */
+export interface ListMessagesAfterSeqInput {
+  conversationId: string;
+  /** Return messages with `seq` strictly greater than this. */
+  afterSeq: number;
+  /** Max messages to return. */
+  limit: number;
+}
+
 /** Input for {@link StorageAdapter.updateLastRead}. */
 export interface UpdateLastReadInput {
   conversationId: string;
@@ -142,6 +151,13 @@ export interface StorageAdapter {
 
   /** List messages in a conversation, newest-first, with cursor pagination. */
   listMessages(input: ListMessagesInput): Promise<ListMessagesResult>;
+
+  /**
+   * List messages with `seq` strictly greater than `afterSeq`, **oldest
+   * first**. Powers SSE reconnection gap-fill (MVP §9): the client says
+   * "I have up to seq X", the server replays what it missed from storage.
+   */
+  listMessagesAfterSeq(input: ListMessagesAfterSeqInput): Promise<Message[]>;
 
   /**
    * Update a message in place (edit body / set editedAt / set deletedAt).

@@ -21,6 +21,7 @@ export {
   type SendMessageInput,
   type ListMessagesApiInput,
   type ListMessagesApiResult,
+  type ListMessagesAfterInput,
   type EditMessageInput,
   type DeleteMessageInput,
   type MarkReadInput,
@@ -48,12 +49,21 @@ export type {
   AddMessageInput,
   ListMessagesInput,
   ListMessagesResult,
+  ListMessagesAfterSeqInput,
   UpdateMessageInput,
   UpdateLastReadInput,
 } from "./storage";
 
-// HTTP handler (M2)
+// HTTP handler (M2) + SSE (M3)
 export { createHandler, type ChatpackHandler, type HandlerOptions } from "./handler";
+
+// Transport (M3) — live event pub/sub
+export {
+  inProcessTransport,
+  type Transport,
+  type ChatEvent,
+  type TransportListener,
+} from "./transport";
 
 // Errors
 export { ChatpackError, type ChatpackErrorCode } from "./errors";

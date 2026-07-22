@@ -58,12 +58,27 @@ export const { GET, POST, PATCH, DELETE } = chat.handler();
 ```
 
 Your chat backend is now live at `/api/chat` — find-or-create conversations,
-send/list/edit/delete messages, and read-state, with your auth enforced on
-every request. Not on Next.js? The handler is Web-standard
-(`Request` → `Response`): pass `chat.handler().fetch` to Bun/Deno/Workers, or
-see [`examples/node-server`](./examples/node-server) for plain Node.
+send/list/edit/delete messages, read-state, and a **live SSE stream** at
+`/api/chat/stream`, with your auth enforced on every request. Not on Next.js?
+The handler is Web-standard (`Request` → `Response`): pass
+`chat.handler().fetch` to Bun/Deno/Workers, or see
+[`examples/node-server`](./examples/node-server) for plain Node.
 
-### 4. Or call it straight from server code
+### 4. Go live in the browser
+
+```ts
+const events = new EventSource("/api/chat/stream");
+events.addEventListener("message.created", (e) => {
+  const { message } = JSON.parse(e.data);
+  // render it — reconnection & missed-message backfill are automatic
+});
+```
+
+If the connection drops, `EventSource` reconnects with `Last-Event-ID` and
+Chatpack replays whatever was missed **from storage** — durable-first delivery,
+no lost messages.
+
+### 5. Or call it straight from server code
 
 ```ts
 // find-or-create a 1:1 conversation between two users
@@ -99,7 +114,7 @@ customizable via the `permissions` hooks.
 | Durable read-state (`last_read`)        | ✅ Done (M1) |
 | In-memory storage adapter               | ✅ Done (M1) |
 | HTTP handler (Next.js App Router)       | ✅ Done (M2) |
-| Real-time delivery (SSE)                | 🔜 M3        |
+| Real-time delivery (SSE)                | ✅ Done (M3) |
 | Drizzle/Postgres adapter                | 🔜 M4        |
 
 Deliberately **not** in v0: groups, typing indicators, presence, file uploads,

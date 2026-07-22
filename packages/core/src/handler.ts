@@ -18,6 +18,7 @@
  * | POST   | `/conversations/:id/read`         | update my last-read          |
  * | PATCH  | `/messages/:id`                   | edit my message              |
  * | DELETE | `/messages/:id`                   | soft-delete my message       |
+ * | GET    | `/stream`                         | SSE: live events for me      |
  *
  * Errors are JSON: `{ "error": { "code": "...", "message": "..." } }` with
  * the status mapped from {@link ChatpackErrorCode}.
@@ -28,6 +29,7 @@
 import type { ChatpackApi } from "./chatpack";
 import type { AuthHook } from "./config";
 import { ChatpackError, type ChatpackErrorCode } from "./errors";
+import type { ChatEvent, Transport } from "./transport";
 
 /** Options for {@link createHandler} / `chat.handler()`. */
 export interface HandlerOptions {
@@ -36,6 +38,12 @@ export interface HandlerOptions {
    * as a Chatpack route. Default: `"/api/chat"`.
    */
   basePath?: string;
+  /**
+   * How often the SSE stream sends a comment heartbeat to keep proxies from
+   * closing idle connections, in milliseconds. Default: 15000. Set to 0 to
+   * disable (mainly for tests).
+   */
+  heartbeatIntervalMs?: number;
 }
 
 /**
@@ -124,6 +132,30 @@ function parseLimit(params: URLSearchParams): number | undefined {
 }
 
 /**
+ * Format one SSE frame. The event id is `conversationId:seq` so a reconnecting
+ * client's `Last-Event-ID` tells the server exactly where to gap-fill from.
+ */
+function sseFrame(event: ChatEvent): string {
+  const id = `${event.conversationId}:${event.message.seq}`;
+  return `id: ${id}\nevent: ${event.type}\ndata: ${JSON.stringify({
+    type: event.type,
+    conversationId: event.conversationId,
+    message: event.message,
+  })}\n\n`;
+}
+
+/** Parse a `Last-Event-ID` / `lastEventId` value of the form `convId:seq`. */
+function parseLastEventId(raw: string | null): { conversationId: string; seq: number } | null {
+  if (!raw) return null;
+  const separator = raw.lastIndexOf(":");
+  if (separator <= 0) return null;
+  const conversationId = raw.slice(0, separator);
+  const seq = Number(raw.slice(separator + 1));
+  if (!Number.isInteger(seq) || seq < 0) return null;
+  return { conversationId, seq };
+}
+
+/**
  * Create the Web-standard request handler for a Chatpack API.
  *
  * Usually accessed via `chat.handler()` rather than called directly.
@@ -132,6 +164,7 @@ export function createHandler(
   api: ChatpackApi,
   auth: AuthHook | undefined,
   options: HandlerOptions = {},
+  transport?: Transport,
 ): ChatpackHandler {
   if (!auth) {
     throw new Error(
@@ -142,6 +175,104 @@ export function createHandler(
   const resolveUser: AuthHook = auth;
 
   const basePath = (options.basePath ?? "/api/chat").replace(/\/$/, "");
+  const heartbeatIntervalMs = options.heartbeatIntervalMs ?? 15_000;
+
+  /**
+   * GET /stream — one SSE connection per client (MVP §9).
+   *
+   * - Live events: subscribes to the transport; server-side participation is
+   *   re-checked per event via `recipientIds` (never trusted from the client).
+   * - Gap-fill: `Last-Event-ID` header (or `?lastEventId=`) of the form
+   *   `conversationId:seq` replays missed messages from storage before live
+   *   events flow. Replayed events are `message.created` with the current
+   *   snapshot — at-least-once semantics; clients dedupe by message id.
+   */
+  function openStream(request: Request, url: URL, userId: string): Response {
+    if (!transport) {
+      return errorResponse(500, "INTERNAL_ERROR", "No transport configured for streaming.");
+    }
+    const activeTransport = transport;
+    const lastEventId = parseLastEventId(
+      request.headers.get("last-event-id") ?? url.searchParams.get("lastEventId"),
+    );
+
+    const encoder = new TextEncoder();
+    let unsubscribe: (() => void) | undefined;
+    let heartbeat: ReturnType<typeof setInterval> | undefined;
+    let closed = false;
+
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        const enqueue = (text: string): void => {
+          if (closed) return;
+          try {
+            controller.enqueue(encoder.encode(text));
+          } catch {
+            // Consumer already gone; the cancel() callback cleans up.
+          }
+        };
+
+        enqueue(`: connected\n\n`);
+
+        // 1. Subscribe first, replay second: overlap is safe (at-least-once
+        // + client dedupe by message id); a gap between replay and subscribe
+        // is not.
+        unsubscribe = activeTransport.subscribe((event) => {
+          // Participation re-checked server-side on every publish (MVP §9).
+          if (!event.recipientIds.includes(userId)) return;
+          enqueue(sseFrame(event));
+        });
+
+        // 2. Replay anything missed since the client's last seen event.
+        if (lastEventId) {
+          try {
+            const missed = await api.listMessagesAfter({
+              userId,
+              conversationId: lastEventId.conversationId,
+              afterSeq: lastEventId.seq,
+            });
+            for (const message of missed) {
+              enqueue(
+                sseFrame({
+                  type: "message.created",
+                  conversationId: message.conversationId,
+                  recipientIds: [userId],
+                  message,
+                }),
+              );
+            }
+          } catch (err) {
+            // A bad/foreign lastEventId must not kill the live stream.
+            if (!(err instanceof ChatpackError)) {
+              console.error("chatpack: gap-fill failed", err);
+            }
+          }
+        }
+
+        // 3. Heartbeat comments keep intermediaries from closing the socket.
+        if (heartbeatIntervalMs > 0) {
+          heartbeat = setInterval(() => enqueue(`: ping\n\n`), heartbeatIntervalMs);
+          // Never keep a Node process alive just for heartbeats.
+          if (typeof heartbeat === "object" && "unref" in heartbeat) heartbeat.unref();
+        }
+      },
+      cancel() {
+        closed = true;
+        unsubscribe?.();
+        if (heartbeat !== undefined) clearInterval(heartbeat);
+      },
+    });
+
+    return new Response(stream, {
+      status: 200,
+      headers: {
+        "content-type": "text/event-stream; charset=utf-8",
+        "cache-control": "no-cache, no-transform",
+        connection: "keep-alive",
+        "x-accel-buffering": "no",
+      },
+    });
+  }
 
   async function handle(request: Request): Promise<Response> {
     const url = new URL(request.url);
@@ -163,6 +294,11 @@ export function createHandler(
     const method = request.method.toUpperCase();
 
     try {
+      // GET /stream — SSE live events (M3)
+      if (method === "GET" && segments.length === 1 && segments[0] === "stream") {
+        return openStream(request, url, userId);
+      }
+
       // POST /conversations — find-or-create a DM
       if (method === "POST" && segments.length === 1 && segments[0] === "conversations") {
         const body = await readJsonBody(request);

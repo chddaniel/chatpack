@@ -18,6 +18,7 @@ import type {
   GetOrCreateDirectConversationResult,
   ListConversationsInput,
   ListConversationsResult,
+  ListMessagesAfterSeqInput,
   ListMessagesInput,
   ListMessagesResult,
   Message,
@@ -178,6 +179,19 @@ export function memoryAdapter(): StorageAdapter {
         .map((m) => ({ ...m }));
 
       return { messages: page, nextCursor };
+    },
+
+    async listMessagesAfterSeq(input: ListMessagesAfterSeqInput): Promise<Message[]> {
+      const ids = messageIdsByConversation.get(input.conversationId) ?? [];
+      const result: Message[] = [];
+      // Stored ascending by seq — walk forward, collect seq > afterSeq.
+      for (const id of ids) {
+        const message = messages.get(id);
+        if (!message || message.seq <= input.afterSeq) continue;
+        result.push({ ...message });
+        if (result.length >= input.limit) break;
+      }
+      return result;
     },
 
     async updateMessage(input: UpdateMessageInput): Promise<Message> {

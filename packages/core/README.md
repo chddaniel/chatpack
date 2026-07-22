@@ -48,6 +48,7 @@ await chat.api.sendMessage({
 | `api.editMessage`             | Edit your own message                               |
 | `api.deleteMessage`           | Soft-delete your own message                        |
 | `api.markRead`                | Update durable read-state (`last_read`)             |
+| `api.listMessagesAfter`       | Messages after a `seq` (SSE reconnect gap-fill)     |
 
 All failures throw `ChatpackError` with a stable `code`
 (`FORBIDDEN_READ`, `MESSAGE_NOT_FOUND`, `INVALID_INPUT`, ...).
@@ -77,11 +78,35 @@ Routes (relative to `basePath`, default `/api/chat`):
 | POST   | `/conversations/:id/read`     | update my last-read     |
 | PATCH  | `/messages/:id`               | edit my message         |
 | DELETE | `/messages/:id`               | soft-delete my message  |
+| GET    | `/stream`                     | SSE: live events for me |
 
 The `auth` hook runs on every request; unauthenticated requests get `401`.
 Errors are JSON — `{ "error": { "code", "message" } }` — with statuses mapped
 from the error code (`INVALID_INPUT` 400, `FORBIDDEN_*` 403, `*_NOT_FOUND`
 404, `MESSAGE_DELETED` 409).
+
+## Real-time (SSE)
+
+`GET /stream` is a Server-Sent Events endpoint. Each connected user receives
+`message.created` / `message.updated` / `message.deleted` events for their
+conversations only — participation is re-checked server-side per event.
+
+```ts
+const events = new EventSource("/api/chat/stream");
+events.addEventListener("message.created", (e) => {
+  const { message } = JSON.parse(e.data);
+});
+```
+
+**No lost messages:** events are published only *after* the storage write
+(durable-first), and every event id is `conversationId:seq`. On reconnect,
+`EventSource` sends `Last-Event-ID` automatically and the server replays what
+was missed from storage before resuming live delivery. Delivery is
+at-least-once — dedupe by `message.id`. Details in
+[ADR 0006](../../docs/decisions/0006-sse-gap-fill.md).
+
+The default transport is in-process (single server node). Multi-node fan-out
+is a future `Transport` implementation (e.g. Redis) — same public API.
 
 ## Writing a storage adapter
 

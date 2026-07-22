@@ -6,6 +6,7 @@
 
 import type { Conversation } from "./types";
 import type { StorageAdapter } from "./storage";
+import type { Transport } from "./transport";
 
 /**
  * The authenticated user, as resolved by the developer's {@link AuthHook}.
@@ -64,6 +65,12 @@ export interface ChatpackOptions {
   auth?: AuthHook;
   /** Permission overrides. Default: only the two participants can read/write. */
   permissions?: PermissionHooks;
+  /**
+   * Live event fan-out (MVP §6). Default: a single-node in-process transport,
+   * which is correct for one server process. A Redis/pub-sub transport can be
+   * plugged in later without any other API change.
+   */
+  transport?: Transport;
   /**
    * Anonymous aggregate telemetry (MVP §12). Default `true`; set `false` or
    * `CHATPACK_TELEMETRY=0` to disable.
