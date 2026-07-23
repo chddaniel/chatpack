@@ -1,6 +1,6 @@
 {
   "name": "@chatpack/adapter-memory",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "In-memory storage adapter for Chatpack — zero-setup demos and fast, deterministic tests",
   "license": "MIT",
   "homepage": "https://github.com/chddaniel/chatpack#readme",
