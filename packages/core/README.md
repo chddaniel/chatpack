@@ -98,17 +98,24 @@ Routes (relative to `basePath`, default `/api/chat`). Response envelopes are
 keyed by resource — `{ conversation }`, `{ message }`, `{ conversations, nextCursor }`,
 `{ messages, nextCursor }`:
 
-| Method | Path                          | Request body / query                   | Response (200/201)              |
-| ------ | ----------------------------- | -------------------------------------- | ------------------------------- |
-| POST   | `/conversations`              | `{ otherUserId, metadata? }`           | `{ conversation }`              |
-| GET    | `/conversations`              | `?limit=&cursor=`                      | `{ conversations, nextCursor }` |
-| GET    | `/conversations/:id`          | —                                      | `{ conversation }`              |
-| POST   | `/conversations/:id/messages` | `{ body, role?, metadata? }`           | `{ message }` (201)             |
-| GET    | `/conversations/:id/messages` | `?limit=&cursor=` (newest first)       | `{ messages, nextCursor }`      |
-| POST   | `/conversations/:id/read`     | `{ messageId }`                        | `{ ok: true }`                  |
-| PATCH  | `/messages/:id`               | `{ body }`                             | `{ message }`                   |
-| DELETE | `/messages/:id`               | —                                      | `{ message }` (soft-deleted)    |
-| GET    | `/stream`                     | SSE; auto `Last-Event-ID` on reconnect | `text/event-stream`             |
+| Method | Path                          | Request body / query                   | Response (200/201)                        |
+| ------ | ----------------------------- | -------------------------------------- | ----------------------------------------- |
+| POST   | `/conversations`              | `{ otherUserId, metadata? }`           | `{ conversation }`                        |
+| GET    | `/conversations`              | `?limit=&cursor=`                      | `{ conversations, nextCursor }`           |
+| GET    | `/conversations/:id`          | —                                      | `{ conversation }`                        |
+| POST   | `/conversations/:id/messages` | `{ body, role?, metadata? }`           | `{ message }` (201)                       |
+| GET    | `/conversations/:id/messages` | `?limit=&cursor=`                      | `{ messages, nextCursor }` — newest first |
+| POST   | `/conversations/:id/read`     | `{ messageId }`                        | `{ ok: true }`                            |
+| PATCH  | `/messages/:id`               | `{ body }`                             | `{ message }`                             |
+| DELETE | `/messages/:id`               | —                                      | `{ message }` (soft-deleted)              |
+| GET    | `/stream`                     | SSE; auto `Last-Event-ID` on reconnect | `text/event-stream`                       |
+
+- **Message ordering:** both list endpoints return **newest first**
+  (keyset-paginated by `cursor`). Reverse the page for a chronological
+  top-to-bottom render.
+- **`role`** must be `"user" | "assistant" | "system"` (default `"user"`).
+  It's an AI escape hatch only — core never behaves differently based on it;
+  any other value is a 400 `INVALID_INPUT`.
 
 Example — send a message (the text field is **`body`**):
 
@@ -161,6 +168,13 @@ events.addEventListener("message.created", (e) => {
 });
 ```
 
+> **Browser auth for SSE must be cookie-based.** `EventSource` cannot send
+> custom headers, so your `auth` hook must be able to resolve the user from
+> what the browser sends automatically — typically a session cookie
+> (`EventSource` sends same-origin cookies by default; pass
+> `{ withCredentials: true }` for cross-origin). Header/bearer-token schemes
+> work for the REST routes but not for `/stream`.
+
 **No lost messages:** events are published only _after_ the storage write
 (durable-first), and every event id is `conversationId:seq`. On reconnect,
 `EventSource` sends `Last-Event-ID` automatically and the server replays what
@@ -168,8 +182,15 @@ was missed from storage before resuming live delivery. Delivery is
 at-least-once — dedupe by `message.id`. Details in
 [ADR 0006](../../docs/decisions/0006-sse-gap-fill.md).
 
-The default transport is in-process (single server node). Multi-node fan-out
-is a future `Transport` implementation (e.g. Redis) — same public API.
+> **⚠️ Deployment reality check:** the default transport is **in-process** and
+> `memoryAdapter` is **per-process** — both assume one long-lived server
+> (a Node server, a single Fly/Railway container, `next start`, `Bun.serve`).
+> On serverless/edge platforms (Cloudflare Workers, Vercel/AWS Lambda), each
+> isolate has its own memory: SSE events won't reach connections held by other
+> isolates, and in-memory history isn't shared at all. For those platforms use
+> a database adapter ([`@chatpack/adapter-drizzle`](../adapter-drizzle)) and,
+> until a distributed `Transport` ships (e.g. Redis — same public API), prefer
+> polling `GET /conversations/:id/messages` over `/stream`.
 
 ## Telemetry (anonymous, opt-out)
 

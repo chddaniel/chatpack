@@ -43,6 +43,12 @@ pnpm add     @chatpack/core @chatpack/adapter-memory
 bun  add     @chatpack/core @chatpack/adapter-memory
 ```
 
+> **Bun note:** if Bun's supply-chain guard (`minimumReleaseAge`) is enabled,
+> versions published in the last 24 h are skipped and Bun silently resolves an
+> older release. If you get an unexpectedly old version right after a release,
+> that's the guard — not a broken package. Check with
+> `npm view @chatpack/core dist-tags`.
+
 ### 2. Create your chat server
 
 ```ts
@@ -191,6 +197,18 @@ events.addEventListener("message.created", (e) => {
 If the connection drops, `EventSource` reconnects with `Last-Event-ID` and
 Chatpack replays whatever was missed **from storage** — durable-first delivery,
 no lost messages.
+
+Two things to know before going live:
+
+- **Browser auth must be cookie-based for SSE** — `EventSource` can't send
+  custom headers, so your `auth` hook needs to resolve the user from a session
+  cookie (sent automatically same-origin). Bearer-token headers work for the
+  REST routes but not `/stream`.
+- **SSE + `memoryAdapter` need one long-lived process.** On serverless/edge
+  (Workers, Lambda) each isolate has its own memory — use a
+  [database adapter](./packages/adapter-drizzle) there and poll for new
+  messages until a distributed transport ships. Details in
+  [`@chatpack/core`'s README](./packages/core#real-time-sse).
 
 ### 6. Or call it straight from server code
 
