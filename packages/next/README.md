@@ -11,7 +11,10 @@ readable convenience wrapper.
 ## Install
 
 ```sh
-pnpm add @chatpack/core @chatpack/adapter-memory @chatpack/next
+# pick your package manager
+npm  install @chatpack/core @chatpack/adapter-memory @chatpack/next
+pnpm add     @chatpack/core @chatpack/adapter-memory @chatpack/next
+bun  add     @chatpack/core @chatpack/adapter-memory @chatpack/next
 ```
 
 ## Use
@@ -27,6 +30,10 @@ export const chat = chatpack({
 });
 ```
 
+> The `auth` hook must return `ChatpackUser | null` — an object with at least
+> `{ id: string }`, or `null` for unauthenticated requests (`401`). A bare
+> string is treated as unauthenticated.
+
 ```ts
 // app/api/chat/[...chatpack]/route.ts
 import { toNextRouteHandlers } from "@chatpack/next";
@@ -34,6 +41,9 @@ import { chat } from "@/lib/chat";
 
 export const { GET, POST, PATCH, DELETE } = toNextRouteHandlers(chat);
 ```
+
+> The route file must be a **catch-all** (`[...chatpack]`) so every sub-path
+> under `/api/chat` — including `/api/chat/stream` — reaches the handler.
 
 Mounting somewhere other than `/api/chat`? Pass the base path:
 

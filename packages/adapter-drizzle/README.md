@@ -10,7 +10,10 @@ postgres.js, PGlite, Neon, Vercel Postgres.
 ## Install
 
 ```sh
-pnpm add @chatpack/core @chatpack/adapter-drizzle drizzle-orm pg
+# pick your package manager
+npm  install @chatpack/core @chatpack/adapter-drizzle drizzle-orm pg
+pnpm add     @chatpack/core @chatpack/adapter-drizzle drizzle-orm pg
+bun  add     @chatpack/core @chatpack/adapter-drizzle drizzle-orm pg
 ```
 
 `drizzle-orm` is a peer dependency — the adapter plugs into the Drizzle
@@ -30,6 +33,10 @@ export const chat = chatpack({
   auth: async (req) => getSessionUser(req),
 });
 ```
+
+> The `auth` hook must return `ChatpackUser | null` — an object with at least
+> `{ id: string }`, or `null` for unauthenticated requests (`401`). A bare
+> string is treated as unauthenticated.
 
 ## Creating the tables
 

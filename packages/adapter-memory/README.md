@@ -15,7 +15,10 @@ contract: writing your own adapter? Start by reading
 ## Install
 
 ```sh
-pnpm add @chatpack/core @chatpack/adapter-memory
+# pick your package manager
+npm  install @chatpack/core @chatpack/adapter-memory
+pnpm add     @chatpack/core @chatpack/adapter-memory
+bun  add     @chatpack/core @chatpack/adapter-memory
 ```
 
 ## Use

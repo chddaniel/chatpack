@@ -33,8 +33,14 @@ well-designed chat backend that just works.
 
 ### 1. Install
 
+Both packages are needed for the quickstart — `@chatpack/core` is the engine,
+`@chatpack/adapter-memory` is the storage it plugs into:
+
 ```sh
-pnpm add @chatpack/core @chatpack/adapter-memory
+# pick your package manager
+npm  install @chatpack/core @chatpack/adapter-memory
+pnpm add     @chatpack/core @chatpack/adapter-memory
+bun  add     @chatpack/core @chatpack/adapter-memory
 ```
 
 ### 2. Create your chat server
@@ -50,6 +56,11 @@ export const chat = chatpack({
   auth: async (req) => getSessionUser(req),
 });
 ```
+
+> **The `auth` hook must return `ChatpackUser | null`** — an object with at
+> least `{ id: string }` (extra fields are allowed and ignored), or `null`
+> for unauthenticated requests. Returning a bare string is treated as
+> unauthenticated and every request will get a `401`.
 
 For production, swap the storage line for Postgres —
 [`@chatpack/adapter-drizzle`](./packages/adapter-drizzle):
@@ -72,12 +83,29 @@ import { chat } from "@/lib/chat";
 export const { GET, POST, PATCH, DELETE } = chat.handler();
 ```
 
+> **The route file must be a catch-all** (`[...chatpack]` in Next.js) —
+> Chatpack serves many sub-paths under `basePath` (default `/api/chat`), so a
+> single `app/api/chat/route.ts` would 404 everything but the root.
+
 Your chat backend is now live at `/api/chat` — find-or-create conversations,
 send/list/edit/delete messages, read-state, and a **live SSE stream** at
-`/api/chat/stream`, with your auth enforced on every request. Not on Next.js?
-The handler is Web-standard (`Request` → `Response`): pass
-`chat.handler().fetch` to Bun/Deno/Workers, or see
-[`examples/node-server`](./examples/node-server) for plain Node.
+`/api/chat/stream`, with your auth enforced on every request.
+
+Not on Next.js? The handler is Web-standard (`Request` → `Response`) and
+`GET`/`POST`/`PATCH`/`DELETE`/`fetch` are **all the same function** — the
+method names only exist so they can be re-exported from a Next.js route file.
+Any of them serves every route, including `/stream`:
+
+```ts
+const handler = chat.handler();
+
+Bun.serve({ fetch: handler.fetch }); // Bun / Deno / Cloudflare Workers
+
+app.all("/api/chat/*", (c) => handler.fetch(c.req.raw)); // Hono
+app.all("/api/chat/*", ({ request }) => handler.fetch(request)); // Elysia
+```
+
+For plain Node, see [`examples/node-server`](./examples/node-server).
 
 ### 4. Call it over HTTP
 
@@ -139,7 +167,9 @@ curl '/api/chat/conversations/conv_1/messages?limit=50'
 { "messages": [{ "id": "msg_1", "body": "hey bob!", "seq": 1, "…": "…" }], "nextCursor": null }
 ```
 
-Errors are JSON with a stable machine-readable code and a mapped HTTP status:
+Errors are JSON with a stable machine-readable code and a mapped HTTP status —
+`401` when `auth` returns `null`, `400` for invalid input, `403`/`404`/`409`
+for domain errors:
 
 ```json
 { "error": { "code": "FORBIDDEN_READ", "message": "…" } }
