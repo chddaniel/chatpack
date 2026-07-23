@@ -58,8 +58,12 @@ import { memoryAdapter } from "@chatpack/adapter-memory";
 
 export const chat = chatpack({
   storage: memoryAdapter(),
-  // resolve the current user from a request — the ONLY auth touchpoint
-  auth: async (req) => getSessionUser(req),
+  // resolve the current user from a request — the ONLY auth touchpoint.
+  // Concrete example with a session cookie (works with any auth library):
+  auth: async (req) => {
+    const session = await getSessionFromCookie(req.headers.get("cookie"));
+    return session ? { id: session.userId } : null;
+  },
 });
 ```
 
@@ -67,6 +71,10 @@ export const chat = chatpack({
 > least `{ id: string }` (extra fields are allowed and ignored), or `null`
 > for unauthenticated requests. Returning a bare string is treated as
 > unauthenticated and every request will get a `401`.
+>
+> **Prefer cookie-based sessions** over `Authorization` headers: the browser
+> sends cookies automatically on every request — including the SSE stream in
+> step 5, where custom headers are impossible.
 
 For production, swap the storage line for Postgres —
 [`@chatpack/adapter-drizzle`](./packages/adapter-drizzle):
@@ -122,6 +130,11 @@ curl -X POST /api/chat/conversations \
   -H 'content-type: application/json' \
   -d '{"otherUserId": "bob"}'
 ```
+
+> **Chatpack never owns a users table**, so it cannot check that
+> `otherUserId` actually exists — a typo silently creates a conversation
+> with a ghost user. Validate recipient ids against your own users table
+> before calling.
 
 ```json
 {
@@ -188,10 +201,22 @@ codes) lives in [`@chatpack/core`'s README](./packages/core#rest-api).
 
 ```ts
 const events = new EventSource("/api/chat/stream");
+
+// TypeScript: custom event names fall outside EventSourceEventMap, so the
+// listener parameter is typed `Event` — cast to MessageEvent for `.data`.
 events.addEventListener("message.created", (e) => {
-  const { message } = JSON.parse(e.data);
+  const { message } = JSON.parse((e as MessageEvent).data);
   // render it — reconnection & missed-message backfill are automatic
 });
+
+events.onerror = () => {
+  if (events.readyState === EventSource.CLOSED) {
+    // Fatal (e.g. 401 from your auth hook): the browser will NOT retry.
+    // Re-authenticate, then create a new EventSource.
+  }
+  // Otherwise it's a dropped connection: EventSource retries automatically
+  // and sends Last-Event-ID — no action needed.
+};
 ```
 
 If the connection drops, `EventSource` reconnects with `Last-Event-ID` and

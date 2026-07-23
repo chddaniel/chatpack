@@ -24,14 +24,20 @@ import { memoryAdapter } from "@chatpack/adapter-memory";
 
 const chat = chatpack({
   storage: memoryAdapter(),
-  auth: async (req) => getSessionUser(req), // your auth, your users
+  // your auth, your users — e.g. resolve a session cookie:
+  auth: async (req) => {
+    const session = await getSessionFromCookie(req.headers.get("cookie"));
+    return session ? { id: session.userId } : null;
+  },
 });
 ```
 
 > **The `auth` hook must return `ChatpackUser | null`** — an object with at
 > least `{ id: string }` (extra fields are allowed and ignored), or `null`
 > for unauthenticated requests (which get a `401`). Returning a bare string
-> is treated as unauthenticated.
+> is treated as unauthenticated. Prefer cookie-based sessions — the browser
+> sends cookies automatically, including on the SSE stream where custom
+> headers are impossible.
 
 ```ts
 const conversation = await chat.api.getOrCreateConversation({
@@ -116,6 +122,13 @@ keyed by resource — `{ conversation }`, `{ message }`, `{ conversations, nextC
 - **`role`** must be `"user" | "assistant" | "system"` (default `"user"`).
   It's an AI escape hatch only — core never behaves differently based on it;
   any other value is a 400 `INVALID_INPUT`.
+- **`otherUserId` is not validated to exist** — Chatpack never owns a users
+  table, so any non-empty string creates a conversation. Validate recipient
+  ids against your own users table before calling.
+- **Timestamps on the wire are ISO strings.** The exported types declare
+  `createdAt`/`editedAt`/`deletedAt` as `Date` (correct for the server-side
+  `chat.api.*` calls), but JSON serialization means HTTP clients receive ISO
+  8601 strings — type them as `string` in frontend code.
 
 Example — send a message (the text field is **`body`**):
 
@@ -163,9 +176,20 @@ conversations only — participation is re-checked server-side per event.
 
 ```ts
 const events = new EventSource("/api/chat/stream");
+
+// TypeScript: custom event names fall outside EventSourceEventMap, so cast
+// the listener parameter to MessageEvent to access `.data`.
 events.addEventListener("message.created", (e) => {
-  const { message } = JSON.parse(e.data);
+  const { message } = JSON.parse((e as MessageEvent).data);
 });
+
+events.onerror = () => {
+  if (events.readyState === EventSource.CLOSED) {
+    // Fatal (e.g. 401): the browser will NOT retry. Re-auth, then recreate.
+  }
+  // Otherwise: dropped connection — EventSource retries automatically with
+  // Last-Event-ID and the server replays what was missed.
+};
 ```
 
 > **Browser auth for SSE must be cookie-based.** `EventSource` cannot send
@@ -213,11 +237,26 @@ CHATPACK_TELEMETRY=0
 
 ## Writing a storage adapter
 
-Implement the exported `StorageAdapter` interface. The
-[in-memory adapter](../adapter-memory) is the reference implementation, and
-the [Drizzle/Postgres adapter](../adapter-drizzle) shows the contract on a
-real database. See the [contributing guide](../../CONTRIBUTING.md) for the
-contract rules.
+Implement the exported `StorageAdapter` interface — the full contract ships
+in the package's `.d.ts` with TSDoc on every method. The surface is
+deliberately small:
+
+| Method                          | Contract                                                                 |
+| ------------------------------- | ------------------------------------------------------------------------ |
+| `getOrCreateDirectConversation` | Find or atomically create by `pairKey` — concurrent calls must converge  |
+| `getConversation`               | Fetch by id (with participants), or `null`                               |
+| `listConversations`             | A user's conversations, most-recently-active first, cursor-paginated     |
+| `addMessage`                    | Persist + assign the next strictly-increasing `seq` for the conversation |
+| `getMessage`                    | Fetch by id, or `null`                                                   |
+| `listMessages`                  | Newest-first, cursor-paginated                                           |
+| `listMessagesAfterSeq`          | Messages with `seq > afterSeq`, **oldest first** (SSE gap-fill)          |
+| `updateMessage`                 | Edit body / set `editedAt` / set `deletedAt` in place                    |
+| `updateLastRead`                | Set a participant's `lastReadMessageId`                                  |
+
+The [in-memory adapter](../adapter-memory) is the reference implementation,
+and the [Drizzle/Postgres adapter](../adapter-drizzle) shows the contract on
+a real database (row-locked `seq` assignment, `ON CONFLICT` pair creation).
+See the [contributing guide](../../CONTRIBUTING.md) for the contract rules.
 
 ## License
 

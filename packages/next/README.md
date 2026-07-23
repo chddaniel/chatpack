@@ -32,7 +32,8 @@ export const chat = chatpack({
 
 > The `auth` hook must return `ChatpackUser | null` — an object with at least
 > `{ id: string }`, or `null` for unauthenticated requests (`401`). A bare
-> string is treated as unauthenticated.
+> string is treated as unauthenticated. Prefer cookie-based sessions —
+> `EventSource` (the SSE stream) cannot send custom headers.
 
 ```ts
 // app/api/chat/[...chatpack]/route.ts
