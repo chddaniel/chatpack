@@ -1,6 +1,6 @@
 {
   "name": "@chatpack/adapter-drizzle",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Drizzle ORM (Postgres) storage adapter for Chatpack — real persistence for production",
   "license": "MIT",
   "homepage": "https://github.com/chddaniel/chatpack#readme",

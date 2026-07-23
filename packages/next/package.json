@@ -1,6 +1,6 @@
 {
   "name": "@chatpack/next",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Next.js App Router integration for Chatpack — mount the chat API on one route",
   "license": "MIT",
   "homepage": "https://github.com/chddaniel/chatpack#readme",
