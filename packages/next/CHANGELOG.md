@@ -1,5 +1,16 @@
 # @chatpack/next
 
+## 0.1.1
+
+### Patch Changes
+
+- Documentation: the quickstart and `@chatpack/core` README now include curl-able
+  HTTP examples with real request/response JSON, and the REST route table
+  documents request bodies, query params, and response envelopes for every
+  endpoint (verified against the handler source). No code changes.
+- Updated dependencies
+  - @chatpack/core@0.1.1
+
 ## 0.1.0
 
 ### Minor Changes
