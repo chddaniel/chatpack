@@ -1,5 +1,11 @@
 # @chatpack/core
 
+## 0.1.6
+
+### Patch Changes
+
+- 1bb1f38: Docs: hybrid auth recipe (bearer for REST, cookie for `/stream`), explicit HTTP-envelope vs bare `chat.api.*` return-shape clarification, and `getConversation` throw behavior called out (README + TSDoc).
+
 ## 0.1.5
 
 ### Patch Changes

@@ -1,5 +1,16 @@
 # @chatpack/adapter-drizzle
 
+## 0.2.0
+
+### Minor Changes
+
+- 1bb1f38: Add `migrationStatements` export — the quick-start DDL as individual statements for drivers that execute one statement per call (Neon HTTP, Vercel Postgres, Cloudflare D1). `migrationSql` is unchanged and now derived from the same array, so the two can never drift.
+
+### Patch Changes
+
+- Updated dependencies [1bb1f38]
+  - @chatpack/core@0.1.6
+
 ## 0.1.4
 
 ### Patch Changes
