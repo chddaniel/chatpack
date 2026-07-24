@@ -89,6 +89,12 @@ export const chat = chatpack({
 });
 ```
 
+> **No direct Postgres connection string?** Platforms that only expose a
+> database client (Supabase's JS client, Convex, and most AI-builder clouds)
+> are supported through a custom `StorageAdapter`. The full guide — reference
+> schema, invariants, skeleton, and a verification checklist — is
+> [`llms.txt`](./llms.txt) (works for humans and AI coding agents alike).
+
 ### 3. Mount the API (Next.js App Router)
 
 ```ts

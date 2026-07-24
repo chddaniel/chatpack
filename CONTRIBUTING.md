@@ -78,6 +78,14 @@ adapter ([packages/adapter-drizzle](./packages/adapter-drizzle)) shows what the
 contract looks like on a real database (atomic `seq` assignment, idempotent
 pair-key creation — see [ADR 0007](./docs/decisions/0007-postgres-adapter.md)).
 
+**Don't design a schema from scratch:** `@chatpack/adapter-drizzle` exports
+the official data model as `migrationSql` (plain idempotent Postgres DDL — no
+Drizzle required to execute it) and `chatpackSchema` (Drizzle table objects).
+The complete adapter-author guide — database-agnostic invariants, the
+reference schema, a skeleton, pitfalls, and a verification checklist — lives
+in [`llms.txt`](./llms.txt) at the repo root (written to be equally usable by
+humans and AI coding agents).
+
 Rules of thumb:
 
 - Adapters never enforce permissions — core does that before calling you.
@@ -85,7 +93,13 @@ Rules of thumb:
   you a deterministic `pairKey`) — including under concurrency.
 - `addMessage` must assign a strictly increasing per-conversation `seq` —
   including under concurrency.
-- Message listing is **newest-first** with cursor pagination.
+- Message listing is **newest-first** with cursor pagination. Cursors are
+  opaque strings the adapter defines; core round-trips them verbatim, so any
+  URL-safe encoding works.
+- Date fields are real `Date` instances in and out — never ISO strings
+  (drivers and HTTP database clients often return strings; convert at the
+  adapter boundary).
+- The adapter generates conversation and message ids (any unique string).
 
 ## Code style
 

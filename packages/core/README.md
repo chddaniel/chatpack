@@ -253,10 +253,36 @@ deliberately small:
 | `updateMessage`                 | Edit body / set `editedAt` / set `deletedAt` in place                    |
 | `updateLastRead`                | Set a participant's `lastReadMessageId`                                  |
 
+Contract rules that the type signatures alone don't tell you:
+
+- **Reuse the reference schema — don't design your own.**
+  `@chatpack/adapter-drizzle` exports the official data model two ways:
+  `migrationSql` (plain idempotent Postgres DDL — no Drizzle needed to run
+  it) and `chatpackSchema` (Drizzle table objects). If your database speaks
+  SQL, start from those tables; if not, translate their shape.
+- **Cursors are opaque strings that _you_ define.** Core and the HTTP layer
+  round-trip your `nextCursor` back into `input.cursor` verbatim — pick any
+  encoding that survives a URL query param (the Drizzle adapter uses the last
+  message's `seq` for `listMessages`). Return `null` when there are no more
+  results.
+- **Return real `Date` instances, never ISO strings.** Core doesn't coerce;
+  many drivers (and HTTP database clients like Supabase's) return strings —
+  convert at the adapter boundary. JSON serialization is the HTTP handler's
+  job, not the adapter's.
+- **The adapter generates ids** for conversations and messages (any unique
+  string — the official adapters use prefixed random ids like `msg_<uuid>`).
+- **Never enforce permissions in the adapter** — core validates participants
+  and permission hooks before calling you. On hosted databases this also
+  means the adapter runs server-side with privileged credentials, and the
+  Chatpack tables must not be readable by browser/anon clients.
+
 The [in-memory adapter](../adapter-memory) is the reference implementation,
 and the [Drizzle/Postgres adapter](../adapter-drizzle) shows the contract on
 a real database (row-locked `seq` assignment, `ON CONFLICT` pair creation).
-See the [contributing guide](../../CONTRIBUTING.md) for the contract rules.
+For the complete agent-friendly guide — invariants, reference schema, a
+method-by-method skeleton, pitfalls, and a "verify your adapter" checklist —
+see [`llms.txt`](../../llms.txt) at the repo root. Contract rules also live
+in the [contributing guide](../../CONTRIBUTING.md).
 
 ## License
 

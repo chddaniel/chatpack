@@ -7,11 +7,19 @@
  * `@chatpack/adapter-drizzle` (Drizzle/Postgres).
  *
  * Adapter authors: see the "Writing a storage adapter" section of
- * CONTRIBUTING.md. Key rules:
+ * CONTRIBUTING.md, and `llms.txt` at the repo root for the full guide
+ * (invariants, reference schema, skeleton, verification checklist). Key
+ * rules:
  *
  * - Adapters never enforce permissions — core does that before calling you.
  * - `getOrCreateDirectConversation` must be idempotent per `pairKey`.
  * - Message listing is newest-first with cursor pagination.
+ * - Cursors are opaque strings **defined by the adapter**: core round-trips
+ *   your `nextCursor` back into `input.cursor` verbatim. Any URL-safe
+ *   encoding works.
+ * - Date fields must be real `Date` instances, never ISO strings — core does
+ *   not coerce, and many database drivers/HTTP clients return strings.
+ * - The adapter generates conversation and message ids (any unique string).
  *
  * @module
  */
@@ -47,8 +55,9 @@ export interface ListConversationsInput {
   limit: number;
   /**
    * Opaque cursor from a previous page's `nextCursor`, or `undefined` for the
-   * first page. Ordering is most-recently-active first (by latest message
-   * `seq`, falling back to conversation creation time).
+   * first page. The encoding is adapter-defined — core passes your
+   * `nextCursor` back verbatim. Ordering is most-recently-active first (by
+   * latest message `seq`, falling back to conversation creation time).
    */
   cursor?: string | undefined;
 }
@@ -76,7 +85,9 @@ export interface ListMessagesInput {
   limit: number;
   /**
    * Opaque cursor from a previous page's `nextCursor`, or `undefined` for the
-   * first page. Ordering is newest-first (descending `seq`).
+   * first page. The encoding is adapter-defined — core passes your
+   * `nextCursor` back verbatim (the Drizzle adapter uses the previous page's
+   * last `seq`). Ordering is newest-first (descending `seq`).
    */
   cursor?: string | undefined;
 }
