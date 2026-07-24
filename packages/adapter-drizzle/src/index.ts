@@ -58,6 +58,7 @@ export {
   conversations,
   messages,
   migrationSql,
+  migrationStatements,
 } from "./schema";
 
 /**

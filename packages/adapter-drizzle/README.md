@@ -57,12 +57,54 @@ export * from "@chatpack/adapter-drizzle"; // conversations, participants, messa
 drizzle-kit generate && drizzle-kit migrate
 ```
 
-**Option B — quick start.** Run the exported idempotent DDL once at boot:
+**Option B — quick start.** Run the exported idempotent DDL once at boot
+(`CREATE TABLE IF NOT EXISTS ...`):
 
 ```ts
 import { migrationSql } from "@chatpack/adapter-drizzle";
-await pool.query(migrationSql); // CREATE TABLE IF NOT EXISTS ...
+await pool.query(migrationSql); // node-postgres, postgres.js, PGlite
 ```
+
+> **One-statement-per-call drivers** (Neon HTTP, Vercel Postgres, Cloudflare
+> D1) reject multi-statement queries — use `migrationStatements` instead,
+> which is the same DDL split into individual statements:
+>
+> ```ts
+> import { neon } from "@neondatabase/serverless";
+> import { migrationStatements } from "@chatpack/adapter-drizzle";
+>
+> const sql = neon(process.env.DATABASE_URL!);
+> for (const statement of migrationStatements) await sql(statement);
+> ```
+
+## Serverless / edge runtimes (Cloudflare Workers, Vercel Edge)
+
+TCP-based drivers like `pg` (node-postgres) don't run on edge runtimes — use
+an HTTP/WebSocket driver instead. The adapter itself is driver-agnostic, so
+only the `drizzle()` line changes. Neon on Workers:
+
+```ts
+import { neon } from "@neondatabase/serverless";
+import { drizzle } from "drizzle-orm/neon-http";
+import { chatpack } from "@chatpack/core";
+import { drizzleAdapter } from "@chatpack/adapter-drizzle";
+
+const db = drizzle(neon(env.DATABASE_URL));
+
+export const chat = chatpack({
+  storage: drizzleAdapter(db),
+  auth: async (req) => getSessionUser(req),
+});
+
+export default { fetch: chat.handler().fetch };
+```
+
+The same pattern works with `drizzle-orm/vercel-postgres` on Vercel Edge.
+
+> **Real-time on serverless:** the default SSE transport is in-process, so on
+> Workers/Lambda-style platforms poll `GET /conversations/:id/messages`
+> instead of `/stream` — see the
+> [deployment reality check](../core#real-time-sse) in `@chatpack/core`.
 
 ## Correctness guarantees
 

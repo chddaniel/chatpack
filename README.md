@@ -234,7 +234,9 @@ Two things to know before going live:
 - **Browser auth must be cookie-based for SSE** — `EventSource` can't send
   custom headers, so your `auth` hook needs to resolve the user from a session
   cookie (sent automatically same-origin). Bearer-token headers work for the
-  REST routes but not `/stream`.
+  REST routes but not `/stream` — if your app uses them, write the `auth`
+  hook to accept either (header first, cookie fallback); worked example in
+  [`@chatpack/core`'s README](./packages/core#real-time-sse).
 - **SSE + `memoryAdapter` need one long-lived process.** On serverless/edge
   (Workers, Lambda) each isolate has its own memory — use a
   [database adapter](./packages/adapter-drizzle) there and poll for new
@@ -266,6 +268,48 @@ const { messages } = await chat.api.listMessages({
 
 That's it. Only the two participants can read or write — enforced by default,
 customizable via the `permissions` hooks.
+
+### 7. Bonus: chat with an AI assistant
+
+To Chatpack, an AI assistant is **just another participant** — pick a
+synthetic user id (any string you'll never issue to a real user, e.g.
+`ai:assistant`) and have your backend send its replies. No special AI support
+needed, and the same 1:1 permissions apply:
+
+```ts
+const ASSISTANT_ID = "ai:assistant";
+
+// find-or-create the user's conversation with the assistant
+const conversation = await chat.api.getOrCreateConversation({
+  userId: user.id,
+  otherUserId: ASSISTANT_ID,
+});
+
+// the user's message arrives (via your route or the REST API)...
+await chat.api.sendMessage({
+  userId: user.id,
+  conversationId: conversation.id,
+  body: userText,
+});
+
+// ...your backend calls your LLM of choice with your own keys...
+const reply = await generateReply(userText); // OpenAI, Anthropic, Gemini, ...
+
+// ...and sends the answer as the assistant participant
+await chat.api.sendMessage({
+  userId: ASSISTANT_ID,
+  conversationId: conversation.id,
+  body: reply,
+  role: "assistant", // "user" | "assistant" | "system" — stored & returned as-is
+});
+```
+
+Chatpack stores, orders, and delivers the messages; the LLM call is yours
+(model, keys, prompts, streaming). `role` is a plain label for your UI —
+core never behaves differently based on it. Since `otherUserId` accepts any
+non-empty string, make sure your `auth`/validation layer prevents real users
+from registering ids in your synthetic namespace (e.g. reserve the `ai:`
+prefix).
 
 ## What's in v0
 

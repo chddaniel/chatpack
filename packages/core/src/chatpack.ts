@@ -128,7 +128,11 @@ export interface ChatpackApi {
   /** List the conversations `userId` participates in, most-recently-active first. */
   listConversations(input: ListConversationsApiInput): Promise<ListConversationsApiResult>;
 
-  /** Fetch one conversation. Requires read permission. */
+  /**
+   * Fetch one conversation. Requires read permission. Throws
+   * `CONVERSATION_NOT_FOUND` for unknown ids — unlike
+   * `StorageAdapter.getConversation`, it never resolves to `null`.
+   */
   getConversation(input: GetConversationInput): Promise<Conversation>;
 
   /** Send a text message. Requires write permission. */

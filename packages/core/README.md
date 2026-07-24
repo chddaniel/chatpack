@@ -67,7 +67,12 @@ await chat.api.sendMessage({
 | `api.listMessagesAfter`       | Messages after a `seq` (SSE reconnect gap-fill)     |
 
 All failures throw `ChatpackError` with a stable `code`
-(`FORBIDDEN_READ`, `MESSAGE_NOT_FOUND`, `INVALID_INPUT`, ...).
+(`FORBIDDEN_READ`, `MESSAGE_NOT_FOUND`, `INVALID_INPUT`, ...) — **methods
+never return `null` for missing resources**. E.g. `api.getConversation`
+throws `CONVERSATION_NOT_FOUND`; don't confuse it with the storage adapter's
+`getConversation`, which is a lower-level method that returns
+`Conversation | null` (core is the layer that turns a `null` into the domain
+error). Wrap calls in `try/catch` and branch on `error.code`.
 
 ## REST API
 
@@ -102,7 +107,10 @@ app.all("/api/chat/*", ({ request }) => handler.fetch(request)); // Elysia
 
 Routes (relative to `basePath`, default `/api/chat`). Response envelopes are
 keyed by resource — `{ conversation }`, `{ message }`, `{ conversations, nextCursor }`,
-`{ messages, nextCursor }`:
+`{ messages, nextCursor }`. **The envelope is HTTP-only and intentional**
+(room to add sibling fields without breaking clients): the server-side
+`chat.api.*` methods return the bare object (`Conversation`, `Message`, ...),
+so don't reuse HTTP-response types for `chat.api.*` calls or vice versa:
 
 | Method | Path                          | Request body / query                   | Response (200/201)                        |
 | ------ | ----------------------------- | -------------------------------------- | ----------------------------------------- |
@@ -198,6 +206,34 @@ events.onerror = () => {
 > (`EventSource` sends same-origin cookies by default; pass
 > `{ withCredentials: true }` for cross-origin). Header/bearer-token schemes
 > work for the REST routes but not for `/stream`.
+
+**Hybrid auth (bearer tokens + SSE).** If your app authenticates REST calls
+with an `Authorization` header (Supabase, Clerk, Firebase JWTs, ...), you
+don't have to abandon it — write the `auth` hook to accept _either_
+credential: the header for REST requests, and a session cookie as the
+fallback for `/stream`:
+
+```ts
+export const chat = chatpack({
+  storage,
+  auth: async (req) => {
+    // 1. Bearer token — what your frontend already sends on REST calls.
+    const bearer = req.headers.get("authorization")?.replace(/^Bearer /, "");
+    if (bearer) {
+      const user = await verifyJwt(bearer); // your auth provider's verify
+      return user ? { id: user.id } : null;
+    }
+    // 2. Cookie fallback — the only thing EventSource can send.
+    const session = await getSessionFromCookie(req.headers.get("cookie"));
+    return session ? { id: session.userId } : null;
+  },
+});
+```
+
+The cookie can be your auth provider's own session cookie if it sets one, or
+a short-lived one you set yourself from an authenticated endpoint right
+before opening the stream. Avoid tokens in the `/stream` query string — URLs
+end up in server logs and browser history.
 
 **No lost messages:** events are published only _after_ the storage write
 (durable-first), and every event id is `conversationId:seq`. On reconnect,

@@ -16,8 +16,9 @@
  * so there are no foreign keys into your `users` table (MVP §8).
  *
  * To create the tables, add these exports to your Drizzle schema and run your
- * usual `drizzle-kit` migration flow — or execute {@link migrationSql} for a
- * quick start.
+ * usual `drizzle-kit` migration flow — or, for a quick start, execute
+ * {@link migrationSql} (multi-statement drivers) or
+ * {@link migrationStatements} (one-statement-per-call drivers like Neon HTTP).
  *
  * @module
  */
@@ -106,37 +107,41 @@ export const chatpackSchema = {
 };
 
 /**
- * Plain-SQL DDL for the Chatpack tables (idempotent `IF NOT EXISTS`).
+ * The Chatpack DDL as individual statements (idempotent `IF NOT EXISTS`),
+ * in dependency order.
  *
- * Handy for examples, tests, and quick starts. For production apps, prefer
- * generating a real migration from the schema with `drizzle-kit`.
+ * Use this instead of {@link migrationSql} with drivers that execute **one
+ * statement per call** — e.g. Neon's HTTP driver (`@neondatabase/serverless`
+ * `sql`), Cloudflare D1, or `@vercel/postgres` `sql`:
+ *
+ * ```ts
+ * for (const statement of migrationStatements) await sql(statement);
+ * ```
  */
-export const migrationSql = `
-CREATE TABLE IF NOT EXISTS "chatpack_conversations" (
+export const migrationStatements: readonly string[] = [
+  `CREATE TABLE IF NOT EXISTS "chatpack_conversations" (
   "id" text PRIMARY KEY,
   "pair_key" text NOT NULL,
   "created_at" timestamptz NOT NULL,
   "metadata" jsonb NOT NULL DEFAULT '{}',
   "last_seq" integer NOT NULL DEFAULT 0,
   "last_activity_at" timestamptz NOT NULL
-);
-CREATE UNIQUE INDEX IF NOT EXISTS "chatpack_conversations_pair_key_idx"
-  ON "chatpack_conversations" ("pair_key");
-CREATE INDEX IF NOT EXISTS "chatpack_conversations_activity_idx"
-  ON "chatpack_conversations" ("last_activity_at", "id");
-
-CREATE TABLE IF NOT EXISTS "chatpack_conversation_participants" (
+)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "chatpack_conversations_pair_key_idx"
+  ON "chatpack_conversations" ("pair_key")`,
+  `CREATE INDEX IF NOT EXISTS "chatpack_conversations_activity_idx"
+  ON "chatpack_conversations" ("last_activity_at", "id")`,
+  `CREATE TABLE IF NOT EXISTS "chatpack_conversation_participants" (
   "conversation_id" text NOT NULL REFERENCES "chatpack_conversations"("id") ON DELETE CASCADE,
   "user_id" text NOT NULL,
   "joined_at" timestamptz NOT NULL,
   "last_read_message_id" text
-);
-CREATE UNIQUE INDEX IF NOT EXISTS "chatpack_participants_conv_user_idx"
-  ON "chatpack_conversation_participants" ("conversation_id", "user_id");
-CREATE INDEX IF NOT EXISTS "chatpack_participants_user_idx"
-  ON "chatpack_conversation_participants" ("user_id");
-
-CREATE TABLE IF NOT EXISTS "chatpack_messages" (
+)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "chatpack_participants_conv_user_idx"
+  ON "chatpack_conversation_participants" ("conversation_id", "user_id")`,
+  `CREATE INDEX IF NOT EXISTS "chatpack_participants_user_idx"
+  ON "chatpack_conversation_participants" ("user_id")`,
+  `CREATE TABLE IF NOT EXISTS "chatpack_messages" (
   "id" text PRIMARY KEY,
   "conversation_id" text NOT NULL REFERENCES "chatpack_conversations"("id") ON DELETE CASCADE,
   "sender_id" text NOT NULL,
@@ -147,7 +152,20 @@ CREATE TABLE IF NOT EXISTS "chatpack_messages" (
   "edited_at" timestamptz,
   "deleted_at" timestamptz,
   "metadata" jsonb NOT NULL DEFAULT '{}'
-);
-CREATE UNIQUE INDEX IF NOT EXISTS "chatpack_messages_conv_seq_idx"
-  ON "chatpack_messages" ("conversation_id", "seq");
-`;
+)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "chatpack_messages_conv_seq_idx"
+  ON "chatpack_messages" ("conversation_id", "seq")`,
+];
+
+/**
+ * Plain-SQL DDL for the Chatpack tables (idempotent `IF NOT EXISTS`), as one
+ * multi-statement script.
+ *
+ * Handy for examples, tests, and quick starts with drivers that accept
+ * multi-statement queries (node-postgres, postgres.js, PGlite). For drivers
+ * that execute one statement per call (Neon HTTP, D1, Vercel Postgres), use
+ * {@link migrationStatements} instead. For production apps, prefer generating
+ * a real migration from the schema with `drizzle-kit`.
+ */
+export const migrationSql: string =
+  migrationStatements.map((statement) => `${statement};`).join("\n\n") + "\n";

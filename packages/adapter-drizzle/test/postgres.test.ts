@@ -14,7 +14,12 @@ import { drizzle } from "drizzle-orm/pglite";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { chatpack, ChatpackError, type ChatpackInstance } from "@chatpack/core";
-import { drizzleAdapter, migrationSql, type DrizzlePgDatabase } from "../src/index";
+import {
+  drizzleAdapter,
+  migrationSql,
+  migrationStatements,
+  type DrizzlePgDatabase,
+} from "../src/index";
 
 let pglite: PGlite;
 let db: DrizzlePgDatabase;
@@ -29,6 +34,39 @@ beforeEach(async () => {
 
 afterEach(async () => {
   await pglite.close();
+});
+
+describe("migrationStatements (single-statement drivers, e.g. Neon HTTP)", () => {
+  it("running each statement individually yields a schema equivalent to migrationSql", async () => {
+    const fresh = new PGlite();
+    try {
+      // Simulate a driver that only accepts one statement per call.
+      for (const statement of migrationStatements) {
+        await fresh.query(statement);
+      }
+      // Both paths must be idempotent and interchangeable.
+      await fresh.exec(migrationSql);
+
+      const freshDb = drizzle(fresh) as unknown as DrizzlePgDatabase;
+      const freshChat = chatpack({ storage: drizzleAdapter(freshDb), telemetry: false });
+      const conversation = await freshChat.api.getOrCreateConversation({
+        userId: "alice",
+        otherUserId: "bob",
+      });
+      const message = await freshChat.api.sendMessage({
+        userId: "alice",
+        conversationId: conversation.id,
+        body: "hello from a per-statement migration",
+      });
+      expect(message.seq).toBe(1);
+    } finally {
+      await fresh.close();
+    }
+  });
+
+  it("joined statements are exactly migrationSql (no drift between the two exports)", () => {
+    expect(migrationStatements.map((s) => `${s};`).join("\n\n") + "\n").toBe(migrationSql);
+  });
 });
 
 describe("conversations on Postgres", () => {

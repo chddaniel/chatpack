@@ -284,6 +284,24 @@ if any fails, the bug is in the adapter.
 10. **Privilege check (hosted DBs).** With the browser/anon credentials, a
     direct read of `chatpack_messages` returns nothing/denied.
 
+## AI assistant pattern (user↔AI chat)
+
+Chatpack has no AI features — an assistant is just a participant with a
+synthetic user id. The pattern:
+
+1. Pick a reserved id, e.g. `"ai:assistant"` (any string you'll never issue
+   to a real user; `otherUserId` is not validated, so reserve the prefix in
+   your own auth/validation layer).
+2. `getOrCreateConversation({ userId: user.id, otherUserId: "ai:assistant" })`.
+3. Persist the user's message with `sendMessage` as usual.
+4. Your backend calls the LLM (your keys, your model), then persists the
+   reply with `sendMessage({ userId: "ai:assistant", ..., role: "assistant" })`.
+
+`role` (`"user" | "assistant" | "system"`, default `"user"`) is a stored
+label for your UI — core never behaves differently based on it. Token
+streaming is your concern; Chatpack stores whole messages (send the final
+text, or edit a placeholder message as chunks arrive).
+
 ## Deployment notes
 
 - The default transport is in-process: SSE only works on a single long-lived
