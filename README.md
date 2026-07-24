@@ -1,6 +1,6 @@
 <div align="center">
 
-# Chatpack
+# Chatpack 
 
 **Open-source chat infrastructure for developers.**
 
