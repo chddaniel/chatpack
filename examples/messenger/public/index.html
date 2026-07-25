@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Chatpack Messenger</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <!-- Login screen -->
+    <div id="login" class="login hidden">
+      <form id="login-form" class="login-card">
+        <h1>Chatpack Messenger</h1>
+        <p>Pick a username — open a second window and sign in as someone else to chat.</p>
+        <input
+          id="login-username"
+          placeholder="e.g. alice"
+          autocomplete="off"
+          maxlength="32"
+          required
+        />
+        <button type="submit">Sign in</button>
+        <p id="login-error" class="error"></p>
+      </form>
+    </div>
+
+    <!-- Messenger -->
+    <div id="app" class="app hidden">
+      <aside class="sidebar">
+        <header class="sidebar-header">
+          <span id="me-label" class="me"></span>
+          <button id="logout" class="ghost" title="Sign out">Sign out</button>
+        </header>
+        <form id="new-chat" class="new-chat">
+          <input
+            id="new-chat-user"
+            placeholder="Chat with… (user id)"
+            autocomplete="off"
+            maxlength="32"
+            required
+          />
+          <button type="submit">+</button>
+        </form>
+        <ul id="conversations" class="conversations"></ul>
+      </aside>
+
+      <main class="pane">
+        <div id="empty-state" class="empty-state">Select or start a conversation</div>
+        <div id="thread" class="thread hidden">
+          <header id="thread-header" class="thread-header"></header>
+          <div id="messages" class="messages">
+            <button id="load-older" class="load-older hidden">Load older messages</button>
+            <div id="message-list"></div>
+          </div>
+          <form id="composer" class="composer">
+            <input id="composer-input" placeholder="Type a message…" autocomplete="off" required />
+            <button type="submit">Send</button>
+          </form>
+        </div>
+      </main>
+    </div>
+
+    <script src="/app.js"></script>
+  </body>
+</html>

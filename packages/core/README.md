@@ -52,6 +52,28 @@ await chat.api.sendMessage({
 });
 ```
 
+## How it fits together
+
+```text
+Your frontend  ──  fetch("/api/chat/…")  +  EventSource("/api/chat/stream")
+      │
+      ▼
+chat.handler()        one Web-standard handler (Request → Response)
+      │
+      ├── auth hook   your session → { id: userId }     (you own users)
+      ▼
+chat.api.*            domain logic, permissions         (also callable directly)
+      │
+      ▼
+StorageAdapter        memory · Drizzle/Postgres · your own
+      │
+      ▼
+Your database
+```
+
+A complete worked example — vanilla HTML+JS messenger with a tutorial README —
+lives at [`examples/messenger`](../../examples/messenger).
+
 ## API surface
 
 | Method                        | What it does                                        |
@@ -65,6 +87,29 @@ await chat.api.sendMessage({
 | `api.deleteMessage`           | Soft-delete your own message                        |
 | `api.markRead`                | Update durable read-state (`last_read`)             |
 | `api.listMessagesAfter`       | Messages after a `seq` (SSE reconnect gap-fill)     |
+
+### Which API do I call?
+
+The same task, from both sides — `chat.api.*` in server code, the REST route
+from a browser/client:
+
+| I want to...                    | Server (`chat.api.*`)          | HTTP                               |
+| ------------------------------- | ------------------------------ | ---------------------------------- |
+| Start a chat with someone       | `getOrCreateConversation`      | `POST /conversations`              |
+| Show the inbox / sidebar        | `listConversations`            | `GET /conversations`               |
+| Open one conversation           | `getConversation`              | `GET /conversations/:id`           |
+| Load history / scroll back      | `listMessages`                 | `GET /conversations/:id/messages`  |
+| Send a message                  | `sendMessage`                  | `POST /conversations/:id/messages` |
+| Edit / delete my message        | `editMessage`, `deleteMessage` | `PATCH` / `DELETE /messages/:id`   |
+| Mark a conversation read        | `markRead`                     | `POST /conversations/:id/read`     |
+| Get live updates in the browser | — (server-sent events)         | `GET /stream` via `EventSource`    |
+
+> **Pagination vs gap-fill — don't mix them up.** Infinite scroll ("load
+> older messages") is `listMessages` with the `nextCursor` from the previous
+> page passed back as `cursor`. `listMessagesAfter` is **not** pagination —
+> it fetches messages _after_ a known `seq` (oldest-first) and exists for
+> real-time catch-up; the `/stream` endpoint already uses it automatically
+> on reconnect, so most apps never call it directly.
 
 All failures throw `ChatpackError` with a stable `code`
 (`FORBIDDEN_READ`, `MESSAGE_NOT_FOUND`, `INVALID_INPUT`, ...) — **methods

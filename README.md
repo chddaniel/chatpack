@@ -1,6 +1,6 @@
 <div align="center">
 
-# Chatpack 
+# Chatpack
 
 **Open-source chat infrastructure for developers.**
 
@@ -29,7 +29,34 @@ Chatpack removes that repetition — the same way BetterAuth did for authenticat
 You bring your **auth** and your **frontend**; Chatpack gives you a small,
 well-designed chat backend that just works.
 
+Real-time comes built in: your frontend opens **one `EventSource`** and gets
+live messages with automatic reconnection and missed-message backfill — no
+WebSocket server, no Socket.IO, no reconnect code to write.
+
+## How it fits together
+
+```text
+Your frontend  ──  fetch("/api/chat/…")  +  EventSource("/api/chat/stream")
+      │
+      ▼
+chat.handler()        one Web-standard handler (Request → Response)
+      │
+      ├── auth hook   your session → { id: userId }     (you own users)
+      ▼
+chat.api.*            domain logic, permissions         (also callable directly)
+      │
+      ▼
+StorageAdapter        memory · Drizzle/Postgres · your own
+      │
+      ▼
+Your database
+```
+
 ## Quickstart
+
+> Prefer learning from a complete app? [`examples/messenger`](./examples/messenger)
+> is a full 1:1 messenger — sidebar, live messages, read receipts — in vanilla
+> HTML+JS with a step-by-step tutorial README.
 
 ### 1. Install
 
@@ -340,10 +367,11 @@ scope and reasoning.
 
 ## Examples
 
-| Example                                            | What it shows                                         |
-| -------------------------------------------------- | ----------------------------------------------------- |
-| [`examples/next-backend`](./examples/next-backend) | The quickstart, runnable: Next.js App Router + SSE    |
-| [`examples/node-server`](./examples/node-server)   | Plain Node http server, in-memory or Postgres storage |
+| Example                                            | What it shows                                            |
+| -------------------------------------------------- | -------------------------------------------------------- |
+| [`examples/messenger`](./examples/messenger)       | **A complete 1:1 messenger** — vanilla HTML+JS, tutorial |
+| [`examples/next-backend`](./examples/next-backend) | The quickstart, runnable: Next.js App Router + SSE       |
+| [`examples/node-server`](./examples/node-server)   | Plain Node http server, in-memory or Postgres storage    |
 
 ## Design principles
 

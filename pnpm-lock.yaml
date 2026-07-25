@@ -30,6 +30,22 @@ importers:
         specifier: ^8.18.1
         version: 8.65.0(eslint@9.39.5)(typescript@5.9.3)
 
+  examples/messenger:
+    dependencies:
+      '@chatpack/adapter-memory':
+        specifier: workspace:*
+        version: link:../../packages/adapter-memory
+      '@chatpack/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+    devDependencies:
+      '@types/node':
+        specifier: ^25.3.1
+        version: 25.9.5
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+
   examples/next-backend:
     dependencies:
       '@chatpack/adapter-memory':
