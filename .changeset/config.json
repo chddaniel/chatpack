@@ -7,5 +7,5 @@
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "ignore": ["example-node-server", "example-next-backend"]
+  "ignore": ["example-node-server", "example-next-backend", "example-messenger"]
 }

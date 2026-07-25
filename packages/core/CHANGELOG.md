@@ -1,5 +1,13 @@
 # @chatpack/core
 
+## 0.1.7
+
+### Patch Changes
+
+- 9113ad1: Docs-only: add a task-oriented "Which API do I call?" table (server method and
+  HTTP route side by side, plus a pagination-vs-gap-fill warning) and a
+  request-flow diagram to the README.
+
 ## 0.1.6
 
 ### Patch Changes
