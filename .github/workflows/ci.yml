@@ -40,3 +40,7 @@ jobs:
 
       - name: Test
         run: pnpm test
+        env:
+          # Optional: when this secret is set, the node-server smoke test also
+          # runs against a real Postgres (e.g. Neon). Unset → in-memory only.
+          SMOKE_DATABASE_URL: ${{ secrets.SMOKE_DATABASE_URL }}

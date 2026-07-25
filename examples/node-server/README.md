@@ -14,6 +14,29 @@ pnpm install
 pnpm --filter example-node-server start
 ```
 
+## Smoke test
+
+This example doubles as the repo's end-to-end smoke test: `test/smoke.test.ts`
+boots this exact server as a child process and drives the full REST walkthrough
+plus live SSE + reconnect gap-fill over real localhost HTTP. It runs as part of
+`pnpm test` (and CI):
+
+```sh
+pnpm --filter example-node-server test
+```
+
+By default it runs on in-memory storage. Set `SMOKE_DATABASE_URL` to also run
+the whole suite against a real Postgres (each run uses fresh, run-unique user
+ids, so a persistent database is fine):
+
+```sh
+SMOKE_DATABASE_URL=postgres://... pnpm --filter example-node-server test
+```
+
+In CI the same happens automatically when the `SMOKE_DATABASE_URL` repository
+secret is configured. Use a direct (non-pooled) connection string, since the
+server holds a long-lived `pg.Pool`.
+
 ### On Postgres (M4 DoD)
 
 Point `DATABASE_URL` at any Postgres and the server switches to

@@ -7,6 +7,8 @@
   "type": "module",
   "scripts": {
     "start": "node --experimental-strip-types server.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -19,6 +21,7 @@
   "devDependencies": {
     "@types/node": "^25.3.1",
     "@types/pg": "^8.15.4",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vitest": "^3.0.0"
   }
 }

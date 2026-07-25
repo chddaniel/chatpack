@@ -4,5 +4,5 @@
     "allowImportingTsExtensions": true,
     "erasableSyntaxOnly": true
   },
-  "include": ["server.ts"]
+  "include": ["server.ts", "test"]
 }

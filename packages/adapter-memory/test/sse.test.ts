@@ -22,6 +22,9 @@ interface SseEvent {
 class SseClient {
   private reader: ReadableStreamDefaultReader<Uint8Array>;
   private buffer = "";
+  // Keep the in-flight read across poll iterations: racing a fresh read()
+  // against a timer would abandon reads that later resolve with real chunks.
+  private pendingRead: Promise<ReadableStreamReadResult<Uint8Array>> | null = null;
   readonly events: SseEvent[] = [];
   readonly status: number;
 
@@ -49,11 +52,13 @@ class SseClient {
   async waitForEvents(count: number, timeoutMs = 2000): Promise<SseEvent[]> {
     const deadline = Date.now() + timeoutMs;
     while (this.events.length < count && Date.now() < deadline) {
+      this.pendingRead ??= this.reader.read();
       const result = await Promise.race([
-        this.reader.read(),
+        this.pendingRead,
         new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), 50)),
       ]);
       if (result === "timeout") continue;
+      this.pendingRead = null;
       if (result.done) break;
       this.buffer += new TextDecoder().decode(result.value);
       this.drainBuffer();

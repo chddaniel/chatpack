@@ -88,6 +88,9 @@ importers:
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/node@25.9.5)
 
   packages/adapter-drizzle:
     dependencies:
