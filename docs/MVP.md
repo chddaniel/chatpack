@@ -1,6 +1,8 @@
 # Chatpack — v0 MVP Plan
 
-> Status: planning. No implementation yet.
+> Status: **shipped.** v0 MVP + real-time plugins are published on npm
+> (`@chatpack/core@0.2.0`). This doc is the original plan; see §4 for what
+> landed after v0.
 > Scope principle: **v0 is backend-only, 1:1-only, and as minimal as possible.** When in doubt, cut it.
 
 ## 1. What v0 is
@@ -57,16 +59,19 @@ WhatsApp-style extras feel related to 1:1 because consumer apps bundle them. Cha
 
 **Escape hatch (not a feature):** `metadata` on messages so a developer _can_ store something like `{ attachmentUrl: "..." }` they uploaded outside Chatpack. We do not upload or host files.
 
-## 4. Deferred to the next release (v0.next)
+## 4. Shipped after v0 (core `0.2.0`) and still deferred
 
-Explicitly **not** in v0:
+**Shipped in `0.2.0` (opt-in, live on npm now):**
+
+- ✅ **Typing indicators** — `typing()` in `@chatpack/core/plugins` (ADR 0008)
+- ✅ **Presence** — `presence()` in `@chatpack/core/plugins` (ADR 0008)
+- ✅ **Live delivery/read receipt pings** — `receipts()` in `@chatpack/core/plugins`; ephemeral ticks only, durable last-read stays in core (ADR 0008)
+- ✅ **Generic ephemeral-event primitive** on the transport — `EphemeralEvent` (ADR 0008)
+
+**Still deferred to a later release:**
 
 - **Group conversations** (N members, roles, invites)
-- ✅ **Typing indicators** — **shipped** as `typing()` in `@chatpack/core/plugins` (ADR 0008)
-- ✅ **Presence** — **shipped** as `presence()` in `@chatpack/core/plugins` (ADR 0008)
-- ✅ **Live delivery/read receipt pings** — **shipped** as `receipts()` in `@chatpack/core/plugins`; ephemeral ticks only, durable last-read stays in core (ADR 0008)
 - **React client + hooks** (`@chatpack/react`)
-- ✅ **Generic ephemeral-event primitive** on the transport — **shipped** (`EphemeralEvent`, ADR 0008)
 
 > **Packaging note (ADR 0008):** the original sketch named these
 > `@chatpack/plugin-typing` etc. as separate npm packages. They shipped instead

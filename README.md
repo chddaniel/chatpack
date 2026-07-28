@@ -15,10 +15,13 @@ real-time delivery — without rebuilding it from scratch.
 
 ---
 
-> **Status: `0.1.0` — the v0 MVP is complete.** All five milestones (core
-> engine, HTTP handler, real-time SSE, Postgres adapter, launch polish) are
-> shipped and on npm. The API is young — expect minor breaking changes before
-> `1.0`. Follow along or [contribute](./CONTRIBUTING.md).
+> **Status: `0.2.0` — v0 MVP + real-time plugins, live on npm.** The v0 MVP
+> (core engine, HTTP handler, real-time SSE, Postgres adapter) plus the opt-in
+> real-time plugins — **`typing()`, `presence()`, and `receipts()`, all shipping
+> today inside `@chatpack/core` under the `@chatpack/core/plugins` subpath** (see
+> [Real-time plugins](#real-time-plugins-typing-presence-read-ticks)) — are
+> published and installable now. The API is young — expect minor breaking
+> changes before `1.0`. Follow along or [contribute](./CONTRIBUTING.md).
 
 ## Why
 
