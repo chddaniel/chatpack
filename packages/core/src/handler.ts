@@ -20,6 +20,9 @@
  * | DELETE | `/messages/:id`                   | soft-delete my message       |
  * | GET    | `/stream`                         | SSE: live events for me      |
  *
+ * Plugins (`chatpack({ plugins: [...] })`) may add routes of their own; they
+ * are consulted after core routes miss, before the 404.
+ *
  * Errors are JSON: `{ "error": { "code": "...", "message": "..." } }` with
  * the status mapped from {@link ChatpackErrorCode}.
  *
@@ -29,7 +32,8 @@
 import type { ChatpackApi } from "./chatpack";
 import type { AuthHook } from "./config";
 import { ChatpackError, type ChatpackErrorCode } from "./errors";
-import type { ChatEvent, Transport } from "./transport";
+import type { PluginRuntime } from "./plugin";
+import { isEphemeralEvent, type TransportEvent, type Transport } from "./transport";
 
 /** Options for {@link createHandler} / `chat.handler()`. */
 export interface HandlerOptions {
@@ -132,10 +136,25 @@ function parseLimit(params: URLSearchParams): number | undefined {
 }
 
 /**
- * Format one SSE frame. The event id is `conversationId:seq` so a reconnecting
- * client's `Last-Event-ID` tells the server exactly where to gap-fill from.
+ * Format one SSE frame.
+ *
+ * Durable message events carry an `id:` of `conversationId:seq` so a
+ * reconnecting client's `Last-Event-ID` tells the server exactly where to
+ * gap-fill from. Ephemeral events carry **no** `id:` line — `EventSource`
+ * never adopts them as `Last-Event-ID`, so typing/presence/receipt signals
+ * can't disturb message gap-fill (`docs/decisions/0008`).
  */
-function sseFrame(event: ChatEvent): string {
+function sseFrame(event: TransportEvent): string {
+  if (isEphemeralEvent(event)) {
+    return `event: ${event.type}\ndata: ${JSON.stringify({
+      type: event.type,
+      ephemeral: true,
+      ...(event.conversationId !== undefined ? { conversationId: event.conversationId } : {}),
+      senderId: event.senderId,
+      payload: event.payload,
+      at: event.at,
+    })}\n\n`;
+  }
   const id = `${event.conversationId}:${event.message.seq}`;
   return `id: ${id}\nevent: ${event.type}\ndata: ${JSON.stringify({
     type: event.type,
@@ -165,6 +184,7 @@ export function createHandler(
   auth: AuthHook | undefined,
   options: HandlerOptions = {},
   transport?: Transport,
+  plugins?: PluginRuntime,
 ): ChatpackHandler {
   if (!auth) {
     throw new Error(
@@ -221,7 +241,15 @@ export function createHandler(
           // Participation re-checked server-side on every publish (MVP §9).
           if (!event.recipientIds.includes(userId)) return;
           enqueue(sseFrame(event));
+          // Only durable events count as "delivered" — ephemeral events must
+          // never trigger further ephemeral events (no feedback loops).
+          if (!closed && plugins?.hasPlugins && !isEphemeralEvent(event)) {
+            plugins.notifyEventDelivered(userId, event);
+          }
         });
+
+        // The stream is live: let plugins (e.g. presence) know.
+        plugins?.notifyStreamOpen(userId);
 
         // 2. Replay anything missed since the client's last seen event.
         if (lastEventId) {
@@ -260,6 +288,7 @@ export function createHandler(
         closed = true;
         unsubscribe?.();
         if (heartbeat !== undefined) clearInterval(heartbeat);
+        plugins?.notifyStreamClose(userId);
       },
     });
 
@@ -407,6 +436,18 @@ export function createHandler(
       if (method === "DELETE" && segments.length === 2 && segments[0] === "messages") {
         const message = await api.deleteMessage({ userId, messageId: segments[1]! });
         return json(200, { message });
+      }
+
+      // No core route matched — offer the request to plugins before the 404.
+      if (plugins?.hasPlugins) {
+        const pluginResponse = await plugins.handleRequest({
+          request,
+          url,
+          method,
+          segments,
+          userId,
+        });
+        if (pluginResponse !== null) return pluginResponse;
       }
 
       return errorResponse(404, "NOT_FOUND", `No route for ${method} ${url.pathname}.`);

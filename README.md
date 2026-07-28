@@ -338,23 +338,88 @@ non-empty string, make sure your `auth`/validation layer prevents real users
 from registering ids in your synthetic namespace (e.g. reserve the `ai:`
 prefix).
 
+## Real-time plugins: typing, presence, read ticks
+
+The "feels alive" features are **opt-in plugins** that ship inside
+`@chatpack/core` — no extra install:
+
+```ts
+import { chatpack } from "@chatpack/core";
+import { typing, presence, receipts } from "@chatpack/core/plugins";
+
+export const chat = chatpack({
+  storage: memoryAdapter(),
+  auth: async (req) => getSessionUser(req),
+  plugins: [typing(), presence(), receipts()],
+});
+```
+
+They publish **ephemeral events** on the same `/stream` connection you already
+have: fire-and-forget signals that are never stored and never replayed on
+reconnect (miss a typing ping and it's gone — that's correct; durable state
+like `lastReadMessageId` stays in core). Listen exactly like message events:
+
+```ts
+events.addEventListener("typing.started", (e) => {
+  const { senderId, conversationId } = JSON.parse((e as MessageEvent).data);
+  // show "… is typing" — and hide it if no new ping arrives within ~5s
+});
+events.addEventListener("presence.online", (e) => {
+  /* light up the dot */
+});
+events.addEventListener("receipt.read", (e) => {
+  const { payload } = JSON.parse((e as MessageEvent).data);
+  // mark everything up to payload.messageId as ✓✓
+});
+```
+
+What each plugin adds:
+
+| Plugin       | Routes                           | Events published                      |
+| ------------ | -------------------------------- | ------------------------------------- |
+| `typing()`   | `POST /conversations/:id/typing` | `typing.started`, `typing.stopped`    |
+| `presence()` | `GET /presence?userIds=a,b`      | `presence.online`, `presence.offline` |
+| `receipts()` | — (hooks into send + mark-read)  | `receipt.delivered`, `receipt.read`   |
+
+Notes that keep the design honest:
+
+- **Typing** is stateless: while the user types, `POST …/typing` at most once
+  every few seconds; the other side clears the indicator if no ping arrives
+  within ~5s. Send `{ "isTyping": false }` to clear it eagerly.
+- **Presence needs no heartbeat endpoint** — the SSE connection _is_ the
+  heartbeat. Multi-tab safe; a short grace period (default 5s,
+  `presence({ offlineDelayMs })`) stops the online dot from blinking during
+  `EventSource` auto-reconnects. Snapshots via `GET /presence` only reveal
+  users the caller shares a conversation with.
+- **Receipts** are instant ✓/✓✓ pings while both sides are online:
+  `receipt.delivered` fires to the sender the moment the recipient's stream
+  receives the message; `receipt.read` fires when the other side calls
+  mark-read. Ticks are at-least-once — dedupe by `payload.messageId`. The
+  durable truth is still `lastReadMessageId`.
+- Like the default transport, plugin state is **in-memory and single-node**
+  (MVP §5). Multi-node fan-out is a future transport, not an API change.
+
+Want to write your own plugin? The seam is public — see `ChatpackPlugin` in
+[`@chatpack/core`](./packages/core) and
+[ADR 0008](./docs/decisions/0008-ephemeral-events-in-core-plugins.md).
+
 ## What's in v0
 
-| Feature                                 | Status       |
-| --------------------------------------- | ------------ |
-| 1:1 conversations (find-or-create)      | ✅ Done (M1) |
-| Text messages: send, list, edit, delete | ✅ Done (M1) |
-| Participant-only permissions + hooks    | ✅ Done (M1) |
-| Durable read-state (`last_read`)        | ✅ Done (M1) |
-| In-memory storage adapter               | ✅ Done (M1) |
-| HTTP handler (Next.js App Router)       | ✅ Done (M2) |
-| Real-time delivery (SSE)                | ✅ Done (M3) |
-| Drizzle/Postgres adapter                | ✅ Done (M4) |
-| Launch polish + npm release             | ✅ Done (M5) |
+| Feature                                 | Status            |
+| --------------------------------------- | ----------------- |
+| 1:1 conversations (find-or-create)      | ✅ Done (M1)      |
+| Text messages: send, list, edit, delete | ✅ Done (M1)      |
+| Participant-only permissions + hooks    | ✅ Done (M1)      |
+| Durable read-state (`last_read`)        | ✅ Done (M1)      |
+| In-memory storage adapter               | ✅ Done (M1)      |
+| HTTP handler (Next.js App Router)       | ✅ Done (M2)      |
+| Real-time delivery (SSE)                | ✅ Done (M3)      |
+| Drizzle/Postgres adapter                | ✅ Done (M4)      |
+| Launch polish + npm release             | ✅ Done (M5)      |
+| Typing / presence / read-tick plugins   | ✅ Done (v0.next) |
 
-Deliberately **not** in v0: groups, typing indicators, presence, file uploads,
-push notifications, React UI. See [docs/MVP.md](./docs/MVP.md) for the full
-scope and reasoning.
+Deliberately **not** in scope yet: groups, file uploads, push notifications,
+React UI. See [docs/MVP.md](./docs/MVP.md) for the full scope and reasoning.
 
 ## Packages
 

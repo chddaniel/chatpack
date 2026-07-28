@@ -13,6 +13,7 @@
  *   7. edit/delete — PATCH/DELETE /messages/:id
  *   8. read state  — POST /conversations/:id/read
  *   9. realtime    — GET  /stream via EventSource
+ *  10. plugins     — typing, presence, ✓/✓✓ ticks (ephemeral events)
  */
 
 const BASE = "/api/chat";
@@ -25,6 +26,11 @@ let messages = []; //       messages of `current`, oldest -> newest
 let olderCursor = null; //  nextCursor for scroll-back, or null when exhausted
 const unread = new Set(); // conversation ids with unseen messages
 let stream = null; //       EventSource
+// Plugin state — all ephemeral, so all of it lives client-side:
+const presenceByUser = new Map(); // userId -> { online, lastSeenAt }
+const deliveredSeq = new Map(); //  conversationId -> highest seq confirmed ✓✓
+let typingHideTimer = null; //      clears "is typing…" when pings stop
+let lastTypingSentAt = 0; //        throttle for our own typing POSTs
 
 const $ = (id) => document.getElementById(id);
 
@@ -91,8 +97,13 @@ function renderSidebar() {
   for (const conversation of conversations) {
     const li = document.createElement("li");
     li.classList.toggle("active", current?.id === conversation.id);
+    const other = otherUser(conversation);
+    const presence = document.createElement("span");
+    presence.className = "presence-dot" + (presenceByUser.get(other)?.online ? " online" : "");
+    li.appendChild(presence);
     const name = document.createElement("span");
-    name.textContent = otherUser(conversation);
+    name.className = "name";
+    name.textContent = other;
     li.appendChild(name);
     if (unread.has(conversation.id)) {
       const dot = document.createElement("span");
@@ -134,14 +145,17 @@ async function openConversation(conversationId) {
   messages = page.messages.slice().reverse();
   olderCursor = page.nextCursor;
   unread.delete(conversationId);
+  hideTyping();
 
   $("empty-state").classList.add("hidden");
   $("thread").classList.remove("hidden");
-  $("thread-header").textContent = otherUser(current);
+  $("thread-name").textContent = otherUser(current);
+  renderThreadStatus();
   renderSidebar();
   renderMessages();
   scrollToBottom();
   markRead();
+  refreshPresence();
 }
 
 $("load-older").addEventListener("click", async () => {
@@ -165,6 +179,12 @@ $("composer").addEventListener("submit", async (e) => {
   const body = $("composer-input").value.trim();
   if (!body || !current) return;
   $("composer-input").value = "";
+  // Clear our typing indicator on the other side eagerly.
+  lastTypingSentAt = 0;
+  api(`/conversations/${current.id}/typing`, {
+    method: "POST",
+    body: { isTyping: false },
+  }).catch(() => {});
   await api(`/conversations/${current.id}/messages`, { method: "POST", body: { body } });
 });
 
@@ -187,7 +207,8 @@ async function deleteMessage(message) {
 // markRead persists "I've read up to message X" server-side. The other side's
 // read-state is on their Participant entry (`lastReadMessageId`), which we get
 // whenever we (re)fetch the conversation — that's what the "Seen" label uses.
-// (v0 has no live read-receipt event; this refreshes on open.)
+// (The receipts() plugin also pushes a live `receipt.read` ping — see §10 —
+// so the label updates instantly while both sides are online.)
 
 async function markRead() {
   const last = messages[messages.length - 1];
@@ -221,6 +242,7 @@ function startStream() {
   stream.addEventListener("message.created", (e) => {
     const { message } = JSON.parse(e.data);
     if (current && message.conversationId === current.id) {
+      if (message.senderId !== me.id) hideTyping(); // they sent — not typing anymore
       if (!messages.some((m) => m.id === message.id)) {
         messages.push(message);
         renderMessages();
@@ -245,6 +267,41 @@ function startStream() {
   stream.addEventListener("message.updated", applyUpdate);
   stream.addEventListener("message.deleted", applyUpdate);
 
+  // Ephemeral plugin events (§10). Unlike message events they carry no SSE id
+  // and are never replayed on reconnect — miss one and it's simply gone.
+  stream.addEventListener("typing.started", (e) => {
+    const { conversationId, senderId } = JSON.parse(e.data);
+    if (current && conversationId === current.id) showTyping(senderId);
+  });
+  stream.addEventListener("typing.stopped", (e) => {
+    const { conversationId } = JSON.parse(e.data);
+    if (current && conversationId === current.id) hideTyping();
+  });
+
+  const applyPresence = (e) => {
+    const { senderId, payload } = JSON.parse(e.data);
+    presenceByUser.set(senderId, { online: payload.online, lastSeenAt: payload.lastSeenAt });
+    renderSidebar();
+    renderThreadStatus();
+  };
+  stream.addEventListener("presence.online", applyPresence);
+  stream.addEventListener("presence.offline", applyPresence);
+
+  stream.addEventListener("receipt.delivered", (e) => {
+    const { conversationId, payload } = JSON.parse(e.data);
+    // Ticks are at-least-once; keeping the max seq makes duplicates harmless.
+    deliveredSeq.set(conversationId, Math.max(deliveredSeq.get(conversationId) ?? 0, payload.seq));
+    if (current && conversationId === current.id) renderMessages();
+  });
+
+  stream.addEventListener("receipt.read", (e) => {
+    const { conversationId, senderId, payload } = JSON.parse(e.data);
+    if (!current || conversationId !== current.id) return;
+    const participant = current.participants.find((p) => p.userId === senderId);
+    if (participant) participant.lastReadMessageId = payload.messageId;
+    renderMessages(); // moves the "Seen" label instantly
+  });
+
   stream.onerror = () => {
     // CLOSED = fatal (e.g. session expired -> 401): EventSource will NOT
     // retry. Anything else is a dropped connection and retries automatically.
@@ -258,10 +315,66 @@ async function bumpConversation(conversationId) {
     // first message of a conversation someone else started with me
     const { conversation } = await api(`/conversations/${conversationId}`);
     conversations.unshift(conversation);
+    refreshPresence(); // a brand-new partner — fetch their presence too
   } else {
     conversations.unshift(conversations.splice(index, 1)[0]);
   }
   renderSidebar();
+}
+
+// --- 10. real-time plugins: typing, presence, ✓/✓✓ ticks -----------------------
+// Enabled server-side with `plugins: [typing(), presence(), receipts()]`.
+// Everything here is ephemeral — never stored, never replayed — so the durable
+// truth (message history, lastReadMessageId) is always what's in storage.
+
+// Typing: while the user types, ping at most every 2.5s. The other side clears
+// the indicator if no ping arrives within 5s (see showTyping), so a client
+// that vanishes mid-keystroke can't leave a stuck "is typing…".
+$("composer-input").addEventListener("input", () => {
+  if (!current || $("composer-input").value === "") return;
+  const now = Date.now();
+  if (now - lastTypingSentAt < 2500) return;
+  lastTypingSentAt = now;
+  api(`/conversations/${current.id}/typing`, {
+    method: "POST",
+    body: { isTyping: true },
+  }).catch(() => {});
+});
+
+function showTyping(senderId) {
+  $("typing").textContent = `${senderId} is typing…`;
+  $("typing").classList.remove("hidden");
+  clearTimeout(typingHideTimer);
+  typingHideTimer = setTimeout(hideTyping, 5000);
+}
+
+function hideTyping() {
+  $("typing").classList.add("hidden");
+  clearTimeout(typingHideTimer);
+}
+
+// Presence: live transitions arrive on the stream (presence.online/offline);
+// this fetches the initial snapshot for everyone in the sidebar.
+async function refreshPresence() {
+  const ids = [...new Set(conversations.map(otherUser))].filter((id) => id !== me.id);
+  if (ids.length === 0) return;
+  const { presence } = await api(`/presence?userIds=${encodeURIComponent(ids.join(","))}`);
+  for (const [id, info] of Object.entries(presence)) presenceByUser.set(id, info);
+  renderSidebar();
+  renderThreadStatus();
+}
+
+function renderThreadStatus() {
+  if (!current) return;
+  const info = presenceByUser.get(otherUser(current));
+  const el = $("thread-status");
+  el.classList.toggle("online", Boolean(info?.online));
+  el.textContent = info?.online
+    ? "online"
+    : info?.lastSeenAt
+      ? "last seen " +
+        new Date(info.lastSeenAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+      : "";
 }
 
 // --- rendering ---------------------------------------------------------------
@@ -287,6 +400,15 @@ function renderMessages() {
     meta.textContent =
       new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) +
       (message.editedAt && !message.deletedAt ? " · edited" : "");
+    // ✓ = sent (stored); ✓✓ = the other side's live stream received it
+    // (`receipt.delivered`). "Seen" below stays the durable read marker.
+    if (message.senderId === me.id && !message.deletedAt) {
+      const ticks = document.createElement("span");
+      const delivered = (deliveredSeq.get(message.conversationId) ?? 0) >= message.seq;
+      ticks.className = "ticks" + (delivered ? " delivered" : "");
+      ticks.textContent = delivered ? "✓✓" : "✓";
+      meta.appendChild(ticks);
+    }
     el.appendChild(meta);
 
     if (message.senderId === me.id && !message.deletedAt) {
@@ -326,6 +448,7 @@ async function enterApp() {
   $("me-label").textContent = me.id;
   await loadConversations();
   startStream();
+  refreshPresence();
 }
 
 (async () => {

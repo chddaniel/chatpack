@@ -5,6 +5,7 @@
  */
 
 import type { Conversation } from "./types";
+import type { ChatpackPlugin } from "./plugin";
 import type { StorageAdapter } from "./storage";
 import type { Transport } from "./transport";
 
@@ -71,6 +72,13 @@ export interface ChatpackOptions {
    * plugged in later without any other API change.
    */
   transport?: Transport;
+  /**
+   * Opt-in plugins (`docs/decisions/0008`) — e.g. `typing()`, `presence()`,
+   * `receipts()` from `@chatpack/core/plugins`. Default: none. Plugins add
+   * ephemeral real-time behavior (extra routes, live signals) and never touch
+   * storage.
+   */
+  plugins?: ChatpackPlugin[];
   /**
    * Anonymous aggregate telemetry (MVP §12). Default `true`; set `false` or
    * `CHATPACK_TELEMETRY=0` to disable.

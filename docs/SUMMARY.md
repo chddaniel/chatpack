@@ -53,7 +53,7 @@ In a year, the ambition is exactly what was described on the Loom:
 
 That year-one product is real. The important discipline is **not** trying to ship the year-one product in the first week. We draw the line the same way BetterAuth did: ship a foundation people love, then grow the surface carefully.
 
-**Where we draw the line early:** anything that is polish, media hosting, or multi-product complexity (groups, rooms, typing, presence, live ticks, file uploads, push notifications, AI-specific features) waits until the core is solid. Details: `docs/MVP.md` §§4–5.
+**Where we draw the line early:** anything that is polish, media hosting, or multi-product complexity (groups, rooms, file uploads, push notifications, AI-specific features) waits until the core is solid. Typing, presence, and live ticks have since shipped as optional add-ons on top of the finished core — exactly in the order this plan called for. Details: `docs/MVP.md` §§4–5.
 
 ## What ships when — answering “3 days vs 7 vs 14”
 
@@ -91,15 +91,18 @@ Estimated effort for the first public release is still **~3 focused days (roughl
 
 ### In ~7 days — next slice on top of v0
 
-**What’s added to the package** (still not “Telegram + Discord,” but clearly more product-complete):
+**Status: the real-time portion of this slice has shipped.** Typing
+indicators, presence, and live ticks are live as optional add-ons — a
+developer turns them on with one line, or leaves them off entirely
+(configurable, exactly like the Loom vision). React hooks are the next item.
 
-| Added around day 7                           | What it means in plain terms                                  |
-| -------------------------------------------- | ------------------------------------------------------------- |
-| Typing indicators                            | “Alice is typing…”                                            |
-| Presence                                     | Online / last-seen style signals                              |
-| Live delivery / read ticks                   | Instant ✓ / ✓✓ style feedback while both people are online    |
-| First official UI helpers (e.g. React hooks) | Faster to wire a frontend without building everything by hand |
-| Stronger docs + example app polish           | Easier onboarding for outside developers                      |
+| Added around day 7                           | What it means in plain terms                                  | Status                                                         |
+| -------------------------------------------- | ------------------------------------------------------------- | -------------------------------------------------------------- |
+| Typing indicators                            | “Alice is typing…”                                            | ✅ Shipped                                                     |
+| Presence                                     | Online / last-seen style signals                              | ✅ Shipped                                                     |
+| Live delivery / read ticks                   | Instant ✓ / ✓✓ style feedback while both people are online    | ✅ Shipped                                                     |
+| First official UI helpers (e.g. React hooks) | Faster to wire a frontend without building everything by hand | Next up                                                        |
+| Stronger docs + example app polish           | Easier onboarding for outside developers                      | Ongoing (demo messenger now shows typing, presence, and ticks) |
 
 **Still out at day 7:** groups, Discord-like rooms, attachments as a first-class feature, push notifications, AI framework features.
 
@@ -128,8 +131,8 @@ Estimated effort for the first public release is still **~3 focused days (roughl
 
 | Horizon      | Package focus                                                                | Rough effort                               |
 | ------------ | ---------------------------------------------------------------------------- | ------------------------------------------ |
-| **~3 days**  | Solid 1:1 foundation (text, live, permissions, read status, easy integrate)  | ~24–30 hours — first public release        |
-| **~7 days**  | 1:1 + typing, presence, live ticks, UI helpers                               | ~additional week of focused work           |
+| **~3 days**  | Solid 1:1 foundation (text, live, permissions, read status, easy integrate)  | ✅ Shipped — first public release          |
+| **~7 days**  | 1:1 + typing, presence, live ticks (✅ shipped), UI helpers (next)           | ~additional week of focused work           |
 | **~14 days** | Groups + early rooms + first attachments + clearer “configure what you want” | ~two weeks cumulative                      |
 | **~1 year**  | Telegram-like + Discord-like breadth, rich configurable UX                   | Continuous product growth on a stable core |
 

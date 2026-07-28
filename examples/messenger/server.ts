@@ -20,6 +20,7 @@ import { readFile } from "node:fs/promises";
 import { extname, join, normalize } from "node:path";
 
 import { chatpack } from "@chatpack/core";
+import { typing, presence, receipts } from "@chatpack/core/plugins";
 import { memoryAdapter } from "@chatpack/adapter-memory";
 
 const SESSION_COOKIE = "demo_user";
@@ -28,9 +29,12 @@ const USERNAME_RE = /^[a-zA-Z0-9_-]{1,32}$/;
 
 // ---------------------------------------------------------------------------
 // 1. The chat server — this is the entire Chatpack setup.
+//    The plugins line is everything needed for typing indicators, online
+//    presence, and live ✓/✓✓ ticks — all opt-in, all ephemeral (never stored).
 // ---------------------------------------------------------------------------
 const chat = chatpack({
   storage: memoryAdapter(),
+  plugins: [typing(), presence(), receipts()],
   auth: (request) => {
     const cookie = request.headers.get("cookie") ?? "";
     const raw = cookie.match(new RegExp(`(?:^|;\\s*)${SESSION_COOKIE}=([^;]+)`))?.[1];

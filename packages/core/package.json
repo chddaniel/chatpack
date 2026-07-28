@@ -24,9 +24,31 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
-      "types": "./dist/index.d.ts",
-      "import": "./dist/index.js",
-      "require": "./dist/index.cjs"
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "require": {
+        "types": "./dist/index.d.cts",
+        "default": "./dist/index.cjs"
+      }
+    },
+    "./plugins": {
+      "import": {
+        "types": "./dist/plugins/index.d.ts",
+        "default": "./dist/plugins/index.js"
+      },
+      "require": {
+        "types": "./dist/plugins/index.d.cts",
+        "default": "./dist/plugins/index.cjs"
+      }
+    }
+  },
+  "typesVersions": {
+    "*": {
+      "plugins": [
+        "./dist/plugins/index.d.ts"
+      ]
     }
   },
   "files": [

@@ -8,6 +8,7 @@
 import type { ChatpackOptions, ChatpackUser, PermissionContext } from "./config";
 import { ChatpackError } from "./errors";
 import { createHandler, type ChatpackHandler, type HandlerOptions } from "./handler";
+import { createPluginRuntime } from "./plugin";
 import type { StorageAdapter } from "./storage";
 import { inProcessTransport, type ChatEvent, type Transport } from "./transport";
 import { TelemetryCounters, resolveTelemetryEnabled, startTelemetryFlusher } from "./telemetry";
@@ -280,6 +281,10 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
     });
   }
 
+  // Assigned right below `api` — the two reference each other, but plugin
+  // hooks only run inside api calls, which can't happen before chatpack()
+  // returns.
+
   const api: ChatpackApi = {
     async getOrCreateConversation(input) {
       requireNonEmptyId(input.userId, "userId");
@@ -434,6 +439,15 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
         userId: input.userId,
         messageId: message.id,
       });
+
+      // Durable-first, same as messages: the read-state exists before any
+      // plugin (e.g. receipts) tells anyone about it.
+      pluginRuntime.notifyMarkRead({
+        userId: input.userId,
+        conversationId: conversation.id,
+        messageId: message.id,
+        recipientIds: conversation.participants.map((p) => p.userId),
+      });
     },
 
     async listMessagesAfter(input) {
@@ -455,10 +469,12 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
     },
   };
 
+  const pluginRuntime = createPluginRuntime(options.plugins ?? [], api, transport);
+
   return {
     api,
     handler: (handlerOptions?: HandlerOptions) =>
-      createHandler(api, options.auth, handlerOptions, transport),
+      createHandler(api, options.auth, handlerOptions, transport, pluginRuntime),
     transport,
     telemetry,
     options,

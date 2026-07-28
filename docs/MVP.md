@@ -62,11 +62,19 @@ WhatsApp-style extras feel related to 1:1 because consumer apps bundle them. Cha
 Explicitly **not** in v0:
 
 - **Group conversations** (N members, roles, invites)
-- **Typing indicators** (`@chatpack/plugin-typing`)
-- **Presence** (`@chatpack/plugin-presence`)
-- **Live delivery/read receipt pings** (`@chatpack/plugin-receipts`) — ephemeral ticks only; durable last-read stays in core
+- ✅ **Typing indicators** — **shipped** as `typing()` in `@chatpack/core/plugins` (ADR 0008)
+- ✅ **Presence** — **shipped** as `presence()` in `@chatpack/core/plugins` (ADR 0008)
+- ✅ **Live delivery/read receipt pings** — **shipped** as `receipts()` in `@chatpack/core/plugins`; ephemeral ticks only, durable last-read stays in core (ADR 0008)
 - **React client + hooks** (`@chatpack/react`)
-- **Generic ephemeral-event primitive** on the transport (exists to serve the plugins above; deferred with them)
+- ✅ **Generic ephemeral-event primitive** on the transport — **shipped** (`EphemeralEvent`, ADR 0008)
+
+> **Packaging note (ADR 0008):** the original sketch named these
+> `@chatpack/plugin-typing` etc. as separate npm packages. They shipped instead
+> as opt-in plugins _inside_ `@chatpack/core` (subpath export
+> `@chatpack/core/plugins`) — they are ephemeral-only and feather-light, so
+> separate packages were pure overhead. Separate packages are reserved for
+> plugins with heavy deps, a different runtime (`@chatpack/react`), or
+> third-party authors.
 
 ## 5. Explicit non-goals (say no loudly)
 

@@ -47,11 +47,15 @@
       <main class="pane">
         <div id="empty-state" class="empty-state">Select or start a conversation</div>
         <div id="thread" class="thread hidden">
-          <header id="thread-header" class="thread-header"></header>
+          <header class="thread-header">
+            <span id="thread-name"></span>
+            <span id="thread-status" class="status"></span>
+          </header>
           <div id="messages" class="messages">
             <button id="load-older" class="load-older hidden">Load older messages</button>
             <div id="message-list"></div>
           </div>
+          <div id="typing" class="typing hidden"></div>
           <form id="composer" class="composer">
             <input id="composer-input" placeholder="Type a message…" autocomplete="off" required />
             <button type="submit">Send</button>

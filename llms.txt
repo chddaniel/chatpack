@@ -302,6 +302,20 @@ label for your UI — core never behaves differently based on it. Token
 streaming is your concern; Chatpack stores whole messages (send the final
 text, or edit a placeholder message as chunks arrive).
 
+## Real-time plugins (typing, presence, read ticks) — no adapter work
+
+`@chatpack/core/plugins` ships opt-in `typing()`, `presence()`, `receipts()`
+(pass via `chatpack({ plugins: [...] })`). They publish **ephemeral events**
+on the SSE stream — never stored, never replayed on reconnect — so **custom
+storage adapters need zero changes** to support them. Events:
+`typing.started/.stopped`, `presence.online/.offline`,
+`receipt.delivered/.read`; extra routes: `POST /conversations/:id/typing`,
+`GET /presence?userIds=a,b`. Ephemeral SSE frames carry no `id:` field, so
+`Last-Event-ID` gap-fill still only replays durable messages. If you
+implement a custom `Transport`, note `publish`/`subscribe` carry
+`TransportEvent = ChatEvent | EphemeralEvent` since core 0.2.0 (discriminate
+with `isEphemeralEvent`). Rationale: `docs/decisions/0008`.
+
 ## Deployment notes
 
 - The default transport is in-process: SSE only works on a single long-lived

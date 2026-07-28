@@ -176,6 +176,38 @@ input:focus {
   flex: none;
 }
 
+.conversations li .name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Presence (plugin) */
+.presence-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border);
+  flex: none;
+  margin-right: 8px;
+}
+
+.presence-dot.online {
+  background: #3ddc84;
+}
+
+.status {
+  font-size: 0.78rem;
+  font-weight: 400;
+  color: var(--muted);
+  margin-left: 10px;
+}
+
+.status.online {
+  color: #3ddc84;
+}
+
 /* Thread */
 .pane {
   display: flex;
@@ -279,6 +311,23 @@ input:focus {
   font-size: 0.72rem;
   color: var(--muted);
   margin-bottom: 8px;
+}
+
+/* Ticks (receipts plugin): ✓ sent, ✓✓ delivered live */
+.msg .ticks {
+  letter-spacing: -2px;
+}
+
+.msg .ticks.delivered {
+  color: #7fd4ff;
+}
+
+/* Typing indicator (typing plugin) */
+.typing {
+  padding: 0 20px 6px;
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-style: italic;
 }
 
 /* Composer */

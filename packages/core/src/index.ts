@@ -60,10 +60,25 @@ export { createHandler, type ChatpackHandler, type HandlerOptions } from "./hand
 // Transport (M3) — live event pub/sub
 export {
   inProcessTransport,
+  isEphemeralEvent,
   type Transport,
   type ChatEvent,
+  type EphemeralEvent,
+  type TransportEvent,
   type TransportListener,
 } from "./transport";
+
+// Plugin seam (docs/decisions/0008) — first-party plugins live in
+// `@chatpack/core/plugins`; these types are for plugin authors.
+export type {
+  ChatpackPlugin,
+  PluginContext,
+  PluginRequestContext,
+  PluginStreamContext,
+  PluginMarkReadContext,
+  PluginEventDeliveredContext,
+  PublishEphemeralInput,
+} from "./plugin";
 
 // Errors
 export { ChatpackError, type ChatpackErrorCode } from "./errors";

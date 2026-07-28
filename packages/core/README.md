@@ -169,6 +169,14 @@ so don't reuse HTTP-response types for `chat.api.*` calls or vice versa:
 | DELETE | `/messages/:id`               | —                                      | `{ message }` (soft-deleted)              |
 | GET    | `/stream`                     | SSE; auto `Last-Event-ID` on reconnect | `text/event-stream`                       |
 
+Opt-in plugins from `@chatpack/core/plugins` add routes of their own
+(consulted after core routes miss, before the 404):
+
+| Method | Path                        | Plugin       | Request body / query     | Response                                         |
+| ------ | --------------------------- | ------------ | ------------------------ | ------------------------------------------------ |
+| POST   | `/conversations/:id/typing` | `typing()`   | `{ isTyping?: boolean }` | `{ ok: true }`                                   |
+| GET    | `/presence`                 | `presence()` | `?userIds=a,b` (max 50)  | `{ presence: { [id]: { online, lastSeenAt } } }` |
+
 - **Message ordering:** both list endpoints return **newest first**
   (keyset-paginated by `cursor`). Reverse the page for a chronological
   top-to-bottom render.
@@ -286,6 +294,44 @@ end up in server logs and browser history.
 was missed from storage before resuming live delivery. Delivery is
 at-least-once — dedupe by `message.id`. Details in
 [ADR 0006](../../docs/decisions/0006-sse-gap-fill.md).
+
+### Real-time plugins (ephemeral events)
+
+Opt-in plugins add live signals on the **same** `/stream` connection:
+
+```ts
+import { typing, presence, receipts } from "@chatpack/core/plugins";
+
+export const chat = chatpack({
+  storage,
+  auth,
+  plugins: [typing(), presence(), receipts()],
+});
+```
+
+| Event                                  | Published by | To whom                                                                   |
+| -------------------------------------- | ------------ | ------------------------------------------------------------------------- |
+| `typing.started` / `typing.stopped`    | `typing()`   | the other participant (never the typist)                                  |
+| `presence.online` / `presence.offline` | `presence()` | the user's conversation partners                                          |
+| `receipt.delivered`                    | `receipts()` | the message sender, when the recipient's live stream receives the message |
+| `receipt.read`                         | `receipts()` | the other participant, on mark-read                                       |
+
+These are **ephemeral**: never stored, never replayed on reconnect, and their
+SSE frames carry no `id:` field — so they can't disturb `Last-Event-ID`
+gap-fill. The `data` payload is
+`{ type, ephemeral: true, conversationId?, senderId, payload, at }`.
+Client conventions: throttle typing POSTs to one every few seconds and expire
+the indicator after ~5s of silence; dedupe receipt ticks by
+`payload.messageId`; treat `lastReadMessageId` (durable, in core) as the
+source of truth for read-state. Presence keeps in-memory, single-node state —
+the SSE connection itself is the heartbeat, with an offline grace period
+(`presence({ offlineDelayMs })`, default 5000) to absorb reconnect flaps.
+Design rationale:
+[ADR 0008](../../docs/decisions/0008-ephemeral-events-in-core-plugins.md).
+
+You can write your own plugin — implement the exported `ChatpackPlugin`
+interface (extra routes via `handleRequest`, live signals via
+`publishEphemeral`, hooks for stream open/close, mark-read, and delivery).
 
 > **⚠️ Deployment reality check:** the default transport is **in-process** and
 > `memoryAdapter` is **per-process** — both assume one long-lived server
