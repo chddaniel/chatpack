@@ -1,6 +1,6 @@
 {
   "name": "@chatpack/core",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Open-source chat infrastructure for developers — the Chatpack core engine",
   "license": "MIT",
   "homepage": "https://github.com/chddaniel/chatpack#readme",
@@ -53,7 +53,8 @@
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "llms.txt"
   ],
   "scripts": {
     "build": "tsup",
@@ -61,7 +62,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src"
+    "lint": "eslint src",
+    "prepack": "node -e \"require('fs').copyFileSync('../../llms.txt','llms.txt')\""
   },
   "devDependencies": {
     "@types/node": "^26.1.1",

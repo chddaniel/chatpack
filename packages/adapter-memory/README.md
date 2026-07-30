@@ -5,8 +5,10 @@ Zero setup, backed by JavaScript Maps — perfect for demos, examples, and fast
 deterministic tests.
 
 > **Data is lost when the process exits.** Use a database adapter in
-> production (Drizzle/Postgres adapter coming in v0 — see the
-> [roadmap](https://github.com/chddaniel/chatpack#whats-in-v0)).
+> production —
+> [`@chatpack/adapter-drizzle`](https://github.com/chddaniel/chatpack/tree/main/packages/adapter-drizzle)
+> (Postgres) is published and ready. On serverless/edge platforms each isolate
+> has its own memory, so this adapter effectively stores nothing there.
 
 This package is also the **reference implementation** of the `StorageAdapter`
 contract: writing your own adapter? Start by reading

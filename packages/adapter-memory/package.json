@@ -1,6 +1,6 @@
 {
   "name": "@chatpack/adapter-memory",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "In-memory storage adapter for Chatpack — zero-setup demos and fast, deterministic tests",
   "license": "MIT",
   "homepage": "https://github.com/chddaniel/chatpack#readme",
@@ -30,7 +30,8 @@
   },
   "files": [
     "dist",
-    "README.md"
+    "README.md",
+    "llms.txt"
   ],
   "scripts": {
     "build": "tsup",
@@ -38,7 +39,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
-    "lint": "eslint src"
+    "lint": "eslint src",
+    "prepack": "node -e \"require('fs').copyFileSync('../../llms.txt','llms.txt')\""
   },
   "dependencies": {
     "@chatpack/core": "workspace:^"

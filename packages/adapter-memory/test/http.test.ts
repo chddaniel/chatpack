@@ -108,6 +108,41 @@ describe("auth enforcement", () => {
     const chat = chatpack({ storage: memoryAdapter(), telemetry: false });
     expect(() => chat.handler()).toThrowError(/auth/);
   });
+
+  // The 401 body is self-diagnosing: it names the failure so integrators
+  // (and AI builders reading only the error) can fix it without a debugger.
+  it("401 explains a malformed auth-hook return value", async () => {
+    const chat = chatpack({
+      storage: memoryAdapter(),
+      telemetry: false,
+      // wrong shape on purpose: { userId } instead of { id }
+      auth: () => ({ userId: "alice" }) as unknown as { id: string },
+    });
+    const res = await chat.handler().GET(new Request(`${BASE}/conversations`));
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as { error: { code: string; message: string } };
+    expect(body.error.code).toBe("UNAUTHENTICATED");
+    expect(body.error.message).toMatch(/must return `\{ id: string \}`/);
+  });
+
+  it("401 without any cookie mentions the preview-iframe cookie recipe", async () => {
+    const handler = createHttpChat();
+    const res = await get(handler, "/conversations");
+    const body = (await res.json()) as { error: { message: string } };
+    expect(body.error.message).toMatch(/no `cookie` header/);
+    expect(body.error.message).toMatch(/SameSite=None; Secure/);
+  });
+
+  it("401 with an unrecognized cookie points at cookie parsing", async () => {
+    const handler = createHttpChat();
+    const res = await handler.GET(
+      new Request(`${BASE}/conversations`, { headers: { cookie: "other_app=1" } }),
+    );
+    expect(res.status).toBe(401);
+    const body = (await res.json()) as { error: { message: string } };
+    expect(body.error.message).toMatch(/had a `cookie` header/);
+    expect(body.error.message).toMatch(/cookie name matches/);
+  });
 });
 
 describe("permissions over HTTP", () => {

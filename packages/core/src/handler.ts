@@ -163,6 +163,38 @@ function sseFrame(event: TransportEvent): string {
   })}\n\n`;
 }
 
+/**
+ * Build the 401 body. The message is deliberately diagnostic: for AI-generated
+ * integrations this response is often the only signal anyone looks at, so it
+ * names the exact failure (bad hook return shape vs. no credentials on the
+ * request) and the most common environmental cause: browsers drop
+ * `SameSite=Lax` cookies inside any cross-site iframe, which is how AI app
+ * builders (Lovable, v0, Bolt, Shipper, ...) embed their preview panes.
+ */
+function unauthenticatedResponse(request: Request, user: unknown): Response {
+  let hint: string;
+  if (user !== null && user !== undefined) {
+    hint =
+      `The auth hook returned ${typeof user === "object" ? "an object without a valid `id`" : `a ${typeof user}`}, ` +
+      "but it must return `{ id: string }` (non-empty) or `null`. " +
+      "A bare string or `{ userId }` is treated as unauthenticated.";
+  } else if (!request.headers.get("cookie")) {
+    hint =
+      "The auth hook returned null and the request carried no `cookie` header. " +
+      "If you expected cookie auth: the cookie was never sent. Browsers drop `SameSite=Lax` " +
+      "cookies inside cross-site iframes (e.g. AI-builder preview panes) — set the " +
+      "session cookie with `SameSite=None; Secure` (add `Partitioned` for Chrome). " +
+      "If you expected header auth: `EventSource` cannot send custom headers — use a cookie for /stream.";
+  } else {
+    hint =
+      "The auth hook returned null even though the request had a `cookie` header. " +
+      'Check that the hook parses the raw `request.headers.get("cookie")` string ' +
+      "(there is no `request.cookies` on a Web-standard Request) and that the cookie " +
+      "name matches exactly.";
+  }
+  return errorResponse(401, "UNAUTHENTICATED", `No authenticated user for this request. ${hint}`);
+}
+
 /** Parse a `Last-Event-ID` / `lastEventId` value of the form `convId:seq`. */
 function parseLastEventId(raw: string | null): { conversationId: string; seq: number } | null {
   if (!raw) return null;
@@ -317,7 +349,7 @@ export function createHandler(
     // Authenticate — the only auth touchpoint (MVP §2).
     const user = await resolveUser(request);
     if (!user || typeof user.id !== "string" || user.id === "") {
-      return errorResponse(401, "UNAUTHENTICATED", "No authenticated user for this request.");
+      return unauthenticatedResponse(request, user);
     }
     const userId = user.id;
     const method = request.method.toUpperCase();

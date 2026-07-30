@@ -1,5 +1,27 @@
 # @chatpack/core
 
+## 0.2.1
+
+### Patch Changes
+
+- AI-builder first-shot integration pass:
+
+  - **Self-diagnosing 401** — the `UNAUTHENTICATED` body now names the exact
+    failure: malformed auth-hook return shape (bare string / `{ userId }`),
+    request with no `cookie` header (with the preview-iframe
+    `SameSite=None; Secure; Partitioned` fix inline), or an unparsed/mismatched
+    cookie name.
+  - **llms.txt ships in every npm tarball** and was rewritten integration-first:
+    hard rules (one handler, catch-all mount, real `chat.api.*` method list,
+    server-generated conversation ids, single HMR-safe instance), 60-second
+    wiring, per-framework mount recipes (Next.js, TanStack Start, Bun/Deno/
+    Workers, Hono/Elysia, Express/Node), the iframe-proof demo-auth recipe, a
+    deployment decision table, and curl verification steps. The adapter-author
+    guide is preserved as Part 2.
+  - **Docs**: iframe cookie recipe + TanStack Start mount + single-instance HMR
+    guard in the core README; `@chatpack/next` surfaced in the root quickstart;
+    stale "Drizzle adapter coming in v0" note fixed in adapter-memory.
+
 ## 0.2.0
 
 ### Minor Changes

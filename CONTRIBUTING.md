@@ -83,8 +83,9 @@ the official data model as `migrationSql` (plain idempotent Postgres DDL — no
 Drizzle required to execute it) and `chatpackSchema` (Drizzle table objects).
 The complete adapter-author guide — database-agnostic invariants, the
 reference schema, a skeleton, pitfalls, and a verification checklist — lives
-in [`llms.txt`](./llms.txt) at the repo root (written to be equally usable by
-humans and AI coding agents).
+in Part 2 of [`llms.txt`](./llms.txt) at the repo root (written to be equally
+usable by humans and AI coding agents; Part 1 is the integration guide, and
+the whole file ships inside each published npm package).
 
 Rules of thumb:
 

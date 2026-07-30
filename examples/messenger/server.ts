@@ -82,6 +82,10 @@ async function handleAuth(req: IncomingMessage, res: ServerResponse, pathname: s
       200,
       { id: username },
       {
+        // SameSite=Lax is right for a top-level local demo. If your app is
+        // shown inside a cross-site iframe (AI-builder previews: Lovable, v0,
+        // Bolt), browsers drop Lax cookies — use this instead:
+        //   `${SESSION_COOKIE}=...; Path=/; HttpOnly; Secure; SameSite=None; Partitioned`
         "set-cookie": `${SESSION_COOKIE}=${encodeURIComponent(username)}; Path=/; HttpOnly; SameSite=Lax`,
       },
     );

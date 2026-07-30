@@ -1,13 +1,351 @@
-# Chatpack — writing a custom storage adapter (agent guide)
+# Chatpack — single-fetch guide for AI builders & coding agents
 
 > Chatpack (npm: `@chatpack/core`) is an open-source TypeScript chat backend:
 > 1:1 conversations, messages, permissions, read-state, and real-time SSE.
-> This file is the single-fetch guide for building a **custom storage adapter**
-> on platforms where the official adapters don't fit (Supabase/PostgREST
-> clients, Convex, Firebase, proprietary AI-builder clouds, ...).
+> **Part 1 is the integration guide** — read it before generating any code
+> that uses Chatpack. Part 2 covers writing a custom storage adapter (only
+> needed when the official adapters don't fit).
 >
-> Humans: the quickstart lives in the README; this file trades prose for
-> completeness.
+> Humans: the prose quickstart lives in the README; this file trades prose
+> for completeness.
+
+Packages (all on npm):
+
+| Package                    | What it is                                             |
+| -------------------------- | ------------------------------------------------------ |
+| `@chatpack/core`           | The engine: API, HTTP handler, SSE, plugins            |
+| `@chatpack/adapter-memory` | In-memory storage — demos/tests, single process only   |
+| `@chatpack/adapter-drizzle`| Postgres storage via Drizzle — production              |
+| `@chatpack/next`           | Next.js App Router mount helper (`toNextRouteHandlers`)|
+
+# Part 1 — Integrating Chatpack
+
+## Hard rules (violating any of these is the #1 cause of broken integrations)
+
+1. **Mount the ONE handler on a catch-all route. Never hand-write your own
+   message/stream/API routes.** `chat.handler()` already serves every route
+   in the table below — conversations, messages, read-state, typing,
+   presence, AND the SSE stream — under one `basePath` (default `/api/chat`).
+   Writing your own `/api/messages` or `/api/chat/stream` route breaks the
+   wiring (split state, missed events) and is never needed.
+2. **These are the only server-side methods** on `chat.api`:
+   `getOrCreateConversation`, `listConversations`, `getConversation`,
+   `sendMessage`, `listMessages`, `editMessage`, `deleteMessage`, `markRead`,
+   `listMessagesAfter`. There is **no** `chat.api.getOrCreateDirectConversation`
+   (that name is a low-level *storage adapter* method — never call the
+   adapter directly). Do not invent methods; if a name is not in this list,
+   it does not exist.
+3. **Conversation ids are server-generated opaque strings** (e.g. `conv_1`).
+   Get one from `POST /conversations` / `chat.api.getOrCreateConversation`
+   with `{ otherUserId }`. **Never construct ids like `"alice-bob"`** —
+   the sorted pair key is internal to Chatpack.
+4. **Create exactly ONE `chatpack()` instance** in one module and import it
+   everywhere. Under dev-server HMR (Vite, Next dev, TanStack Start), guard
+   it with `globalThis` so re-evaluation doesn't wipe in-memory state:
+   ```ts
+   import { chatpack, type ChatpackInstance } from "@chatpack/core";
+   const g = globalThis as typeof globalThis & { __chatpack__?: ChatpackInstance };
+   export const chat = (g.__chatpack__ ??= chatpack({ storage, auth }));
+   ```
+5. **The `auth` hook must return `{ id: string }` (non-empty) or `null`.**
+   A bare string or `{ userId: ... }` is treated as unauthenticated → 401 on
+   every request. The hook receives the raw WHATWG `Request` — there is no
+   `request.cookies`; parse `request.headers.get("cookie")` yourself.
+6. **Browser auth must be cookie-based**, because the live stream is
+   `EventSource`, which cannot send custom headers. Whenever the app renders
+   inside a cross-site iframe — every AI-builder preview pane (Lovable, v0,
+   Bolt, Shipper, Replit, ...) works this way — the cookie must be
+   `SameSite=None; Secure` — see the demo-auth recipe below. This is the
+   #1 cause of 401s in embedded previews.
+
+## 60-second wiring (framework-agnostic core)
+
+```ts
+// chat.server.ts — the whole backend setup
+import { chatpack, type ChatpackInstance } from "@chatpack/core";
+import { typing, presence, receipts } from "@chatpack/core/plugins";
+import { memoryAdapter } from "@chatpack/adapter-memory";
+
+function demoAuth(request: Request) {
+  // Demo auth: one cookie naming the user. Swap for your auth library later.
+  const cookie = request.headers.get("cookie") ?? "";
+  const id = /(?:^|;\s*)demo_user=([^;]+)/.exec(cookie)?.[1] ?? null;
+  return id ? { id: decodeURIComponent(id) } : null;
+}
+
+const g = globalThis as typeof globalThis & { __chatpack__?: ChatpackInstance };
+export const chat = (g.__chatpack__ ??= chatpack({
+  storage: memoryAdapter(),                    // demo; Postgres for production
+  plugins: [typing(), presence(), receipts()], // opt-in real-time trio
+  auth: demoAuth,
+}));
+export const chatHandler = chat.handler();     // serves everything at /api/chat
+```
+
+Then mount `chatHandler` on a catch-all route (per-framework recipes below),
+and the frontend talks plain HTTP + one `EventSource`:
+
+```ts
+// 1. sign in (demo): set the cookie — iframe-proof attributes, see below
+document.cookie = "demo_user=alice; Path=/; Max-Age=86400; SameSite=None; Secure; Partitioned";
+
+// 2. open a conversation — the SERVER generates/returns the id
+const { conversation } = await fetch("/api/chat/conversations", {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ otherUserId: "bob" }),
+}).then((r) => r.json());
+
+// 3. send a message — the text field is `body`
+await fetch(`/api/chat/conversations/${conversation.id}/messages`, {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ body: "hey bob!" }),
+});
+
+// 4. live updates — ONE EventSource; reconnection + gap-fill are automatic
+const events = new EventSource("/api/chat/stream");
+events.addEventListener("message.created", (e) => {
+  const { message } = JSON.parse((e as MessageEvent).data);
+  // dedupe by message.id (delivery is at-least-once), then render
+});
+```
+
+## Demo auth that survives hosted previews and embedded iframes
+
+This applies to ANY environment that shows the app inside a **cross-site
+iframe**: AI-builder editors (Lovable's `*.lovable.app` pane inside
+lovable.dev, v0's `*.vusercontent.net` inside v0.app, Bolt, Shipper, Replit,
+and whatever ships next), site-builder embeds, and in-app browsers. Browsers
+refuse to store or send `SameSite=Lax` cookies there, so the classic demo
+cookie silently disappears and every request 401s — while the same app works
+when opened as a top-level tab. Set demo cookies like this:
+
+```ts
+function signInAs(userId: string) {
+  // SameSite=None + Secure  → allowed in cross-site iframes
+  // Partitioned             → survives Chrome's third-party-cookie phaseout
+  // localhost counts as a secure context, so this exact line works in dev too
+  document.cookie =
+    `demo_user=${encodeURIComponent(userId)}; Path=/; Max-Age=86400; SameSite=None; Secure; Partitioned`;
+}
+```
+
+Server-side login endpoints: the same attributes on the `Set-Cookie` header
+(plus `HttpOnly` for real sessions):
+`Set-Cookie: session=...; Path=/; HttpOnly; Secure; SameSite=None; Partitioned`.
+For production apps that never run inside an iframe, your auth library's
+defaults (usually `SameSite=Lax`) are correct and more CSRF-resistant.
+
+**Real auth (bearer tokens + SSE):** if REST calls send an `Authorization`
+header (Supabase/Clerk/Firebase JWTs), keep it — write the hook to accept
+either credential; the cookie is the fallback that makes `/stream` work:
+
+```ts
+auth: async (req) => {
+  const bearer = req.headers.get("authorization")?.replace(/^Bearer /, "");
+  if (bearer) { const u = await verifyJwt(bearer); return u ? { id: u.id } : null; }
+  const session = await getSessionFromCookie(req.headers.get("cookie"));
+  return session ? { id: session.userId } : null;
+},
+```
+
+Do not put tokens in the `/stream` query string (they leak into logs/history).
+
+## Mount recipes (catch-all route per framework)
+
+**Next.js App Router** (preferred: `@chatpack/next`):
+
+```ts
+// app/api/chat/[...chatpack]/route.ts
+import { toNextRouteHandlers } from "@chatpack/next";
+import { chat } from "@/lib/chat.server";
+export const { GET, POST, PATCH, DELETE } = toNextRouteHandlers(chat);
+// (equivalent without @chatpack/next: export const { GET, POST, PATCH, DELETE } = chat.handler();)
+```
+
+**TanStack Start** (Lovable's default stack):
+
+```ts
+// src/routes/api/chat.$.ts   ← the `$` catch-all segment is required
+import { createFileRoute } from "@tanstack/react-router";
+
+async function handle({ request }: { request: Request }) {
+  const { chatHandler } = await import("@/lib/chat.server");
+  return chatHandler.fetch(request);
+}
+
+export const Route = createFileRoute("/api/chat/$")({
+  server: { handlers: { GET: handle, POST: handle, PATCH: handle, DELETE: handle } },
+});
+```
+
+**Bun / Deno / Cloudflare Workers** (handler is already Web-standard):
+
+```ts
+Bun.serve({ fetch: chatHandler.fetch });
+```
+
+**Hono / Elysia**:
+
+```ts
+app.all("/api/chat/*", (c) => chatHandler.fetch(c.req.raw));          // Hono
+app.all("/api/chat/*", ({ request }) => chatHandler.fetch(request));  // Elysia
+```
+
+**Express / plain Node** (bridge Node req/res ↔ Web Request/Response —
+`req.originalUrl` matters under Express mounts; streaming the body is what
+makes SSE work):
+
+```ts
+app.use("/api/chat", async (req, res) => {
+  const url = `http://${req.headers.host}${req.originalUrl}`;
+  const chunks = [];
+  for await (const c of req) chunks.push(c);
+  const request = new Request(url, {
+    method: req.method,
+    headers: Object.entries(req.headers).flatMap(([k, v]) =>
+      v === undefined ? [] : Array.isArray(v) ? v.map((x) => [k, x]) : [[k, v]],
+    ),
+    body: chunks.length ? new Uint8Array(Buffer.concat(chunks)) : null,
+  });
+  const response = await chatHandler.fetch(request);
+  res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
+  if (response.body) {
+    const reader = response.body.getReader();
+    req.on("close", () => void reader.cancel().catch(() => {}));
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      res.write(value);
+    }
+  }
+  res.end();
+});
+```
+
+A complete plain-Node version lives in `examples/node-server` in the repo.
+
+## HTTP routes (all served by the one handler; relative to basePath `/api/chat`)
+
+| Method | Path                          | Request body / query                   | Response (200/201)                        |
+| ------ | ----------------------------- | -------------------------------------- | ----------------------------------------- |
+| POST   | `/conversations`              | `{ otherUserId, metadata? }`           | `{ conversation }`                        |
+| GET    | `/conversations`              | `?limit=&cursor=`                      | `{ conversations, nextCursor }`           |
+| GET    | `/conversations/:id`          | —                                      | `{ conversation }`                        |
+| POST   | `/conversations/:id/messages` | `{ body, role?, metadata? }`           | `{ message }` (201)                       |
+| GET    | `/conversations/:id/messages` | `?limit=&cursor=`                      | `{ messages, nextCursor }` — newest first |
+| POST   | `/conversations/:id/read`     | `{ messageId }`                        | `{ ok: true }`                            |
+| PATCH  | `/messages/:id`               | `{ body }`                             | `{ message }`                             |
+| DELETE | `/messages/:id`               | —                                      | `{ message }` (soft-deleted)              |
+| GET    | `/stream`                     | SSE; auto `Last-Event-ID` on reconnect | `text/event-stream`                       |
+
+Plugin routes (only when the plugin is passed to `chatpack({ plugins })`):
+
+| Method | Path                        | Plugin       | Request body / query     | Response                                         |
+| ------ | --------------------------- | ------------ | ------------------------ | ------------------------------------------------ |
+| POST   | `/conversations/:id/typing` | `typing()`   | `{ isTyping?: boolean }` | `{ ok: true }`                                   |
+| GET    | `/presence`                 | `presence()` | `?userIds=a,b` (max 50)  | `{ presence: { [id]: { online, lastSeenAt } } }` |
+
+Semantics that trip up generated clients:
+
+- Responses are **enveloped** (`{ conversation }`, `{ message }`,
+  `{ messages, nextCursor }`) — unwrap them. Server-side `chat.api.*` returns
+  the bare objects instead; don't share types between the two.
+- Message lists are **newest-first**; reverse for a chronological transcript.
+  Paginate with `nextCursor` → `?cursor=`.
+- The message text field is **`body`** (not `text`/`content`).
+- `role` is `"user" | "assistant" | "system"` (default `"user"`) — a stored
+  label; core never branches on it. Anything else is a 400.
+- `otherUserId` is **not validated to exist** (Chatpack never owns a users
+  table) — validate recipients in your app.
+- Timestamps are `Date` in server-side calls, ISO strings over HTTP.
+- Errors: `{ "error": { "code", "message" } }` — 401 `UNAUTHENTICATED`
+  (the message says *why*: bad hook return shape vs. missing cookie vs.
+  unparsed cookie), 400 `INVALID_INPUT`, 403 `FORBIDDEN_*`, 404 `*_NOT_FOUND`,
+  409 `MESSAGE_DELETED`, 500 `INTERNAL_ERROR` (opaque).
+- **Auth runs before routing** — an unauthenticated request to a wrong path
+  still 401s. Fix auth first; then a lingering 404 `NOT_FOUND` means your
+  mount path/basePath is wrong.
+
+## Real-time over one EventSource
+
+`GET /stream` pushes `message.created` / `message.updated` /
+`message.deleted` for the authenticated user's conversations (participation
+re-checked server-side per event). Reconnects gap-fill automatically from
+storage via `Last-Event-ID` — durable-first, no lost messages; delivery is
+at-least-once, so **dedupe by `message.id`**.
+
+Plugins add ephemeral events on the same stream (never stored, never
+replayed): `typing.started/.stopped`, `presence.online/.offline`,
+`receipt.delivered/.read`. Payload:
+`{ type, ephemeral: true, conversationId?, senderId, payload, at }`.
+Client conventions: throttle typing POSTs to ~1 per 3s and expire indicators
+after ~5s; dedupe ticks by `payload.messageId`; durable read-state truth is
+`participant.lastReadMessageId`, updated via `POST /conversations/:id/read`.
+
+```ts
+events.onerror = () => {
+  if (events.readyState === EventSource.CLOSED) {
+    // Fatal (e.g. 401): browser will NOT retry — re-auth, then recreate.
+  } // otherwise EventSource retries + gap-fills automatically
+};
+```
+
+## Where it runs (deployment decision table)
+
+| Environment                                                                                          | Storage                          | Real-time                                     |
+| ---------------------------------------------------------------------------------------------------- | -------------------------------- | --------------------------------------------- |
+| One long-lived process: `node`/`Bun.serve`, `next start`, Railway/Fly/Render, Replit Reserved VM, **AI-builder previews** (Lovable/v0 preview sandboxes behave like a dev server) | `memoryAdapter` (demo) or Drizzle | `/stream` SSE works                           |
+| Serverless / edge / multi-instance: Vercel & AWS Lambda, Cloudflare Workers, **published AI-builder apps**, Replit Autoscale | Drizzle (or custom adapter) — `memoryAdapter` is per-isolate and loses everything | Poll `GET /conversations/:id/messages`; don't rely on `/stream` across isolates until a distributed transport ships |
+
+The default transport and plugin state (typing/presence/receipts) are
+in-process, single-node. A demo on `memoryAdapter` + `/stream` is correct in
+a preview and wrong in a serverless deploy — say so in the app's README.
+
+## Verify the integration (before declaring success)
+
+```sh
+# 1. auth + server-generated conversation id (expect 200, id like "conv_1")
+curl -si -X POST localhost:3000/api/chat/conversations \
+  -H 'cookie: demo_user=alice' -H 'content-type: application/json' \
+  -d '{"otherUserId":"bob"}'
+
+# 2. send + list (expect 201, then 200 newest-first)
+curl -si -X POST localhost:3000/api/chat/conversations/conv_1/messages \
+  -H 'cookie: demo_user=alice' -H 'content-type: application/json' -d '{"body":"hi"}'
+curl -s 'localhost:3000/api/chat/conversations/conv_1/messages?limit=10' \
+  -H 'cookie: demo_user=bob'
+
+# 3. live stream (expect ": connected", then events as messages are sent)
+curl -sN localhost:3000/api/chat/stream -H 'cookie: demo_user=bob'
+```
+
+In the browser: after "sign in", `document.cookie` must actually contain the
+demo cookie, and the Network tab must show it on `/api/chat/*` requests —
+if it's missing there, revisit the cookie attributes (iframe rules above).
+A 401 response body names the exact failure; read it before changing code.
+
+## AI assistant pattern (user↔AI chat)
+
+Chatpack has no AI features — an assistant is just a participant with a
+synthetic user id:
+
+1. Reserve an id like `"ai:assistant"` (block the prefix in your own
+   auth/validation — `otherUserId` accepts any non-empty string).
+2. `chat.api.getOrCreateConversation({ userId, otherUserId: "ai:assistant" })`.
+3. Persist the user message with `chat.api.sendMessage` as usual.
+4. Your backend calls the LLM (your keys), then
+   `chat.api.sendMessage({ userId: "ai:assistant", conversationId, body: reply, role: "assistant" })`.
+
+Token streaming is your concern; Chatpack stores whole messages (send the
+final text, or edit a placeholder as chunks arrive).
+
+# Part 2 — Writing a custom storage adapter
+
+Only needed on platforms where the official adapters don't fit
+(Supabase/PostgREST clients, Convex, Firebase, proprietary AI-builder
+clouds, ...).
 
 ## Decide if you even need a custom adapter
 
@@ -284,47 +622,17 @@ if any fails, the bug is in the adapter.
 10. **Privilege check (hosted DBs).** With the browser/anon credentials, a
     direct read of `chatpack_messages` returns nothing/denied.
 
-## AI assistant pattern (user↔AI chat)
+## Real-time plugins and custom adapters
 
-Chatpack has no AI features — an assistant is just a participant with a
-synthetic user id. The pattern:
+`typing()`, `presence()`, `receipts()` publish **ephemeral events** on the
+SSE stream — never stored, never replayed — so custom storage adapters need
+**zero changes** to support them. If you implement a custom `Transport`,
+note `publish`/`subscribe` carry `TransportEvent = ChatEvent |
+EphemeralEvent` since core 0.2.0 (discriminate with `isEphemeralEvent`).
+Rationale: `docs/decisions/0008`.
 
-1. Pick a reserved id, e.g. `"ai:assistant"` (any string you'll never issue
-   to a real user; `otherUserId` is not validated, so reserve the prefix in
-   your own auth/validation layer).
-2. `getOrCreateConversation({ userId: user.id, otherUserId: "ai:assistant" })`.
-3. Persist the user's message with `sendMessage` as usual.
-4. Your backend calls the LLM (your keys, your model), then persists the
-   reply with `sendMessage({ userId: "ai:assistant", ..., role: "assistant" })`.
+---
 
-`role` (`"user" | "assistant" | "system"`, default `"user"`) is a stored
-label for your UI — core never behaves differently based on it. Token
-streaming is your concern; Chatpack stores whole messages (send the final
-text, or edit a placeholder message as chunks arrive).
-
-## Real-time plugins (typing, presence, read ticks) — no adapter work
-
-`@chatpack/core/plugins` ships opt-in `typing()`, `presence()`, `receipts()`
-(pass via `chatpack({ plugins: [...] })`). They publish **ephemeral events**
-on the SSE stream — never stored, never replayed on reconnect — so **custom
-storage adapters need zero changes** to support them. Events:
-`typing.started/.stopped`, `presence.online/.offline`,
-`receipt.delivered/.read`; extra routes: `POST /conversations/:id/typing`,
-`GET /presence?userIds=a,b`. Ephemeral SSE frames carry no `id:` field, so
-`Last-Event-ID` gap-fill still only replays durable messages. If you
-implement a custom `Transport`, note `publish`/`subscribe` carry
-`TransportEvent = ChatEvent | EphemeralEvent` since core 0.2.0 (discriminate
-with `isEphemeralEvent`). Rationale: `docs/decisions/0008`.
-
-## Deployment notes
-
-- The default transport is in-process: SSE only works on a single long-lived
-  server. On serverless/edge (Lambda, Vercel, Workers, most AI-builder
-  clouds), use a database adapter and **poll** `GET
-  /conversations/:id/messages` (or `listMessagesAfterSeq` via server code)
-  instead of `/stream`, until a distributed transport ships.
-- The `auth` hook must return `{ id: string, ... }` or `null`. Extra fields
-  are passed through to custom `permissions` hooks (`ctx.user`); core itself
-  only reads `id`.
-- Full HTTP route reference: `@chatpack/core` README. ADRs (design
-  rationale): `docs/decisions/` in the repo.
+Full HTTP semantics: `@chatpack/core` README. ADRs (design rationale):
+`docs/decisions/` in the repo. This file also ships inside every `@chatpack/*`
+npm package (`node_modules/@chatpack/core/llms.txt`).

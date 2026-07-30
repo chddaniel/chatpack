@@ -150,6 +150,37 @@ app.all("/api/chat/*", (c) => handler.fetch(c.req.raw)); // Hono
 app.all("/api/chat/*", ({ request }) => handler.fetch(request)); // Elysia
 ```
 
+**TanStack Start** — a `$` catch-all route file delegating to the handler:
+
+```ts
+// src/routes/api/chat.$.ts
+import { createFileRoute } from "@tanstack/react-router";
+import { chat } from "@/lib/chat.server";
+
+const handler = chat.handler();
+const handle = ({ request }: { request: Request }) => handler.fetch(request);
+
+export const Route = createFileRoute("/api/chat/$")({
+  server: { handlers: { GET: handle, POST: handle, PATCH: handle, DELETE: handle } },
+});
+```
+
+**Express / plain Node** need a small `req`/`res` ↔ `Request`/`Response`
+bridge (streaming the response body is what makes `/stream` work) — copy it
+from [`examples/node-server`](../../examples/node-server) or the Express
+variant in [`llms.txt`](../../llms.txt) (the same file ships inside this
+npm package as `llms.txt`).
+
+> **One instance, everywhere.** Create the `chatpack()` instance in a single
+> module and import it into the route file — never one instance per route.
+> Under dev-server HMR (Vite, `next dev`), guard it with `globalThis` so
+> module re-evaluation doesn't reset in-memory state:
+>
+> ```ts
+> const g = globalThis as typeof globalThis & { __chatpack__?: ChatpackInstance };
+> export const chat = (g.__chatpack__ ??= chatpack({ storage, auth }));
+> ```
+
 Routes (relative to `basePath`, default `/api/chat`). Response envelopes are
 keyed by resource — `{ conversation }`, `{ message }`, `{ conversations, nextCursor }`,
 `{ messages, nextCursor }`. **The envelope is HTTP-only and intentional**
@@ -259,6 +290,20 @@ events.onerror = () => {
 > (`EventSource` sends same-origin cookies by default; pass
 > `{ withCredentials: true }` for cross-origin). Header/bearer-token schemes
 > work for the REST routes but not for `/stream`.
+>
+> **Any cross-site iframe drops `SameSite=Lax` cookies** — and that's exactly
+> how AI-builder editors (Lovable, v0, Bolt, Shipper, ...) embed their preview
+> panes. The app 401s in the preview but works in a real tab — the cookie
+> never reaches the server. Demo cookies must be set with
+> `SameSite=None; Secure; Partitioned`:
+>
+> ```ts
+> document.cookie = "demo_user=alice; Path=/; Max-Age=86400; SameSite=None; Secure; Partitioned";
+> ```
+>
+> (`localhost` counts as a secure context, so `Secure` works in dev too. For
+> production apps that never run in an iframe, your auth library's
+> `SameSite=Lax` default is correct and more CSRF-resistant.)
 
 **Hybrid auth (bearer tokens + SSE).** If your app authenticates REST calls
 with an `Authorization` header (Supabase, Clerk, Firebase JWTs, ...), you

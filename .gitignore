@@ -7,6 +7,8 @@ dist/
 .next/
 next-env.d.ts
 *.tsbuildinfo
+# copied from the repo root by each package's prepack script
+packages/*/llms.txt
 
 # Test coverage
 coverage/

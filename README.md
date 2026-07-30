@@ -15,7 +15,7 @@ real-time delivery — without rebuilding it from scratch.
 
 ---
 
-> **Status: `0.2.0` — v0 MVP + real-time plugins, live on npm.** The v0 MVP
+> **Status: `0.2.x` — v0 MVP + real-time plugins, live on npm.** The v0 MVP
 > (core engine, HTTP handler, real-time SSE, Postgres adapter) plus the opt-in
 > real-time plugins — **`typing()`, `presence()`, and `receipts()`, all shipping
 > today inside `@chatpack/core` under the `@chatpack/core/plugins` subpath** (see
@@ -105,6 +105,27 @@ export const chat = chatpack({
 > **Prefer cookie-based sessions** over `Authorization` headers: the browser
 > sends cookies automatically on every request — including the SSE stream in
 > step 5, where custom headers are impossible.
+>
+> The hook receives a raw Web-standard `Request` — there is no
+> `request.cookies` helper. Parse the `cookie` header yourself:
+>
+> ```ts
+> // demo auth: a plain cookie naming the user (swap for your auth library)
+> auth: (request) => {
+>   const cookie = request.headers.get("cookie") ?? "";
+>   const id = /(?:^|;\s*)demo_user=([^;]+)/.exec(cookie)?.[1] ?? null;
+>   return id ? { id: decodeURIComponent(id) } : null;
+> },
+> ```
+>
+> **Setting the demo cookie in an embedded preview (Lovable, v0, Bolt, ...)?**
+> Those editors show your app inside a cross-site iframe, where browsers
+> silently drop `SameSite=Lax` cookies — the app 401s in the preview pane but
+> works in a real tab. Set demo cookies with iframe-proof attributes:
+>
+> ```ts
+> document.cookie = "demo_user=alice; Path=/; Max-Age=86400; SameSite=None; Secure; Partitioned";
+> ```
 
 For production, swap the storage line for Postgres —
 [`@chatpack/adapter-drizzle`](./packages/adapter-drizzle):
@@ -122,8 +143,14 @@ export const chat = chatpack({
 > **No direct Postgres connection string?** Platforms that only expose a
 > database client (Supabase's JS client, Convex, and most AI-builder clouds)
 > are supported through a custom `StorageAdapter`. The full guide — reference
-> schema, invariants, skeleton, and a verification checklist — is
-> [`llms.txt`](./llms.txt) (works for humans and AI coding agents alike).
+> schema, invariants, skeleton, and a verification checklist — is Part 2 of
+> [`llms.txt`](./llms.txt).
+>
+> **Building with an AI assistant or app builder?** [`llms.txt`](./llms.txt)
+> is the single-fetch integration guide (hard rules, wiring, per-framework
+> mount recipes, preview-iframe cookie recipe, verification steps). It also
+> ships inside every `@chatpack/*` npm package as `llms.txt` — point your
+> agent at `node_modules/@chatpack/core/llms.txt`.
 
 ### 3. Mount the API (Next.js App Router)
 
@@ -133,9 +160,23 @@ import { chat } from "@/lib/chat";
 export const { GET, POST, PATCH, DELETE } = chat.handler();
 ```
 
+Or, with the [`@chatpack/next`](./packages/next) helper (same result, reads
+better):
+
+```ts
+import { toNextRouteHandlers } from "@chatpack/next";
+import { chat } from "@/lib/chat";
+export const { GET, POST, PATCH, DELETE } = toNextRouteHandlers(chat);
+```
+
 > **The route file must be a catch-all** (`[...chatpack]` in Next.js) —
 > Chatpack serves many sub-paths under `basePath` (default `/api/chat`), so a
 > single `app/api/chat/route.ts` would 404 everything but the root.
+>
+> **Never hand-write your own message or stream routes.** The one handler
+> already serves every route — conversations, messages, read-state, plugins,
+> and the SSE stream. Custom `/api/messages`-style routes split state and
+> break live delivery.
 
 Your chat backend is now live at `/api/chat` — find-or-create conversations,
 send/list/edit/delete messages, read-state, and a **live SSE stream** at
@@ -155,7 +196,10 @@ app.all("/api/chat/*", (c) => handler.fetch(c.req.raw)); // Hono
 app.all("/api/chat/*", ({ request }) => handler.fetch(request)); // Elysia
 ```
 
-For plain Node, see [`examples/node-server`](./examples/node-server).
+TanStack Start (`src/routes/api/chat.$.ts` catch-all) and Express recipes
+live in [`@chatpack/core`'s README](./packages/core#rest-api) and
+[`llms.txt`](./llms.txt). For plain Node, see
+[`examples/node-server`](./examples/node-server).
 
 ### 4. Call it over HTTP
 
@@ -266,7 +310,9 @@ Two things to know before going live:
   cookie (sent automatically same-origin). Bearer-token headers work for the
   REST routes but not `/stream` — if your app uses them, write the `auth`
   hook to accept either (header first, cookie fallback); worked example in
-  [`@chatpack/core`'s README](./packages/core#real-time-sse).
+  [`@chatpack/core`'s README](./packages/core#real-time-sse). If the app runs
+  inside an embedded preview iframe (AI-builder editors), the cookie needs
+  `SameSite=None; Secure` — see the quickstart note in step 2.
 - **SSE + `memoryAdapter` need one long-lived process.** On serverless/edge
   (Workers, Lambda) each isolate has its own memory — use a
   [database adapter](./packages/adapter-drizzle) there and poll for new
