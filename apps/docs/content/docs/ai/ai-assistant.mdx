@@ -1,0 +1,84 @@
+---
+title: Chat with an AI Assistant
+description: An AI assistant is just another participant - synthetic user id, role labels, and your own LLM call.
+---
+
+Chatpack has no special AI features - and that's the point. To Chatpack, an AI
+assistant is **just another participant**: pick a synthetic user id (any
+string you'll never issue to a real user, e.g. `ai:assistant`) and have your
+backend send its replies. The same 1:1 permissions apply.
+
+## The pattern
+
+```ts
+const ASSISTANT_ID = "ai:assistant";
+
+// find-or-create the user's conversation with the assistant
+const conversation = await chat.api.getOrCreateConversation({
+  userId: user.id,
+  otherUserId: ASSISTANT_ID,
+});
+
+// the user's message arrives (via your route or the REST API)...
+await chat.api.sendMessage({
+  userId: user.id,
+  conversationId: conversation.id,
+  body: userText,
+});
+
+// ...your backend calls your LLM of choice with your own keys...
+const reply = await generateReply(userText); // Claude, GPT, Gemini, ...
+
+// ...and sends the answer as the assistant participant
+await chat.api.sendMessage({
+  userId: ASSISTANT_ID,
+  conversationId: conversation.id,
+  body: reply,
+  role: "assistant", // "user" | "assistant" | "system" - stored & returned as-is
+});
+```
+
+Chatpack stores, orders, and delivers the messages; the LLM call is yours -
+model, keys, prompts, streaming. If the user has the SSE stream open, the
+assistant's reply arrives as a live `message.created` event like any other
+message.
+
+## The `role` field
+
+`role` must be `"user" | "assistant" | "system"` (default `"user"`). It's a
+plain label for your UI - **core never behaves differently based on it**. Any
+other value is a `400 INVALID_INPUT`.
+
+Use it to render assistant bubbles differently, or to rebuild an
+LLM-conversation transcript from history:
+
+```ts
+const { messages } = await chat.api.listMessages({
+  userId: user.id,
+  conversationId: conversation.id,
+  limit: 50,
+});
+
+// newest-first from the API → reverse for the LLM
+const transcript = messages.reverse().map((m) => ({
+  role: m.role,
+  content: m.body,
+}));
+```
+
+## Reserve the synthetic namespace
+
+Since `otherUserId` accepts any non-empty string, make sure your
+auth/validation layer prevents real users from registering ids in your
+synthetic namespace (e.g. reserve the `ai:` prefix). Otherwise a user could
+sign up as `ai:assistant` and impersonate your bot.
+
+## Token streaming
+
+Chatpack stores whole messages. Two options while chunks arrive:
+
+- **Send the final text** once generation completes - simplest, and the SSE
+  event delivers it live.
+- **Edit a placeholder**: send an empty-ish message immediately, then
+  `chat.api.editMessage` as chunks accumulate - each edit fans out as a
+  `message.updated` event.

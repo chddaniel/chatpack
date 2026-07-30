@@ -1,0 +1,108 @@
+---
+title: Introduction
+description: What Chatpack is, why it exists, and how the pieces fit together.
+icon: BookOpen
+---
+
+Chatpack is **open-source chat infrastructure for developers**. Install a
+package, wire up your database and auth, and get a production-ready 1:1 chat
+backend - conversations, messages, permissions, read-state, and real-time
+delivery - without rebuilding it from scratch.
+
+<Callout type="info">
+  **Status: `0.2.x`** - the v0 MVP (core engine, HTTP handler, real-time SSE, Postgres adapter) plus
+  the real-time plugins (`typing()`, `presence()`, `receipts()`) are published and installable now.
+  The API is young - expect minor breaking changes before `1.0`.
+</Callout>
+
+## Why
+
+Every app that needs messaging ends up rebuilding the same things: conversations,
+messages, permissions, read receipts, real-time delivery, and countless edge cases.
+
+Chatpack removes that repetition - the same way BetterAuth did for authentication.
+You bring your **auth** and your **frontend**; Chatpack gives you a small,
+well-designed chat backend that just works.
+
+Real-time comes built in: your frontend opens **one `EventSource`** and gets
+live messages with automatic reconnection and missed-message backfill - no
+WebSocket server, no Socket.IO, no reconnect code to write.
+
+## How it fits together
+
+```text
+Your frontend  ──  fetch("/api/chat/…")  +  EventSource("/api/chat/stream")
+      │
+      ▼
+chat.handler()        one Web-standard handler (Request → Response)
+      │
+      ├── auth hook   your session → { id: userId }     (you own users)
+      ▼
+chat.api.*            domain logic, permissions         (also callable directly)
+      │
+      ▼
+StorageAdapter        memory · Drizzle/Postgres · your own
+      │
+      ▼
+Your database
+```
+
+One `chatpack()` instance gives you three things:
+
+- **`chat.handler()`** - a single Web-standard handler (`Request → Response`)
+  that serves every HTTP route, including the live SSE stream. Mount it on one
+  catch-all route in any framework.
+- **`chat.api.*`** - the same domain logic, callable directly from your server
+  code with explicit user ids.
+- **A storage seam** - persistence is an interface. Use the in-memory adapter
+  for demos, the Drizzle/Postgres adapter for production, or write your own.
+
+## Packages
+
+| Package                                                                                | What it is                                              |
+| -------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| [`@chatpack/core`](https://www.npmjs.com/package/@chatpack/core)                       | The engine: API, HTTP handler, SSE, plugins             |
+| [`@chatpack/adapter-memory`](https://www.npmjs.com/package/@chatpack/adapter-memory)   | In-memory storage - demos/tests, single process only    |
+| [`@chatpack/adapter-drizzle`](https://www.npmjs.com/package/@chatpack/adapter-drizzle) | Postgres storage via Drizzle - production               |
+| [`@chatpack/next`](https://www.npmjs.com/package/@chatpack/next)                       | Next.js App Router mount helper (`toNextRouteHandlers`) |
+
+## Design principles
+
+- **Developers bring their own auth** - Chatpack never owns a users table.
+- **Adapter-driven** - storage is an interface; Postgres, MySQL, or in-memory
+  are just adapters.
+- **Durable-first real-time** - a message is persisted before anyone is
+  notified about it.
+- **Small surface, no magic** - every feature must justify its existence.
+
+## Where to next
+
+<Cards>
+  <Card
+    title="Quickstart"
+    href="/docs/quickstart"
+    description="A working chat backend in five minutes."
+  />
+  <Card
+    title="Core concepts"
+    href="/docs/concepts/architecture"
+    description="The architecture and the two interfaces that carry the design."
+  />
+  <Card
+    title="Real-time"
+    href="/docs/realtime/sse"
+    description="Live messages over one EventSource, plus typing, presence, and read ticks."
+  />
+  <Card
+    title="REST API reference"
+    href="/docs/reference/rest-api"
+    description="Every route, request shape, and error code."
+  />
+</Cards>
+
+<Callout type="idea">
+  **Building with an AI assistant or app builder?** Chatpack ships a single-fetch integration guide
+  as [`llms.txt`](https://github.com/chddaniel/chatpack/blob/main/llms.txt) - inside every npm
+  package too (`node_modules/@chatpack/core/llms.txt`). See [AI builders & coding
+  agents](/docs/ai/ai-builders).
+</Callout>

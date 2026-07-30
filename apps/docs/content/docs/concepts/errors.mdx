@@ -1,0 +1,99 @@
+---
+title: Error Handling
+description: Stable machine-readable error codes, HTTP status mapping, and how to branch on them.
+---
+
+Every failure carries a stable, machine-readable code - as a thrown
+`ChatpackError` from `chat.api.*`, and as a JSON body over HTTP.
+
+## Over HTTP
+
+Errors are JSON with the shape:
+
+```json
+{ "error": { "code": "FORBIDDEN_READ", "message": "…" } }
+```
+
+Statuses are mapped from the code:
+
+| Status | Code(s)                                                    | When                                             |
+| ------ | ---------------------------------------------------------- | ------------------------------------------------ |
+| 401    | `UNAUTHENTICATED`                                          | `auth` returned `null` (or a non-`ChatpackUser`) |
+| 400    | `INVALID_INPUT`                                            | bad body/query params                            |
+| 403    | `FORBIDDEN_READ`, `FORBIDDEN_WRITE`, `NOT_MESSAGE_SENDER`  | not allowed                                      |
+| 404    | `CONVERSATION_NOT_FOUND`, `MESSAGE_NOT_FOUND`, `NOT_FOUND` | missing resource/route                           |
+| 409    | `MESSAGE_DELETED`                                          | editing a deleted message                        |
+| 500    | `INTERNAL_ERROR`                                           | unexpected server error (opaque)                 |
+
+<Callout type="info">
+  The `401` body's `message` says *why* auth failed - bad hook return shape vs. missing cookie vs.
+  unparsed cookie. Read it before changing code. And since **auth runs before routing**, an
+  unauthenticated request to a wrong path still 401s: fix auth first, then a lingering `404
+  NOT_FOUND` means your mount path or `basePath` is wrong.
+</Callout>
+
+## In server code
+
+`chat.api.*` methods **throw** `ChatpackError` - they never return `null` for
+missing resources:
+
+```ts
+import { ChatpackError } from "@chatpack/core";
+
+try {
+  const message = await chat.api.editMessage({ userId, messageId, body });
+} catch (err) {
+  if (!(err instanceof ChatpackError)) throw err;
+
+  switch (err.code) {
+    case "MESSAGE_NOT_FOUND":
+      // nothing to edit
+      break;
+    case "NOT_MESSAGE_SENDER":
+      // only the sender may edit
+      break;
+    case "MESSAGE_DELETED":
+      // can't edit a tombstone
+      break;
+    default:
+      throw err;
+  }
+}
+```
+
+## In the browser
+
+Branch on `error.code`, not on the message text (messages may change; codes
+are stable):
+
+```ts
+const res = await fetch(`/api/chat/conversations/${id}/messages`, {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ body: text }),
+});
+
+if (!res.ok) {
+  const { error } = await res.json();
+  if (error.code === "UNAUTHENTICATED") return redirectToLogin();
+  if (error.code === "FORBIDDEN_WRITE") return showReadOnlyNotice();
+  throw new Error(`${error.code}: ${error.message}`);
+}
+
+const { message } = await res.json();
+```
+
+## SSE errors
+
+A fatal error on the stream (e.g. a `401` from your auth hook) closes the
+`EventSource` permanently - the browser will **not** retry. Distinguish it
+from a dropped connection:
+
+```ts
+events.onerror = () => {
+  if (events.readyState === EventSource.CLOSED) {
+    // Fatal: re-authenticate, then create a new EventSource.
+  }
+  // Otherwise: dropped connection - EventSource retries automatically.
+};
+```

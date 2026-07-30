@@ -1,0 +1,97 @@
+---
+title: Permissions
+description: The default participants-only model and the canRead / canWrite hooks.
+---
+
+By default, **only the two participants** of a conversation can read or write
+it - enforced on every `chat.api.*` call and every HTTP route. You can loosen
+or tighten that with two hooks.
+
+## The hooks
+
+```ts
+import { chatpack } from "@chatpack/core";
+
+const chat = chatpack({
+  storage,
+  auth,
+  permissions: {
+    // May `user` read `conversation`? Default: participants only.
+    canRead: ({ user, conversation }) =>
+      conversation.participantIds.includes(user.id) || isSupportAgent(user.id),
+
+    // May `user` write to `conversation`? Default: participants only.
+    canWrite: ({ user, conversation }) =>
+      conversation.participantIds.includes(user.id) && !isBanned(user.id),
+  },
+});
+```
+
+Both hooks receive a `PermissionContext`:
+
+<TypeTable
+  type={{
+    user: {
+      description:
+        "The user attempting the action (id always present, plus any extra fields your auth hook returned).",
+      type: "ChatpackUser",
+    },
+    conversation: {
+      description:
+        "The conversation being read from / written to, with a participantIds convenience array.",
+      type: "Conversation & { participantIds: string[] }",
+    },
+  }}
+/>
+
+Hooks may be sync or async and must return a boolean. Returning `false` maps
+to a `403` - `FORBIDDEN_READ` or `FORBIDDEN_WRITE` - both over HTTP and as a
+thrown `ChatpackError` from `chat.api.*`.
+
+## What the hooks do and don't cover
+
+- **Sender-only edit/delete is separate.** Even with `canWrite` returning
+  `true`, only the original sender can edit or delete a message - a
+  non-sender gets `403 NOT_MESSAGE_SENDER`. This rule is not hook-overridable.
+- **Read permission gates live delivery too.** SSE events are only delivered
+  for conversations the connected user may read - participation is re-checked
+  server-side per event.
+- **Adapters never enforce permissions.** Core validates before calling
+  storage. If you write a custom adapter, don't re-check permissions there -
+  and on hosted databases, make sure browser/anon clients can't read the
+  `chatpack_*` tables directly (see
+  [Custom adapters](/docs/storage/custom-adapter)).
+
+## Common patterns
+
+**Support/admin read access** - let a support role read any conversation:
+
+```ts
+permissions: {
+  canRead: async ({ user, conversation }) =>
+    conversation.participantIds.includes(user.id) ||
+    (await hasRole(user.id, "support")),
+},
+```
+
+**Read-only archive** - block writes to conversations you've flagged:
+
+```ts
+permissions: {
+  canWrite: ({ user, conversation }) =>
+    conversation.participantIds.includes(user.id) &&
+    conversation.metadata.archived !== true,
+},
+```
+
+**Blocklists** - deny writing to someone who blocked the sender:
+
+```ts
+permissions: {
+  canWrite: async ({ user, conversation }) => {
+    if (!conversation.participantIds.includes(user.id)) return false;
+    const other = conversation.participantIds.find((id) => id !== user.id)!;
+    return !(await isBlocked({ by: other, target: user.id }));
+  },
+},
+```

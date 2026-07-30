@@ -31,3 +31,8 @@ test_project/
 
 #rules
 .cursor/
+
+# Local agent workflow (session status doc, Claude Code hooks/settings, agent instructions)
+.claude/
+/CLAUDE.md
+docs/STATUS.md

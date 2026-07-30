@@ -1,0 +1,184 @@
+---
+title: FAQ & Troubleshooting
+description: The questions and failure modes that come up most, with direct answers.
+---
+
+## Integration
+
+<Accordions type="single">
+
+<Accordion title="Every request returns 401 - why?">
+
+Three usual suspects, in order:
+
+1. **Your `auth` hook returns the wrong shape.** It must return
+   `{ id: string }` or `null` - a bare string or `{ userId: ... }` is treated
+   as unauthenticated. The 401 body's `message` names the exact failure.
+2. **The cookie never reaches the server.** Check the Network tab: is the
+   cookie on `/api/chat/*` requests? If your app renders inside a cross-site
+   iframe (every AI-builder preview pane), `SameSite=Lax` cookies are silently
+   dropped - set `SameSite=None; Secure; Partitioned`. See
+   [Authentication](/docs/concepts/authentication#demo-auth-that-survives-embedded-iframes).
+3. **You're parsing cookies with a helper that doesn't exist.** The hook
+   receives a raw `Request` - there's no `request.cookies`; parse
+   `request.headers.get("cookie")` yourself.
+
+</Accordion>
+
+<Accordion title="Everything 404s except one route - why?">
+
+Your route file isn't a **catch-all**. Chatpack serves many sub-paths under
+`basePath` - in Next.js the file must be
+`app/api/chat/[...chatpack]/route.ts`, in TanStack Start `api/chat.$.ts`, in
+Hono/Elysia `/api/chat/*`. Note auth runs before routing, so fix any 401
+first; a lingering `404 NOT_FOUND` then means the mount path or `basePath` is
+wrong.
+
+</Accordion>
+
+<Accordion title="Can I write my own /api/messages route that inserts into the messages table?">
+
+No - never hand-write message or stream routes, and never call the storage
+adapter directly. The one handler already serves every route; custom routes
+split state and break live delivery. From server code, use `chat.api.*`.
+
+</Accordion>
+
+<Accordion title="Why does my in-memory data disappear in dev?">
+
+Dev-server HMR (`next dev`, Vite) re-evaluates modules, creating a fresh
+`chatpack()` instance and a fresh memory adapter. Guard the instance with
+`globalThis`:
+
+```ts
+const g = globalThis as typeof globalThis & { __chatpack__?: ChatpackInstance };
+export const chat = (g.__chatpack__ ??= chatpack({ storage, auth }));
+```
+
+</Accordion>
+
+<Accordion title="Does Chatpack manage my users?">
+
+No. Chatpack never owns a users table - the `auth` hook (`Request → { id } |
+null`) is the only auth touchpoint, and user ids are opaque strings. That also
+means `otherUserId` is not validated to exist: validate recipients against
+your own users table.
+
+</Accordion>
+
+</Accordions>
+
+## Real-time
+
+<Accordions type="single">
+
+<Accordion title="Why SSE instead of WebSockets?">
+
+One `EventSource` gives you automatic reconnection, automatic `Last-Event-ID`
+resumption, cookie auth for free, and plain HTTP that passes every proxy - no
+socket server, no reconnect code. Chatpack replays missed messages from
+storage on reconnect (durable-first), which is the hard part WebSockets don't
+solve for you either.
+
+</Accordion>
+
+<Accordion title="The stream connects but my UI shows nothing - why?">
+
+Common causes:
+
+- Listening for `message` instead of the named event `message.created` - use
+  `addEventListener("message.created", ...)`.
+- Forgetting that the listener's parameter needs a cast in TypeScript:
+  `(e as MessageEvent).data`.
+- The stream authenticated as a different user than the sender's counterpart -
+  events are only delivered for conversations the connected user participates
+  in.
+
+</Accordion>
+
+<Accordion title="Does real-time work on Vercel / Lambda / Cloudflare Workers?">
+
+Not across isolates - the default transport is in-process. Use a database
+adapter and poll `GET /conversations/:id/messages` on serverless platforms; a
+distributed transport (Redis) is planned as a swap-in with no API change. See
+[Deployment](/docs/integrations/deployment).
+
+</Accordion>
+
+<Accordion title="Typing indicators / read ticks are flaky - is that a bug?">
+
+Mostly by design: ephemeral events are fire-and-forget - never stored, never
+replayed. Client conventions make them feel right: throttle typing POSTs to
+~1 per 3s and expire the indicator after ~5s of silence; dedupe receipt ticks
+by `payload.messageId`; treat `lastReadMessageId` as the durable truth.
+
+</Accordion>
+
+</Accordions>
+
+## Storage
+
+<Accordions type="single">
+
+<Accordion title="I only have a Supabase client, no connection string - what now?">
+
+Write a [custom adapter](/docs/storage/custom-adapter). Key points: run it
+server-side with the service-role key (never expose `chatpack_*` tables to
+anon clients), and wrap the atomic `seq` bump in a SQL function called via
+RPC - PostgREST can't express `UPDATE ... RETURNING` directly.
+
+</Accordion>
+
+<Accordion title="Which databases are supported?">
+
+Officially: any Postgres reachable by a Drizzle driver (node-postgres,
+postgres.js, PGlite, Neon, Vercel Postgres). Anything else - MySQL, SQLite,
+Convex, Firestore, DynamoDB - via the `StorageAdapter` interface; the
+[custom adapter guide](/docs/storage/custom-adapter) has the invariants,
+reference schema, and a verification checklist.
+
+</Accordion>
+
+<Accordion title="Are deleted messages really deleted?">
+
+They're soft-deleted: the row remains with `body: ""` and `deletedAt` set,
+keeping its `seq` so ordering and pagination stay stable. Clients render a
+tombstone. If you need hard deletion for compliance, run it directly against
+your database on your own schedule.
+
+</Accordion>
+
+</Accordions>
+
+## Project
+
+<Accordions type="single">
+
+<Accordion title="Is this production-ready?">
+
+The engine is tested (core against the memory adapter, the Postgres adapter
+against real Postgres via PGlite, concurrency invariants included), but the
+project is `0.x` - the API may take minor breaking changes before `1.0`. Pin
+versions and read changelogs when upgrading.
+
+</Accordion>
+
+<Accordion title="Group chats? File uploads? Push notifications? React components?">
+
+All deliberately out of scope for v0 - see [Roadmap](/docs/project/roadmap).
+The data model anticipates groups; attachments can point at files you host via
+`metadata`.
+
+</Accordion>
+
+<Accordion title="What data does telemetry send, exactly?">
+
+Aggregate counter deltas (`messagesSent`, `conversationsCreated`), the library
+version, and a random per-process id - at most twice a day. Never message
+bodies, user ids, conversation ids, or hostnames. Opt out with
+`telemetry: false` or `CHATPACK_TELEMETRY=0`. See
+[Telemetry](/docs/concepts/telemetry).
+
+</Accordion>
+
+</Accordions>

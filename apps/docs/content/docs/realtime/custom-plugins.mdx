@@ -1,0 +1,168 @@
+---
+title: Writing a Plugin
+description: The ChatpackPlugin seam - extra routes, live signals, and hooks into stream lifecycle, mark-read, and delivery.
+---
+
+Plugins extend Chatpack with real-time behavior - extra HTTP routes and
+reactions to core actions - **without touching storage**. The first-party trio
+(typing, presence, receipts) is built on this exact seam; it's deliberately
+minimal.
+
+## The interface
+
+```ts
+import type { ChatpackPlugin } from "@chatpack/core";
+
+export interface ChatpackPlugin {
+  /** Unique plugin name, used in logs. */
+  name: string;
+
+  /**
+   * Handle an HTTP request under basePath that no core route matched.
+   * Return a Response to answer it, or null to pass to the next plugin
+   * (and ultimately the 404).
+   */
+  handleRequest?(ctx: PluginRequestContext): Promise<Response | null> | Response | null;
+
+  /** A user's SSE stream connected. Fire-and-forget. */
+  onStreamOpen?(ctx: PluginStreamContext): void;
+
+  /** A user's SSE stream disconnected. Fire-and-forget. */
+  onStreamClose?(ctx: PluginStreamContext): void;
+
+  /** A user durably updated their last-read state. Fire-and-forget. */
+  onMarkRead?(ctx: PluginMarkReadContext): void;
+
+  /**
+   * A durable event was delivered to a connected user's live stream.
+   * Fires once per connected stream (two tabs → twice) - treat derived
+   * signals as at-least-once.
+   */
+  onEventDelivered?(ctx: PluginEventDeliveredContext): void;
+}
+```
+
+Every hook context extends `PluginContext`:
+
+<TypeTable
+  type={{
+    api: {
+      description: "The server-side core API - permissions enforced per call.",
+      type: "ChatpackApi",
+    },
+    publishEphemeral: {
+      description:
+        "Publish a fire-and-forget ephemeral event on the transport. Never stored, never replayed on reconnect.",
+      type: "(input: PublishEphemeralInput) => void",
+    },
+  }}
+/>
+
+## Rules of the seam
+
+- **Notification hooks are fire-and-forget** - a throwing plugin never breaks
+  the request that triggered it (core wraps every hook in a try/catch and
+  logs).
+- **`handleRequest` is a real route handler**: it runs after core routes miss
+  and before the 404, with auth already resolved (`ctx.userId`). Thrown
+  `ChatpackError`s map to normal JSON error responses. First plugin response
+  wins.
+- **Plugins own their event namespace** - name events like
+  `"myplugin.something"`.
+
+## Publishing ephemeral events
+
+```ts
+ctx.publishEphemeral({
+  type: "reaction.added", // namespaced event name
+  conversationId, // optional
+  senderId: ctx.userId, // the user the signal is about
+  recipientIds: [otherUserId], // who may receive it
+  payload: { messageId, emoji }, // event-specific data, default {}
+});
+```
+
+Recipients receive it as an SSE event named after `type`, with data:
+
+```json
+{
+  "type": "reaction.added",
+  "ephemeral": true,
+  "conversationId": "…",
+  "senderId": "…",
+  "payload": { "…": "…" },
+  "at": "…"
+}
+```
+
+## Example: a live reactions plugin
+
+Ephemeral emoji reactions - a "someone reacted" flash while both users are
+online (persisting reactions would be your app's job, via `metadata` or your
+own table):
+
+```ts
+import type { ChatpackPlugin } from "@chatpack/core";
+import { ChatpackError } from "@chatpack/core";
+
+export function reactions(): ChatpackPlugin {
+  return {
+    name: "reactions",
+
+    async handleRequest(ctx) {
+      // POST /conversations/:id/reactions
+      const [root, conversationId, leaf] = ctx.segments;
+      if (ctx.method !== "POST" || root !== "conversations" || leaf !== "reactions") {
+        return null; // not ours - pass through
+      }
+
+      const { messageId, emoji } = await ctx.request.json();
+      if (typeof emoji !== "string" || typeof messageId !== "string") {
+        throw new ChatpackError("INVALID_INPUT", "emoji and messageId are required");
+      }
+
+      // permission check for free: throws FORBIDDEN_READ / CONVERSATION_NOT_FOUND
+      const conversation = await ctx.api.getConversation({
+        userId: ctx.userId,
+        conversationId,
+      });
+
+      ctx.publishEphemeral({
+        type: "reaction.added",
+        conversationId,
+        senderId: ctx.userId,
+        recipientIds: conversation.participants.map((p) => p.userId),
+        payload: { messageId, emoji },
+      });
+
+      return Response.json({ ok: true });
+    },
+  };
+}
+```
+
+Register it like the built-ins:
+
+```ts
+const chat = chatpack({ storage, auth, plugins: [typing(), reactions()] });
+```
+
+## Lifecycle hooks in practice
+
+The built-in plugins show what each hook is for:
+
+- `presence()` uses `onStreamOpen` / `onStreamClose` - the SSE connection
+  itself is the heartbeat.
+- `receipts()` uses `onEventDelivered` (→ `receipt.delivered` to the sender)
+  and `onMarkRead` (→ `receipt.read` to the other participant).
+- `typing()` uses only `handleRequest` - completely stateless.
+
+Their source is compact and readable:
+[`packages/core/src/plugins/`](https://github.com/chddaniel/chatpack/tree/main/packages/core/src/plugins).
+
+## Custom transports
+
+If you implement a custom `Transport`, note that `publish`/`subscribe` carry
+`TransportEvent = ChatEvent | EphemeralEvent` - discriminate with the exported
+`isEphemeralEvent()` guard. Rationale in
+[ADR 0008](https://github.com/chddaniel/chatpack/blob/main/docs/decisions/0008-ephemeral-events-in-core-plugins.md).

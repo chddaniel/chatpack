@@ -1,0 +1,5 @@
+{
+  "title": "Real-time",
+  "icon": "Zap",
+  "pages": ["sse", "plugins", "custom-plugins"]
+}

@@ -1,0 +1,81 @@
+---
+title: Packages
+description: Every @chatpack/* package, what it exports, and when you need it.
+---
+
+All packages are MIT-licensed and published to npm. Everything is `0.x` until
+the public API stabilizes - expect minor breaking changes before `1.0`.
+
+## `@chatpack/core`
+
+The engine: domain logic, permissions, HTTP handler, SSE, plugins, telemetry.
+The only package every integration needs.
+
+**Main exports:**
+
+| Export                    | What it is                                                                                                                                                                                          |
+| ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `chatpack(options)`       | The single factory - returns `{ api, handler, transport, telemetry, options }`                                                                                                                      |
+| `ChatpackError`           | Domain error with a stable `code`                                                                                                                                                                   |
+| `pairKeyFor(a, b)`        | Deterministic DM pair key (internal detail, exported for adapters/tests)                                                                                                                            |
+| `inProcessTransport()`    | The default single-node transport                                                                                                                                                                   |
+| `isEphemeralEvent(event)` | Type guard for `TransportEvent`                                                                                                                                                                     |
+| Types                     | `ChatpackOptions`, `ChatpackUser`, `AuthHook`, `PermissionHooks`, `StorageAdapter`, `Transport`, `ChatpackPlugin`, `Conversation`, `Participant`, `Message`, `MessageRole`, `TelemetryPayload`, ... |
+
+**Subpath `@chatpack/core/plugins`:**
+
+| Export               | What it is                                                                                 |
+| -------------------- | ------------------------------------------------------------------------------------------ |
+| `typing()`           | Typing indicators - `POST /conversations/:id/typing` → `typing.started` / `typing.stopped` |
+| `presence(options?)` | Online/offline - SSE connection is the heartbeat; `offlineDelayMs` default 5000            |
+| `receipts()`         | Delivered/read ticks - hooks into send + mark-read                                         |
+
+## `@chatpack/adapter-memory`
+
+In-memory storage - zero-setup demos and fast, deterministic tests. The
+reference `StorageAdapter` implementation.
+
+| Export            | What it is                          |
+| ----------------- | ----------------------------------- |
+| `memoryAdapter()` | Create an in-memory storage adapter |
+
+→ [Memory adapter](/docs/storage/memory)
+
+## `@chatpack/adapter-drizzle`
+
+Drizzle ORM (Postgres) storage - real persistence for production. Peer
+dependency on `drizzle-orm`.
+
+| Export                                                  | What it is                                                 |
+| ------------------------------------------------------- | ---------------------------------------------------------- |
+| `drizzleAdapter(db)`                                    | Create the adapter from any Drizzle Postgres instance      |
+| `chatpackSchema`                                        | Drizzle table objects (for your `drizzle-kit` flow)        |
+| `conversations`, `conversationParticipants`, `messages` | The individual tables                                      |
+| `migrationSql`                                          | Idempotent DDL as one string (no Drizzle needed to run it) |
+| `migrationStatements`                                   | The same DDL split for one-statement-per-call drivers      |
+
+→ [Drizzle / Postgres](/docs/storage/drizzle)
+
+## `@chatpack/next`
+
+Next.js App Router integration - sugar for mounting the handler.
+
+| Export                                | What it is                                                        |
+| ------------------------------------- | ----------------------------------------------------------------- |
+| `toNextRouteHandlers(chat, options?)` | Returns `{ GET, POST, PATCH, DELETE }` for a catch-all route file |
+
+→ [Next.js guide](/docs/integrations/nextjs)
+
+## llms.txt in every tarball
+
+Every published package ships the repo's
+[`llms.txt`](https://github.com/chddaniel/chatpack/blob/main/llms.txt) - the
+single-fetch integration guide for AI builders and coding agents - at its
+root: `node_modules/@chatpack/core/llms.txt`.
+
+## Versioning
+
+Releases are managed with [Changesets](https://github.com/changesets/changesets);
+every package keeps a `CHANGELOG.md`. Follow releases on
+[GitHub](https://github.com/chddaniel/chatpack/releases) or via
+`npm view @chatpack/core dist-tags`.

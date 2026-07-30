@@ -1,0 +1,109 @@
+---
+title: Server API
+description: Call the chat engine directly from server code with chat.api.* - every method, and when to use it over HTTP.
+---
+
+`chat.api.*` is the same domain logic the HTTP routes use, callable directly
+from your server code. Every method takes an **explicit `userId`** and
+enforces the same permissions.
+
+<Callout type="warn">
+  These are the **only** methods on `chat.api` - do not invent others. In particular there is no
+  `chat.api.getOrCreateDirectConversation`: that name is a low-level *storage adapter* method. Never
+  call the adapter directly.
+</Callout>
+
+## Methods
+
+| Method                        | What it does                                        |
+| ----------------------------- | --------------------------------------------------- |
+| `api.getOrCreateConversation` | Find or create the 1:1 conversation for a user pair |
+| `api.listConversations`       | List a user's conversations, most recent first      |
+| `api.getConversation`         | Fetch one conversation (read-permission checked)    |
+| `api.sendMessage`             | Send a text message (write-permission checked)      |
+| `api.listMessages`            | Paginate history, newest-first                      |
+| `api.editMessage`             | Edit your own message                               |
+| `api.deleteMessage`           | Soft-delete your own message                        |
+| `api.markRead`                | Update durable read-state (`lastReadMessageId`)     |
+| `api.listMessagesAfter`       | Messages after a `seq` (SSE reconnect gap-fill)     |
+
+## Which API do I call?
+
+The same task, from both sides - `chat.api.*` in server code, the REST route
+from a browser or HTTP client:
+
+| I want to...                    | Server (`chat.api.*`)          | HTTP                               |
+| ------------------------------- | ------------------------------ | ---------------------------------- |
+| Start a chat with someone       | `getOrCreateConversation`      | `POST /conversations`              |
+| Show the inbox / sidebar        | `listConversations`            | `GET /conversations`               |
+| Open one conversation           | `getConversation`              | `GET /conversations/:id`           |
+| Load history / scroll back      | `listMessages`                 | `GET /conversations/:id/messages`  |
+| Send a message                  | `sendMessage`                  | `POST /conversations/:id/messages` |
+| Edit / delete my message        | `editMessage`, `deleteMessage` | `PATCH` / `DELETE /messages/:id`   |
+| Mark a conversation read        | `markRead`                     | `POST /conversations/:id/read`     |
+| Get live updates in the browser | - (server-sent events)         | `GET /stream` via `EventSource`    |
+
+## Usage
+
+```ts
+// find-or-create a 1:1 conversation between two users
+const conversation = await chat.api.getOrCreateConversation({
+  userId: "alice",
+  otherUserId: "bob",
+});
+
+// send a message
+const message = await chat.api.sendMessage({
+  userId: "alice",
+  conversationId: conversation.id,
+  body: "hey bob!",
+});
+
+// paginate history (newest first)
+const { messages, nextCursor } = await chat.api.listMessages({
+  userId: "bob",
+  conversationId: conversation.id,
+  limit: 50,
+});
+
+// durable read-state
+await chat.api.markRead({
+  userId: "bob",
+  conversationId: conversation.id,
+  messageId: message.id,
+});
+```
+
+## Return shapes: bare objects, no envelopes
+
+Server-side methods return the bare object (`Conversation`, `Message`, ...).
+The HTTP layer wraps responses in envelopes (`{ conversation }`,
+`{ message }`, `{ messages, nextCursor }`) - that envelope is HTTP-only and
+intentional (room to add sibling fields without breaking clients). **Don't
+reuse HTTP-response types for `chat.api.*` calls or vice versa.**
+
+Timestamps are real `Date` instances on the server, ISO strings over HTTP.
+
+## Errors: thrown, never null
+
+All failures throw `ChatpackError` with a stable `code` - **methods never
+return `null` for missing resources**. `api.getConversation` throws
+`CONVERSATION_NOT_FOUND`; don't confuse it with the storage adapter's
+`getConversation`, which returns `Conversation | null` (core is the layer
+that turns a `null` into the domain error).
+
+```ts
+import { ChatpackError } from "@chatpack/core";
+
+try {
+  await chat.api.getConversation({ userId, conversationId });
+} catch (err) {
+  if (err instanceof ChatpackError && err.code === "CONVERSATION_NOT_FOUND") {
+    // handle the missing conversation
+  } else {
+    throw err;
+  }
+}
+```
+
+See [Error handling](/docs/concepts/errors) for the full code list.

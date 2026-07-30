@@ -1,0 +1,49 @@
+---
+title: TanStack Start
+description: Mount the chat API on a `$` catch-all server route.
+---
+
+TanStack Start uses a `$` catch-all segment in the route filename - required
+so every Chatpack sub-path reaches the handler.
+
+```ts title="src/routes/api/chat.$.ts"
+import { createFileRoute } from "@tanstack/react-router";
+
+async function handle({ request }: { request: Request }) {
+  const { chatHandler } = await import("@/lib/chat.server");
+  return chatHandler.fetch(request);
+}
+
+export const Route = createFileRoute("/api/chat/$")({
+  server: { handlers: { GET: handle, POST: handle, PATCH: handle, DELETE: handle } },
+});
+```
+
+The instance module (note the `.server` suffix keeps it out of the client
+bundle, and the `globalThis` guard survives Vite HMR):
+
+```ts title="src/lib/chat.server.ts"
+import { chatpack, type ChatpackInstance } from "@chatpack/core";
+import { memoryAdapter } from "@chatpack/adapter-memory";
+
+const g = globalThis as typeof globalThis & { __chatpack__?: ChatpackInstance };
+export const chat = (g.__chatpack__ ??= chatpack({
+  storage: memoryAdapter(),
+  auth: (request) => {
+    const cookie = request.headers.get("cookie") ?? "";
+    const id = /(?:^|;\s*)demo_user=([^;]+)/.exec(cookie)?.[1] ?? null;
+    return id ? { id: decodeURIComponent(id) } : null;
+  },
+}));
+export const chatHandler = chat.handler();
+```
+
+<Callout type="info">
+  TanStack Start is Lovable's default stack - if you're integrating from an AI-builder preview pane,
+  read [Authentication](/docs/concepts/authentication#demo-auth-that-survives-embedded-iframes) for
+  the iframe-proof cookie recipe (`SameSite=None; Secure; Partitioned`), the #1 cause of 401s in
+  embedded previews.
+</Callout>
+
+Everything else - auth, storage, real-time, the HTTP routes - is identical to
+the [Quickstart](/docs/quickstart).

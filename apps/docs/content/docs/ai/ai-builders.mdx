@@ -1,0 +1,104 @@
+---
+title: AI Builders & Coding Agents
+description: llms.txt, the agent skill, iframe-proof previews, and the hard rules that make first-shot integrations work.
+---
+
+Chatpack is designed to be integrated **by AI coding agents** - Lovable, v0,
+Bolt, Shipper, Claude Code, Cursor, Codex - as much as by humans.
+
+## llms.txt: the single-fetch guide
+
+[`llms.txt`](https://github.com/chddaniel/chatpack/blob/main/llms.txt) is a
+complete integration guide written for agents: hard rules, 60-second wiring,
+per-framework mount recipes, the iframe cookie recipe, HTTP route tables,
+deployment decision table, and curl verification steps. Part 2 is the full
+custom storage adapter guide.
+
+It also ships **inside every `@chatpack/*` npm package** - point your agent at:
+
+```text
+node_modules/@chatpack/core/llms.txt
+```
+
+## The agent skill
+
+Using a coding agent on your app's repo? Install the Chatpack skill so the
+agent follows the correct workflow automatically:
+
+```sh
+npx skills add chddaniel/chatpack
+```
+
+## The hard rules
+
+Violating any of these is the #1 cause of broken integrations - they're worth
+restating anywhere an agent might look:
+
+1. **Mount the ONE handler on a catch-all route. Never hand-write your own
+   message/stream/API routes.** `chat.handler()` already serves every route -
+   conversations, messages, read-state, typing, presence, AND the SSE stream.
+2. **These are the only server-side methods** on `chat.api`:
+   `getOrCreateConversation`, `listConversations`, `getConversation`,
+   `sendMessage`, `listMessages`, `editMessage`, `deleteMessage`, `markRead`,
+   `listMessagesAfter`. There is **no**
+   `chat.api.getOrCreateDirectConversation` (that's a storage-adapter method -
+   never call the adapter directly). If a name is not in this list, it does
+   not exist.
+3. **Conversation ids are server-generated opaque strings** (e.g. `conv_1`).
+   Never construct ids like `"alice-bob"` - the pair key is internal.
+4. **Create exactly ONE `chatpack()` instance**, guarded with `globalThis`
+   under dev-server HMR.
+5. **The `auth` hook must return `{ id: string }` or `null`** - a bare string
+   or `{ userId: ... }` means 401 on every request.
+6. **Browser auth must be cookie-based** (SSE can't send headers), and inside
+   a cross-site iframe the cookie needs `SameSite=None; Secure; Partitioned`.
+
+## Embedded preview panes (the 401 trap)
+
+Every AI-builder editor shows your app inside a **cross-site iframe**
+(Lovable's `*.lovable.app` pane inside lovable.dev, v0's `*.vusercontent.net`
+inside v0.app, Bolt, Shipper, Replit). Browsers silently drop `SameSite=Lax`
+cookies there - the app 401s in the preview pane but works in a real tab.
+
+Demo cookies must be set with iframe-proof attributes:
+
+```ts
+document.cookie = "demo_user=alice; Path=/; Max-Age=86400; SameSite=None; Secure; Partitioned";
+```
+
+Full explanation in
+[Authentication](/docs/concepts/authentication#demo-auth-that-survives-embedded-iframes).
+
+## Preview vs published: different environments
+
+AI-builder **previews** behave like a dev server (one long-lived process) -
+`memoryAdapter` + `/stream` SSE work fine. **Published** AI-builder apps are
+usually serverless - use a database adapter and poll. The full decision table
+is in [Deployment](/docs/integrations/deployment).
+
+Platforms that only expose a database client (e.g. Supabase JS on
+Lovable/Bolt) can't use the Drizzle adapter directly - the
+[custom adapter guide](/docs/storage/custom-adapter) covers Supabase RPC,
+Convex, and Firestore shapes.
+
+## Verify before declaring success
+
+```sh
+# 1. auth + server-generated conversation id (expect 200, id like "conv_1")
+curl -si -X POST localhost:3000/api/chat/conversations \
+  -H 'cookie: demo_user=alice' -H 'content-type: application/json' \
+  -d '{"otherUserId":"bob"}'
+
+# 2. send + list (expect 201, then 200 newest-first)
+curl -si -X POST localhost:3000/api/chat/conversations/conv_1/messages \
+  -H 'cookie: demo_user=alice' -H 'content-type: application/json' -d '{"body":"hi"}'
+curl -s 'localhost:3000/api/chat/conversations/conv_1/messages?limit=10' \
+  -H 'cookie: demo_user=bob'
+
+# 3. live stream (expect ": connected", then events as messages are sent)
+curl -sN localhost:3000/api/chat/stream -H 'cookie: demo_user=bob'
+```
+
+In the browser: after "sign in", `document.cookie` must actually contain the
+demo cookie, and the Network tab must show it on `/api/chat/*` requests. A 401
+response body names the exact failure; read it before changing code.

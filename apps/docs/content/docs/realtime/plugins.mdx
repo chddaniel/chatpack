@@ -1,0 +1,122 @@
+---
+title: "Plugins: Typing, Presence, Read Ticks"
+description: The "feels alive" features as opt-in plugins - ephemeral events on the same SSE stream, no extra install.
+---
+
+The "feels alive" features are **opt-in plugins** that ship inside
+`@chatpack/core` - no extra install:
+
+```ts
+import { chatpack } from "@chatpack/core";
+import { typing, presence, receipts } from "@chatpack/core/plugins";
+
+export const chat = chatpack({
+  storage: memoryAdapter(),
+  auth: async (req) => getSessionUser(req),
+  plugins: [typing(), presence(), receipts()],
+});
+```
+
+They publish **ephemeral events** on the same `/stream` connection you already
+have: fire-and-forget signals that are never stored and never replayed on
+reconnect. Miss a typing ping and it's gone - that's correct; durable state
+like `lastReadMessageId` stays in core.
+
+## What each plugin adds
+
+| Plugin       | Routes                           | Events published                      | To whom                                            |
+| ------------ | -------------------------------- | ------------------------------------- | -------------------------------------------------- |
+| `typing()`   | `POST /conversations/:id/typing` | `typing.started`, `typing.stopped`    | the other participant (never the typist)           |
+| `presence()` | `GET /presence?userIds=a,b`      | `presence.online`, `presence.offline` | the user's conversation partners                   |
+| `receipts()` | - (hooks into send + mark-read)  | `receipt.delivered`, `receipt.read`   | sender on delivery; other participant on mark-read |
+
+Listen exactly like message events:
+
+```ts
+events.addEventListener("typing.started", (e) => {
+  const { senderId, conversationId } = JSON.parse((e as MessageEvent).data);
+  // show "… is typing" - and hide it if no new ping arrives within ~5s
+});
+
+events.addEventListener("presence.online", (e) => {
+  /* light up the dot */
+});
+
+events.addEventListener("receipt.read", (e) => {
+  const { payload } = JSON.parse((e as MessageEvent).data);
+  // mark everything up to payload.messageId as ✓✓
+});
+```
+
+The ephemeral event payload shape is:
+
+```json
+{
+  "type": "typing.started",
+  "ephemeral": true,
+  "conversationId": "conv_1",
+  "senderId": "alice",
+  "payload": {},
+  "at": "2026-07-31T12:00:00.000Z"
+}
+```
+
+Ephemeral SSE frames carry no `id:` field - so they can't disturb
+`Last-Event-ID` gap-fill.
+
+## Typing
+
+Stateless by design. While the user types, `POST …/typing` at most once every
+few seconds; the other side clears the indicator if no ping arrives within
+~5s. Send `{ "isTyping": false }` to clear it eagerly.
+
+```ts
+// throttle to ~1 POST per 3s while the input has activity
+let lastPing = 0;
+input.addEventListener("input", () => {
+  if (Date.now() - lastPing < 3000) return;
+  lastPing = Date.now();
+  fetch(`/api/chat/conversations/${conversationId}/typing`, { method: "POST" });
+});
+```
+
+## Presence
+
+**No heartbeat endpoint needed** - the SSE connection _is_ the heartbeat.
+Multi-tab safe. A short grace period (default 5s) stops the online dot from
+blinking during `EventSource` auto-reconnects:
+
+```ts
+presence({ offlineDelayMs: 5000 }); // the default
+```
+
+Snapshots via `GET /presence?userIds=a,b` (max 50 ids) only reveal users the
+caller shares a conversation with:
+
+```json
+{ "presence": { "bob": { "online": true, "lastSeenAt": "…" } } }
+```
+
+## Receipts
+
+Instant ✓/✓✓ pings while both sides are online:
+
+- `receipt.delivered` fires to the **sender** the moment the recipient's
+  stream receives the message.
+- `receipt.read` fires to the other participant when mark-read is called.
+
+Ticks are **at-least-once** - dedupe by `payload.messageId`. The durable truth
+is still `lastReadMessageId` on the participant
+([mark-read](/docs/concepts/conversations-messages#read-state)); use the ticks
+for instant UI, the durable field for state that survives reloads.
+
+## Single-node caveat
+
+Like the default transport, plugin state is **in-memory and single-node**.
+Multi-node fan-out is a future transport, not an API change. See
+[Deployment](/docs/integrations/deployment).
+
+<Callout type="info">
+  Custom storage adapters need **zero changes** to support these plugins - ephemeral events never
+  touch storage.
+</Callout>

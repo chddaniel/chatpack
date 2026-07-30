@@ -1,0 +1,14 @@
+{
+  "title": "Core Concepts",
+  "icon": "Blocks",
+  "defaultOpen": true,
+  "pages": [
+    "architecture",
+    "authentication",
+    "permissions",
+    "conversations-messages",
+    "server-api",
+    "errors",
+    "telemetry"
+  ]
+}

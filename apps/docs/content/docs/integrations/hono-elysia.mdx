@@ -1,0 +1,40 @@
+---
+title: Hono & Elysia
+description: Mount the handler on a wildcard route with one line.
+---
+
+Both frameworks pass Web-standard `Request` objects, so mounting is one line -
+use a wildcard so every Chatpack sub-path reaches the handler.
+
+## Hono
+
+```ts
+import { Hono } from "hono";
+import { chat } from "./chat";
+
+const app = new Hono();
+const handler = chat.handler();
+
+app.all("/api/chat/*", (c) => handler.fetch(c.req.raw));
+
+export default app;
+```
+
+## Elysia
+
+```ts
+import { Elysia } from "elysia";
+import { chat } from "./chat";
+
+const handler = chat.handler();
+
+const app = new Elysia().all("/api/chat/*", ({ request }) => handler.fetch(request)).listen(3000);
+```
+
+<Callout type="info">
+  The wildcard must cover **every** sub-path including `/api/chat/stream` - the SSE response streams
+  through untouched because the handler returns a standard `Response` with a readable stream body.
+</Callout>
+
+Everything else - auth, storage, the HTTP routes - is identical to the
+[Quickstart](/docs/quickstart).

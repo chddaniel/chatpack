@@ -1,0 +1,93 @@
+---
+title: Contributing
+description: Repo layout, dev workflow, code style, tests, and how to submit changes.
+---
+
+Contributions are very welcome. The canonical guide is
+[CONTRIBUTING.md](https://github.com/chddaniel/chatpack/blob/main/CONTRIBUTING.md);
+this page is the short version.
+
+## Getting started
+
+```sh
+git clone https://github.com/chddaniel/chatpack.git
+cd chatpack
+pnpm install
+pnpm build
+pnpm test
+```
+
+Prerequisites: Node.js >= 18, [pnpm](https://pnpm.io) >= 9. The repo is a
+pnpm workspace monorepo orchestrated with Turborepo.
+
+## Repo layout
+
+```text
+chatpack/
+├── apps/
+│   └── docs/              # This documentation site (Fumadocs)
+├── docs/                  # Project docs: vision, MVP scope, architecture, ADRs
+│   └── decisions/         # Short ADRs - one file per non-obvious decision
+├── packages/
+│   ├── core/              # @chatpack/core - the chat engine + HTTP handler
+│   ├── adapter-drizzle/   # @chatpack/adapter-drizzle - Drizzle/Postgres storage
+│   ├── adapter-memory/    # @chatpack/adapter-memory - in-memory storage
+│   └── next/              # @chatpack/next - Next.js App Router integration
+├── examples/
+│   ├── messenger/         # Complete vanilla HTML+JS messenger + tutorial
+│   ├── next-backend/      # The quickstart as a runnable Next.js app
+│   └── node-server/       # Curl-able demo server (plain Node)
+└── .github/workflows/     # CI
+```
+
+## Common commands
+
+| Command          | What it does                                |
+| ---------------- | ------------------------------------------- |
+| `pnpm build`     | Build all packages (tsup, ESM + CJS + d.ts) |
+| `pnpm test`      | Run all tests (Vitest)                      |
+| `pnpm typecheck` | Typecheck all packages                      |
+| `pnpm lint`      | Lint all packages (ESLint)                  |
+| `pnpm format`    | Format with Prettier                        |
+
+Scope to one package:
+
+```sh
+pnpm --filter @chatpack/core test
+```
+
+## Code style
+
+- Strict TypeScript. No `any` in the public API.
+- **No default exports** in public APIs (enforced by ESLint).
+- Every exported symbol gets a TSDoc comment - docs are generated from source.
+- Prettier formats everything; CI checks it.
+
+## Tests
+
+- Vitest everywhere.
+- Core is tested against the in-memory adapter - fast and deterministic.
+- The Drizzle adapter is tested against **real Postgres via PGlite** (Postgres
+  in WASM) - `pnpm test` needs no Docker or database setup.
+- New features need tests; bug fixes need a regression test.
+
+## Documentation
+
+Docs are a first-class deliverable:
+
+- Public-API changes must update TSDoc and, if user-facing, the README and
+  this docs site (`apps/docs/content/docs/`).
+- Non-obvious design decisions get a short ADR in `docs/decisions/` (copy the
+  format of an existing one).
+
+## Submitting changes
+
+1. Fork and create a topic branch.
+2. Make your change (+ tests + docs).
+3. Add a changeset if you touched a published package: `pnpm changeset`.
+4. Open a PR. CI runs typecheck, lint, tests, and build.
+
+## Code of conduct
+
+Be kind. See
+[CODE_OF_CONDUCT.md](https://github.com/chddaniel/chatpack/blob/main/CODE_OF_CONDUCT.md).

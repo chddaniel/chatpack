@@ -1,0 +1,145 @@
+---
+title: Architecture
+description: The two interfaces that carry the whole design, and the request flow from browser to database.
+---
+
+## The 30-second version
+
+Two interfaces carry the whole design:
+
+- **`StorageAdapter`** - durable reads/writes (conversations, messages,
+  read-state). Core depends on the interface, never on a specific database.
+- **`Transport`** - publish/subscribe of live events to connected SSE clients.
+  The engine publishes only _after_ the storage write succeeds
+  (durable-first); v0 ships a single-node in-process transport, and the SSE
+  endpoint recovers missed messages on reconnect from storage via
+  `Last-Event-ID`.
+
+The core engine (`@chatpack/core`) contains all domain logic: 1:1
+conversations, permission checks, validation. Adapters contain **no** domain
+logic - they only persist and retrieve.
+
+## Request flow
+
+```text
+Your frontend  ──  fetch("/api/chat/…")  +  EventSource("/api/chat/stream")
+      │
+      ▼
+chat.handler()        one Web-standard handler (Request → Response)
+      │
+      ├── auth hook   your session → { id: userId }     (you own users)
+      ▼
+chat.api.*            domain logic, permissions         (also callable directly)
+      │
+      ▼
+StorageAdapter        memory · Drizzle/Postgres · your own
+      │
+      ▼
+Your database
+```
+
+Every HTTP request follows the same path:
+
+1. **The handler** parses the request. It's a single Web-standard function
+   (`Request → Response`) that serves every route under `basePath` (default
+   `/api/chat`) - including the SSE stream.
+2. **Your `auth` hook** resolves the current user. Auth runs before routing -
+   an unauthenticated request to a wrong path still gets a `401`.
+3. **`chat.api.*`** applies domain rules: input validation, participant
+   checks, permission hooks, sender-only edit/delete.
+4. **The storage adapter** persists and retrieves. It never enforces
+   permissions - core already did.
+5. For writes, the engine **publishes an event on the transport** after the
+   storage write succeeds, and connected SSE streams deliver it.
+
+## What lives where
+
+| Layer            | Owns                                                   | Never does                                   |
+| ---------------- | ------------------------------------------------------ | -------------------------------------------- |
+| Your app         | Users, sessions, frontend, LLM calls                   | -                                            |
+| `chat.handler()` | HTTP parsing, auth hook, JSON envelopes, SSE           | Domain rules                                 |
+| `chat.api.*`     | Validation, permissions, pair keys, telemetry counters | Persistence mechanics                        |
+| `StorageAdapter` | Uniqueness on `pairKey`, `seq` assignment, pagination  | Permission checks                            |
+| `Transport`      | Live event fan-out                                     | Storage (durable events replay from storage) |
+
+## One instance, everywhere
+
+Create the `chatpack()` instance in a single module and import it into the
+route file - never one instance per route. Under dev-server HMR (Vite,
+`next dev`), guard it with `globalThis` so module re-evaluation doesn't reset
+in-memory state:
+
+```ts title="lib/chat.ts"
+import { chatpack, type ChatpackInstance } from "@chatpack/core";
+
+const g = globalThis as typeof globalThis & { __chatpack__?: ChatpackInstance };
+export const chat = (g.__chatpack__ ??= chatpack({ storage, auth }));
+```
+
+## Configuration
+
+Everything is configured through the single `chatpack()` factory:
+
+```ts
+import { chatpack } from "@chatpack/core";
+import { typing, presence, receipts } from "@chatpack/core/plugins";
+
+const chat = chatpack({
+  storage: memoryAdapter(), // required - the only required option
+  auth: async (req) => resolveUser(req), // required for HTTP; api.* takes explicit ids
+  permissions: { canRead, canWrite }, // default: participants only
+  plugins: [typing(), presence(), receipts()], // default: none
+  transport: inProcessTransport(), // default: in-process, single node
+  telemetry: true, // default: true (opt-out)
+});
+```
+
+<TypeTable
+  type={{
+    storage: {
+      description:
+        "Durable storage - memoryAdapter(), drizzleAdapter(db), or your own StorageAdapter.",
+      type: "StorageAdapter",
+      required: true,
+    },
+    auth: {
+      description:
+        "Resolve the current user from a Request. Required once the HTTP handler is mounted.",
+      type: "AuthHook",
+    },
+    permissions: {
+      description: "canRead / canWrite overrides. Default: only the two participants.",
+      type: "PermissionHooks",
+    },
+    transport: {
+      description: "Live event fan-out. Default: single-node in-process transport.",
+      type: "Transport",
+    },
+    plugins: {
+      description:
+        "Opt-in plugins, e.g. typing(), presence(), receipts() from @chatpack/core/plugins.",
+      type: "ChatpackPlugin[]",
+    },
+    telemetry: {
+      description: "Anonymous aggregate telemetry. Set false or CHATPACK_TELEMETRY=0 to disable.",
+      type: "boolean",
+      default: "true",
+    },
+  }}
+/>
+
+## Design rationale (ADRs)
+
+Non-obvious decisions are recorded as short ADRs in
+[`docs/decisions/`](https://github.com/chddaniel/chatpack/tree/main/docs/decisions):
+
+| ADR  | Decision                                                  |
+| ---- | --------------------------------------------------------- |
+| 0001 | Storage is an interface; core never touches a database    |
+| 0002 | Deterministic pair key prevents duplicate DMs             |
+| 0003 | Per-conversation monotonic `seq` as the message sort key  |
+| 0004 | Telemetry counters land early; the flusher lands late     |
+| 0005 | One Web-standard handler instead of per-framework routers |
+| 0006 | SSE `Last-Event-ID` gap-fill from storage                 |
+| 0007 | Postgres adapter: atomic `seq` via `UPDATE … RETURNING`   |
+| 0008 | Ephemeral events + plugins live in core                   |

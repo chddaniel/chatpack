@@ -1,0 +1,46 @@
+---
+title: Roadmap & Scope
+description: What shipped in v0, what's deliberately out of scope, and where Chatpack is heading.
+---
+
+## What's in v0
+
+| Feature                                 | Status            |
+| --------------------------------------- | ----------------- |
+| 1:1 conversations (find-or-create)      | ✅ Done (M1)      |
+| Text messages: send, list, edit, delete | ✅ Done (M1)      |
+| Participant-only permissions + hooks    | ✅ Done (M1)      |
+| Durable read-state (`last_read`)        | ✅ Done (M1)      |
+| In-memory storage adapter               | ✅ Done (M1)      |
+| HTTP handler (Next.js App Router)       | ✅ Done (M2)      |
+| Real-time delivery (SSE)                | ✅ Done (M3)      |
+| Drizzle/Postgres adapter                | ✅ Done (M4)      |
+| Launch polish + npm release             | ✅ Done (M5)      |
+| Typing / presence / read-tick plugins   | ✅ Done (v0.next) |
+
+## Deliberately not in scope yet
+
+- **Group conversations** - v0 is 1:1 only; the data model anticipates groups
+  (group conversations simply won't carry a pair key).
+- **File uploads / attachments** - use `metadata` to point at files you host.
+- **Push notifications** - your app's job for now.
+- **React UI components** - Chatpack is headless; bring your own frontend.
+- **Distributed transport** (Redis pub/sub for multi-node SSE) - planned as a
+  swap-in `Transport` with the same public API, no code change.
+
+Full scope and reasoning in
+[docs/MVP.md](https://github.com/chddaniel/chatpack/blob/main/docs/MVP.md).
+
+## Stability
+
+Everything is `0.x` until the public API stabilizes - expect minor breaking
+changes before `1.0`. Releases are managed with Changesets; each package has a
+`CHANGELOG.md`.
+
+## The longer arc
+
+The vision (see
+[docs/ARCHITECTURE.md](https://github.com/chddaniel/chatpack/blob/main/docs/ARCHITECTURE.md))
+is BetterAuth-shaped: the obvious open-source default for chat infrastructure -
+small core, adapter-driven, extensible via plugins, friendly to both human
+developers and AI builders.

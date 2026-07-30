@@ -1,0 +1,275 @@
+---
+title: Quickstart
+description: A working chat backend - with live delivery - in five minutes.
+icon: Rocket
+---
+
+This walks you from `npm install` to a live, real-time chat backend. Every step
+works as written; swap the demo pieces (memory storage, cookie auth) for
+production pieces when you're ready.
+
+<Callout type="info">
+  Prefer learning from a complete app?
+  [`examples/messenger`](https://github.com/chddaniel/chatpack/tree/main/examples/messenger) is a
+  full 1:1 messenger - sidebar, live messages, read receipts - in vanilla HTML+JS with a
+  step-by-step tutorial README.
+</Callout>
+
+<Steps>
+<Step>
+
+## Install
+
+Both packages are needed - `@chatpack/core` is the engine,
+`@chatpack/adapter-memory` is the storage it plugs into:
+
+<Tabs items={['npm', 'pnpm', 'bun']}>
+
+```sh tab="npm"
+npm install @chatpack/core @chatpack/adapter-memory
+```
+
+```sh tab="pnpm"
+pnpm add @chatpack/core @chatpack/adapter-memory
+```
+
+```sh tab="bun"
+bun add @chatpack/core @chatpack/adapter-memory
+```
+
+</Tabs>
+
+<Callout type="warn">
+  **Bun note:** if Bun's supply-chain guard (`minimumReleaseAge`) is enabled, versions published in
+  the last 24h are skipped and Bun silently resolves an older release. Check with `npm view
+  @chatpack/core dist-tags`.
+</Callout>
+
+</Step>
+<Step>
+
+## Create your chat server
+
+```ts title="lib/chat.ts"
+import { chatpack } from "@chatpack/core";
+import { memoryAdapter } from "@chatpack/adapter-memory";
+
+export const chat = chatpack({
+  storage: memoryAdapter(),
+  // resolve the current user from a request - the ONLY auth touchpoint.
+  auth: async (req) => {
+    const session = await getSessionFromCookie(req.headers.get("cookie"));
+    return session ? { id: session.userId } : null;
+  },
+});
+```
+
+The `auth` hook must return `ChatpackUser | null` - an object with at least
+`{ id: string }` (extra fields are allowed and ignored), or `null` for
+unauthenticated requests. Returning a bare string is treated as unauthenticated
+and every request will get a `401`.
+
+<Callout type="info">
+  **Prefer cookie-based sessions** over `Authorization` headers: the browser sends cookies
+  automatically on every request - including the SSE stream in step 5, where custom headers are
+  impossible. See [Authentication](/docs/concepts/authentication) for demo cookies, iframe-proof
+  attributes, and hybrid bearer-token setups.
+</Callout>
+
+The hook receives a raw Web-standard `Request` - there is no `request.cookies`
+helper. A minimal demo auth that parses the cookie header itself:
+
+```ts
+// demo auth: a plain cookie naming the user (swap for your auth library)
+auth: (request) => {
+  const cookie = request.headers.get("cookie") ?? "";
+  const id = /(?:^|;\s*)demo_user=([^;]+)/.exec(cookie)?.[1] ?? null;
+  return id ? { id: decodeURIComponent(id) } : null;
+},
+```
+
+</Step>
+<Step>
+
+## Mount the API
+
+The route file **must be a catch-all** (`[...chatpack]` in Next.js) - Chatpack
+serves many sub-paths under `basePath` (default `/api/chat`).
+
+<Tabs items={['Next.js', '@chatpack/next', 'Bun / Deno / Workers', 'Hono / Elysia']}>
+
+```ts tab="Next.js" title="app/api/chat/[...chatpack]/route.ts"
+import { chat } from "@/lib/chat";
+export const { GET, POST, PATCH, DELETE } = chat.handler();
+```
+
+```ts tab="@chatpack/next" title="app/api/chat/[...chatpack]/route.ts"
+import { toNextRouteHandlers } from "@chatpack/next";
+import { chat } from "@/lib/chat";
+export const { GET, POST, PATCH, DELETE } = toNextRouteHandlers(chat);
+```
+
+```ts tab="Bun / Deno / Workers"
+const handler = chat.handler();
+Bun.serve({ fetch: handler.fetch });
+```
+
+```ts tab="Hono / Elysia"
+const handler = chat.handler();
+app.all("/api/chat/*", (c) => handler.fetch(c.req.raw)); // Hono
+app.all("/api/chat/*", ({ request }) => handler.fetch(request)); // Elysia
+```
+
+</Tabs>
+
+<Callout type="error">
+  **Never hand-write your own message or stream routes.** The one handler already serves every route
+  - conversations, messages, read-state, plugins, and the SSE stream. Custom `/api/messages`-style
+  routes split state and break live delivery.
+</Callout>
+
+Your chat backend is now live at `/api/chat`. More frameworks (TanStack Start,
+Express, plain Node) in [Framework guides](/docs/integrations/nextjs).
+
+</Step>
+<Step>
+
+## Call it over HTTP
+
+Find-or-create a conversation (the authenticated user + `otherUserId`):
+
+```sh
+curl -X POST /api/chat/conversations \
+  -H 'content-type: application/json' \
+  -d '{"otherUserId": "bob"}'
+```
+
+```json
+{
+  "conversation": {
+    "id": "conv_1",
+    "pairKey": "alice:bob",
+    "createdAt": "2026-07-22T19:47:47.945Z",
+    "metadata": {},
+    "participants": [
+      { "conversationId": "conv_1", "userId": "alice", "joinedAt": "…", "lastReadMessageId": null },
+      { "conversationId": "conv_1", "userId": "bob", "joinedAt": "…", "lastReadMessageId": null }
+    ]
+  }
+}
+```
+
+Send a message - note the text field is **`body`**:
+
+```sh
+curl -X POST /api/chat/conversations/conv_1/messages \
+  -H 'content-type: application/json' \
+  -d '{"body": "hey bob!"}'
+```
+
+List history (newest first, keyset-paginated):
+
+```sh
+curl '/api/chat/conversations/conv_1/messages?limit=50'
+```
+
+<Callout type="warn">
+  **Chatpack never owns a users table**, so it cannot check that `otherUserId` actually exists - a
+  typo silently creates a conversation with a ghost user. Validate recipient ids against your own
+  users table before calling.
+</Callout>
+
+</Step>
+<Step>
+
+## Go live in the browser
+
+```ts
+const events = new EventSource("/api/chat/stream");
+
+// TypeScript: custom event names fall outside EventSourceEventMap, so the
+// listener parameter is typed `Event` - cast to MessageEvent for `.data`.
+events.addEventListener("message.created", (e) => {
+  const { message } = JSON.parse((e as MessageEvent).data);
+  // render it - reconnection & missed-message backfill are automatic
+});
+```
+
+If the connection drops, `EventSource` reconnects with `Last-Event-ID` and
+Chatpack replays whatever was missed **from storage** - durable-first delivery,
+no lost messages. Details in [Real-time with SSE](/docs/realtime/sse).
+
+</Step>
+<Step>
+
+## Or call it straight from server code
+
+```ts
+// find-or-create a 1:1 conversation between two users
+const conversation = await chat.api.getOrCreateConversation({
+  userId: "alice",
+  otherUserId: "bob",
+});
+
+// send a message
+await chat.api.sendMessage({
+  userId: "alice",
+  conversationId: conversation.id,
+  body: "hey bob!",
+});
+
+// read the history
+const { messages } = await chat.api.listMessages({
+  userId: "bob",
+  conversationId: conversation.id,
+});
+```
+
+That's it. Only the two participants can read or write - enforced by default,
+customizable via the [`permissions` hooks](/docs/concepts/permissions).
+
+</Step>
+</Steps>
+
+## Going to production
+
+Swap the storage line for Postgres - everything else stays the same:
+
+```ts title="lib/chat.ts"
+import { drizzle } from "drizzle-orm/node-postgres";
+import { drizzleAdapter } from "@chatpack/adapter-drizzle";
+
+export const chat = chatpack({
+  storage: drizzleAdapter(drizzle(process.env.DATABASE_URL!)),
+  auth: async (req) => getSessionUser(req),
+});
+```
+
+See [Drizzle / Postgres](/docs/storage/drizzle) for table creation and
+serverless drivers, and [Deployment](/docs/integrations/deployment) for where
+SSE and the memory adapter do (and don't) work.
+
+## Next steps
+
+<Cards>
+  <Card
+    title="Authentication"
+    href="/docs/concepts/authentication"
+    description="Cookies, iframes, bearer tokens, and the auth hook contract."
+  />
+  <Card
+    title="Real-time plugins"
+    href="/docs/realtime/plugins"
+    description="Typing indicators, presence, and read ticks - opt-in, zero extra install."
+  />
+  <Card
+    title="Chat with an AI assistant"
+    href="/docs/ai/ai-assistant"
+    description="An assistant is just another participant."
+  />
+  <Card
+    title="Deployment"
+    href="/docs/integrations/deployment"
+    description="Long-lived servers vs serverless - what works where."
+  />
+</Cards>

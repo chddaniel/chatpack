@@ -1,0 +1,17 @@
+{
+  "title": "Documentation",
+  "pages": [
+    "---Getting Started---",
+    "index",
+    "quickstart",
+    "---Guides---",
+    "concepts",
+    "realtime",
+    "storage",
+    "integrations",
+    "ai",
+    "---Resources---",
+    "reference",
+    "project"
+  ]
+}

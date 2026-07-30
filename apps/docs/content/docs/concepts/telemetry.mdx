@@ -1,0 +1,41 @@
+---
+title: Telemetry
+description: Anonymous, opt-out aggregate counters - exactly what leaves your server and how to turn it off.
+---
+
+Chatpack ships **anonymous, opt-out telemetry**: aggregate counters only.
+
+## What is sent
+
+Twice a day (at most), Chatpack POSTs a small JSON body containing:
+
+- counter **deltas** - `messagesSent` and `conversationsCreated`
+- the library version
+- a random per-process id that is never persisted
+
+Never message bodies, user ids, conversation ids, or hostnames. The payload
+shape is a documented public type
+([`TelemetryPayload`](https://github.com/chddaniel/chatpack/blob/main/packages/core/src/telemetry.ts))
+so you can audit exactly what leaves your server.
+
+## Opting out
+
+Either works:
+
+```ts
+chatpack({ storage, telemetry: false });
+```
+
+```sh
+CHATPACK_TELEMETRY=0
+```
+
+The env var is the ops kill switch and always wins; then the `telemetry`
+config option; default is on.
+
+## Behavior guarantees
+
+- Failures are **silently ignored** - telemetry can never break chat.
+- The flush timer is `unref`'d - it never keeps your process alive.
+- Counters are in-process aggregates, exposed as `chat.telemetry` if you want
+  to inspect them yourself.

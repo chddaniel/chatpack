@@ -1,0 +1,82 @@
+---
+title: Deployment
+description: Where SSE and each storage adapter work - long-lived servers vs serverless, and the polling fallback.
+---
+
+Two Chatpack defaults assume **one long-lived server process**:
+
+- the default transport is **in-process** - SSE events fan out to connections
+  held by _this_ process;
+- `memoryAdapter` is **per-process** - history lives in this process's memory.
+
+That's correct for a Node server, `next start`, `Bun.serve`, or a single
+Railway/Fly/Render container. It's wrong on serverless.
+
+## Decision table
+
+| Environment                                                                                                                                                                | Storage                                                                                                                                    | Real-time                                                                                                           |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
+| One long-lived process: `node`/`Bun.serve`, `next start`, Railway / Fly / Render, Replit Reserved VM, **AI-builder previews** (preview sandboxes behave like a dev server) | `memoryAdapter` (demo) or [Drizzle](/docs/storage/drizzle)                                                                                 | `/stream` SSE works                                                                                                 |
+| Serverless / edge / multi-instance: Vercel & AWS Lambda, Cloudflare Workers, **published AI-builder apps**, Replit Autoscale                                               | [Drizzle](/docs/storage/drizzle) or a [custom adapter](/docs/storage/custom-adapter) - `memoryAdapter` is per-isolate and loses everything | Poll `GET /conversations/:id/messages`; don't rely on `/stream` across isolates until a distributed transport ships |
+
+<Callout type="warn">
+  A demo on `memoryAdapter` + `/stream` is **correct in a preview and wrong in a serverless
+  deploy**. If you ship one, say so in the app's README.
+</Callout>
+
+## Polling fallback for serverless
+
+Until a distributed transport ships (e.g. Redis - a swap-in with the same
+public API, no code change), poll the list endpoint on serverless platforms:
+
+```ts
+// naive but correct: newest-first page, dedupe by message.id
+async function poll(conversationId: string, everyMs = 3000) {
+  const seen = new Set<string>();
+  setInterval(async () => {
+    const res = await fetch(`/api/chat/conversations/${conversationId}/messages?limit=20`);
+    const { messages } = await res.json();
+    for (const message of messages.reverse()) {
+      if (seen.has(message.id)) continue;
+      seen.add(message.id);
+      render(message);
+    }
+  }, everyMs);
+}
+```
+
+Plugin signals (typing, presence, receipts) are in-memory and single-node too
+
+- they simply won't fire across isolates; the durable state
+  (`lastReadMessageId`) still works everywhere.
+
+## Databases on edge runtimes
+
+TCP drivers (`pg`) don't run on edge runtimes. The Drizzle adapter is
+driver-agnostic - swap the `drizzle()` line for an HTTP/WebSocket driver
+(Neon, Vercel Postgres). Recipes in
+[Drizzle / Postgres](/docs/storage/drizzle#serverless--edge-runtimes).
+
+## Keeping SSE connections alive
+
+Long-lived SSE connections pass through proxies and load balancers that kill
+idle sockets. The handler sends a heartbeat comment every 15s by default -
+tune with:
+
+```ts
+chat.handler({ heartbeatIntervalMs: 15_000 });
+```
+
+If you front the app with nginx, disable response buffering for the stream
+path (`proxy_buffering off;`) so events aren't held back.
+
+## Checklist before going live
+
+1. **Storage** - swapped `memoryAdapter()` for a database adapter?
+2. **Auth** - real session resolution in the `auth` hook, with cookies for
+   `/stream` ([Authentication](/docs/concepts/authentication))?
+3. **Tables** - migrations run
+   ([Creating the tables](/docs/storage/drizzle#creating-the-tables))?
+4. **Platform** - long-lived process (SSE fine) or serverless (poll)?
+5. **Recipient validation** - your app checks `otherUserId` against your
+   users table?

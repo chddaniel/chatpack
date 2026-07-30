@@ -1,0 +1,70 @@
+---
+title: Express & Plain Node
+description: Bridge Node's req/res to the Web-standard handler - streaming included, so SSE works.
+---
+
+Express and plain Node's `http` module predate the Web `Request`/`Response`
+types, so they need a small bridge. **Streaming the response body is what
+makes `/stream` (SSE) work** - don't buffer it.
+
+## Express
+
+```ts
+import express from "express";
+import { chat } from "./chat";
+
+const app = express();
+const chatHandler = chat.handler();
+
+app.use("/api/chat", async (req, res) => {
+  // req.originalUrl matters under Express mounts
+  const url = `http://${req.headers.host}${req.originalUrl}`;
+  const chunks = [];
+  for await (const c of req) chunks.push(c);
+  const request = new Request(url, {
+    method: req.method,
+    headers: Object.entries(req.headers).flatMap(([k, v]) =>
+      v === undefined ? [] : Array.isArray(v) ? v.map((x) => [k, x]) : [[k, v]],
+    ),
+    body: chunks.length ? new Uint8Array(Buffer.concat(chunks)) : null,
+  });
+
+  const response = await chatHandler.fetch(request);
+
+  res.writeHead(response.status, Object.fromEntries(response.headers.entries()));
+  if (response.body) {
+    const reader = response.body.getReader();
+    req.on("close", () => void reader.cancel().catch(() => {}));
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      res.write(value);
+    }
+  }
+  res.end();
+});
+
+app.listen(3000);
+```
+
+The pieces that matter:
+
+- **`req.originalUrl`** - under an Express mount (`app.use("/api/chat", ...)`),
+  `req.url` has the prefix stripped; `originalUrl` keeps the full path the
+  handler needs for routing.
+- **Streaming the body with a reader loop** - `res.write(value)` per chunk is
+  what lets SSE events flow as they happen.
+- **`req.on("close")` → `reader.cancel()`** - cleans up the server-side stream
+  when the client disconnects.
+
+## Plain Node
+
+A complete, runnable plain-Node version - including in-memory or Postgres
+storage and a full curl walkthrough with SSE reconnect -
+lives at
+[`examples/node-server`](https://github.com/chddaniel/chatpack/tree/main/examples/node-server).
+
+<Callout type="info">
+  Node 18+ has `Request`/`Response` globals built in - no polyfill needed (the repo requires
+  Node >= 18).
+</Callout>

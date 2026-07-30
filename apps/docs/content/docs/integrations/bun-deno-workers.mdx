@@ -1,0 +1,71 @@
+---
+title: Bun, Deno & Cloudflare Workers
+description: The handler is already Web-standard - serve it directly.
+---
+
+`chat.handler()` returns a Web-standard function (`Request → Response`), so
+runtimes with native fetch servers need no adapter at all.
+
+## Bun
+
+```ts
+import { chat } from "./chat";
+
+const handler = chat.handler();
+
+Bun.serve({
+  port: 3000,
+  fetch: handler.fetch,
+});
+```
+
+## Deno
+
+```ts
+import { chat } from "./chat.ts";
+
+const handler = chat.handler();
+
+Deno.serve({ port: 3000 }, handler.fetch);
+```
+
+## Cloudflare Workers
+
+```ts
+import { chatpack } from "@chatpack/core";
+import { drizzleAdapter } from "@chatpack/adapter-drizzle";
+import { drizzle } from "drizzle-orm/neon-http";
+import { neon } from "@neondatabase/serverless";
+
+export default {
+  fetch(request: Request, env: Env) {
+    const chat = chatpack({
+      storage: drizzleAdapter(drizzle(neon(env.DATABASE_URL))),
+      auth: async (req) => getSessionUser(req),
+    });
+    return chat.handler().fetch(request);
+  },
+};
+```
+
+<Callout type="warn">
+  **Workers are isolates.** The default SSE transport is in-process - events won't reach connections
+  held by other isolates, and the memory adapter shares nothing. Use a database adapter (with an
+  HTTP driver - TCP drivers like `pg` don't run on edge) and poll `GET /conversations/:id/messages`
+  instead of `/stream`. See [Deployment](/docs/integrations/deployment).
+</Callout>
+
+If your Chatpack instance only serves part of the app, route by prefix - the
+handler answers everything under its `basePath` (default `/api/chat`):
+
+```ts
+const handler = chat.handler();
+
+Bun.serve({
+  fetch(request) {
+    const url = new URL(request.url);
+    if (url.pathname.startsWith("/api/chat")) return handler.fetch(request);
+    return new Response("Not found", { status: 404 });
+  },
+});
+```

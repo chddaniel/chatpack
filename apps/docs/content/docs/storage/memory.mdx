@@ -1,0 +1,59 @@
+---
+title: Memory Adapter
+description: Zero-setup storage for demos and fast, deterministic tests.
+---
+
+`@chatpack/adapter-memory` keeps everything in process memory - no database,
+no setup. It's the reference implementation of the `StorageAdapter` contract
+and what the core test suite runs against.
+
+## Install & use
+
+```sh
+npm install @chatpack/core @chatpack/adapter-memory
+```
+
+```ts
+import { chatpack } from "@chatpack/core";
+import { memoryAdapter } from "@chatpack/adapter-memory";
+
+export const chat = chatpack({
+  storage: memoryAdapter(),
+  auth: async (req) => getSessionUser(req),
+});
+```
+
+## When to use it
+
+- **Demos and prototypes** - a working chat backend with zero infrastructure.
+- **Tests** - fast and deterministic; create a fresh adapter per test.
+- **AI-builder previews** - preview sandboxes behave like a dev server, so
+  the memory adapter works there.
+
+## When NOT to use it
+
+<Callout type="warn">
+  Memory is **per-process**: everything is lost on restart, and on serverless/edge platforms
+  (Vercel/AWS Lambda, Cloudflare Workers) each isolate has its own memory - two requests can land on
+  two isolates that don't share any state. For anything beyond a single long-lived process, use
+  [Drizzle / Postgres](/docs/storage/drizzle) or a [custom adapter](/docs/storage/custom-adapter).
+</Callout>
+
+Under dev-server HMR (`next dev`, Vite), module re-evaluation creates a fresh
+adapter and wipes state - guard the instance with `globalThis`:
+
+```ts
+import { chatpack, type ChatpackInstance } from "@chatpack/core";
+
+const g = globalThis as typeof globalThis & { __chatpack__?: ChatpackInstance };
+export const chat = (g.__chatpack__ ??= chatpack({ storage: memoryAdapter(), auth }));
+```
+
+## Moving to production
+
+Swap one line - everything else stays the same:
+
+```diff
+- storage: memoryAdapter(),
++ storage: drizzleAdapter(drizzle(process.env.DATABASE_URL!)),
+```

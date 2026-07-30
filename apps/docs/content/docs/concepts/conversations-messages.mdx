@@ -1,0 +1,177 @@
+---
+title: Conversations & Messages
+description: The data model - pair keys, message ordering with seq, read-state, pagination, and soft deletes.
+---
+
+## The data model
+
+Three entities, all stored through the adapter:
+
+**Conversation**
+
+<TypeTable
+  type={{
+    id: {
+      description: 'Server-generated opaque string (e.g. "conv_1"). Never construct ids yourself.',
+      type: "string",
+    },
+    pairKey: {
+      description:
+        'Deterministic key for the user pair - sorted ids joined with ":" (e.g. "alice:bob"). Internal to Chatpack.',
+      type: "string",
+    },
+    createdAt: {
+      description: "Creation time. Date on the server, ISO string over HTTP.",
+      type: "Date",
+    },
+    metadata: { description: "Arbitrary JSON object for your app. Default {}.", type: "Metadata" },
+    participants: { description: "Always exactly 2 in v0.", type: "Participant[]" },
+  }}
+/>
+
+**Participant**
+
+<TypeTable
+  type={{
+    conversationId: { description: "The conversation this row belongs to.", type: "string" },
+    userId: {
+      description: "Your user id - Chatpack never validates it against a users table.",
+      type: "string",
+    },
+    joinedAt: { description: "When the participant joined.", type: "Date" },
+    lastReadMessageId: {
+      description: "Durable read-state - the last message this user marked read.",
+      type: "string | null",
+    },
+  }}
+/>
+
+**Message**
+
+<TypeTable
+  type={{
+    id: { description: 'Server-generated opaque string (e.g. "msg_1").', type: "string" },
+    conversationId: { description: "The conversation the message belongs to.", type: "string" },
+    senderId: { description: "The sending user id.", type: "string" },
+    body: {
+      description: "The message text. The field is body - not text or content.",
+      type: "string",
+    },
+    role: {
+      description:
+        '"user" | "assistant" | "system" (default "user"). A stored label - core never branches on it.',
+      type: "MessageRole",
+    },
+    seq: {
+      description: "Strictly-increasing integer per conversation - the ordering contract.",
+      type: "number",
+    },
+    createdAt: { description: "For display only; seq is the sort key.", type: "Date" },
+    editedAt: { description: "Set when the message was edited.", type: "Date | null" },
+    deletedAt: { description: "Set when soft-deleted (tombstone).", type: "Date | null" },
+    metadata: { description: "Arbitrary JSON object. Default {}.", type: "Metadata" },
+  }}
+/>
+
+## One conversation per pair
+
+"Find-or-create a direct conversation" is the entry point of the whole API.
+Core computes a deterministic **pair key** - the two user ids sorted
+lexicographically and joined with `":"` - so `getOrCreateConversation(A→B)`
+and `(B→A)` always converge on the same conversation, even under concurrent
+calls. Duplicate DMs are prevented by data shape, not by racy
+"check-then-insert" logic.
+
+<Callout type="warn">
+  **Conversation ids are server-generated opaque strings.** Get one from `POST /conversations` or
+  `chat.api.getOrCreateConversation` with `{otherUserId}`. Never construct ids like `"alice-bob"` -
+  the sorted pair key is internal to Chatpack.
+</Callout>
+
+## Message ordering: `seq`, not timestamps
+
+Every message gets a **strictly increasing integer `seq`, scoped per
+conversation**, assigned atomically by the storage adapter at insert time.
+Timestamps collide (two messages in the same millisecond have no defined
+order) and clocks skew across processes - so `seq` is the ordering contract:
+
+- `listMessages` returns newest-first by descending `seq`.
+- Pagination cursors point at positions in `seq` order.
+- SSE gap-fill replays "everything after seq X" on reconnect.
+
+`createdAt` remains for display purposes only. Gaps in `seq` are allowed;
+reuse or decrease never happens.
+
+## Pagination vs gap-fill - don't mix them up
+
+Infinite scroll ("load older messages") is `listMessages` with the
+`nextCursor` from the previous page passed back as `cursor`:
+
+```ts
+const page1 = await chat.api.listMessages({ userId, conversationId, limit: 50 });
+const page2 = await chat.api.listMessages({
+  userId,
+  conversationId,
+  limit: 50,
+  cursor: page1.nextCursor!, // null when there are no more results
+});
+```
+
+`listMessagesAfter` is **not** pagination - it fetches messages _after_ a
+known `seq` (oldest-first) and exists for real-time catch-up. The `/stream`
+endpoint already calls it automatically on reconnect, so most apps never use
+it directly.
+
+<Callout type="info">
+  Message lists are **newest-first** - reverse the page for a chronological top-to-bottom
+  transcript.
+</Callout>
+
+## Read-state
+
+Durable read-state is one field per participant: `lastReadMessageId`, updated
+via `chat.api.markRead` or `POST /conversations/:id/read`:
+
+```ts
+await chat.api.markRead({ userId: "bob", conversationId, messageId: "msg_42" });
+```
+
+This is the source of truth for unread badges and ✓✓ indicators. The
+[`receipts()` plugin](/docs/realtime/plugins#receipts) adds instant, ephemeral
+ticks on top - but `lastReadMessageId` is what survives restarts.
+
+## Edit & soft delete
+
+Only the sender can edit or delete their own message (`403
+NOT_MESSAGE_SENDER` otherwise):
+
+```ts
+await chat.api.editMessage({ userId, messageId, body: "fixed the typo" });
+await chat.api.deleteMessage({ userId, messageId });
+```
+
+Deletes are **soft**: the message keeps its `id` and `seq`, its `body` becomes
+`""`, and `deletedAt` is set - clients render a tombstone ("message deleted").
+Editing a deleted message fails with `409 MESSAGE_DELETED`.
+
+## Metadata
+
+Both conversations and messages carry a `metadata` JSON object that Chatpack
+stores and returns losslessly, without interpreting it. Use it for anything
+your app needs - labels, client-side ids, attachment pointers:
+
+```ts
+await chat.api.sendMessage({
+  userId,
+  conversationId,
+  body: "check this out",
+  metadata: { clientId: "tmp-123", kind: "link-share" },
+});
+```
+
+## Timestamps on the wire
+
+The exported types declare `createdAt` / `editedAt` / `deletedAt` as `Date` -
+correct for server-side `chat.api.*` calls. Over HTTP, JSON serialization
+means clients receive **ISO 8601 strings** - type them as `string` in frontend
+code.

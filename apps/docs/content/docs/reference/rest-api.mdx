@@ -1,0 +1,157 @@
+---
+title: REST API
+description: Every HTTP route, request and response shape, semantics, and error code.
+---
+
+All routes are served by the one handler, relative to `basePath` (default
+`/api/chat`). Your `auth` hook runs on **every** request - before routing.
+
+## Core routes
+
+| Method | Path                          | Request body / query                   | Response (200/201)                        |
+| ------ | ----------------------------- | -------------------------------------- | ----------------------------------------- |
+| POST   | `/conversations`              | `{ otherUserId, metadata? }`           | `{ conversation }`                        |
+| GET    | `/conversations`              | `?limit=&cursor=`                      | `{ conversations, nextCursor }`           |
+| GET    | `/conversations/:id`          | -                                      | `{ conversation }`                        |
+| POST   | `/conversations/:id/messages` | `{ body, role?, metadata? }`           | `{ message }` (201)                       |
+| GET    | `/conversations/:id/messages` | `?limit=&cursor=`                      | `{ messages, nextCursor }` - newest first |
+| POST   | `/conversations/:id/read`     | `{ messageId }`                        | `{ ok: true }`                            |
+| PATCH  | `/messages/:id`               | `{ body }`                             | `{ message }`                             |
+| DELETE | `/messages/:id`               | -                                      | `{ message }` (soft-deleted)              |
+| GET    | `/stream`                     | SSE; auto `Last-Event-ID` on reconnect | `text/event-stream`                       |
+
+## Plugin routes
+
+Only present when the plugin is passed to `chatpack({ plugins })` - consulted
+after core routes miss, before the 404:
+
+| Method | Path                        | Plugin       | Request body / query     | Response                                         |
+| ------ | --------------------------- | ------------ | ------------------------ | ------------------------------------------------ |
+| POST   | `/conversations/:id/typing` | `typing()`   | `{ isTyping?: boolean }` | `{ ok: true }`                                   |
+| GET    | `/presence`                 | `presence()` | `?userIds=a,b` (max 50)  | `{ presence: { [id]: { online, lastSeenAt } } }` |
+
+## Semantics
+
+These trip up hand-written and generated clients alike:
+
+- **Responses are enveloped** - `{ conversation }`, `{ message }`,
+  `{ messages, nextCursor }` - unwrap them. The envelope is HTTP-only and
+  intentional (room to add sibling fields without breaking clients);
+  server-side `chat.api.*` returns bare objects instead. Don't share types
+  between the two.
+- **Message lists are newest-first**; reverse for a chronological transcript.
+  Paginate by passing `nextCursor` back as `?cursor=`; `nextCursor: null`
+  means no more results.
+- **The message text field is `body`** (not `text` / `content`).
+- **`role`** is `"user" | "assistant" | "system"` (default `"user"`) - a
+  stored label; core never branches on it. Anything else is a 400.
+- **`otherUserId` is not validated to exist** (Chatpack never owns a users
+  table) - validate recipients in your app.
+- **Timestamps** are `Date` in server-side calls, ISO 8601 strings over HTTP.
+- **Auth runs before routing** - an unauthenticated request to a wrong path
+  still 401s. Fix auth first; then a lingering `404 NOT_FOUND` means your
+  mount path/basePath is wrong.
+
+## Worked example
+
+Send a message:
+
+```sh
+curl -X POST /api/chat/conversations/conv_1/messages \
+  -H 'content-type: application/json' \
+  -d '{"body": "hey bob!"}'
+```
+
+```json
+{
+  "message": {
+    "id": "msg_1",
+    "conversationId": "conv_1",
+    "senderId": "alice",
+    "body": "hey bob!",
+    "role": "user",
+    "seq": 1,
+    "createdAt": "2026-07-22T19:48:06.416Z",
+    "editedAt": null,
+    "deletedAt": null,
+    "metadata": {}
+  }
+}
+```
+
+Find-or-create a conversation:
+
+```sh
+curl -X POST /api/chat/conversations \
+  -H 'content-type: application/json' \
+  -d '{"otherUserId": "bob"}'
+```
+
+```json
+{
+  "conversation": {
+    "id": "conv_1",
+    "pairKey": "alice:bob",
+    "createdAt": "2026-07-22T19:47:47.945Z",
+    "metadata": {},
+    "participants": [
+      { "conversationId": "conv_1", "userId": "alice", "joinedAt": "…", "lastReadMessageId": null },
+      { "conversationId": "conv_1", "userId": "bob", "joinedAt": "…", "lastReadMessageId": null }
+    ]
+  }
+}
+```
+
+## Errors
+
+JSON with a stable machine-readable code and a mapped HTTP status:
+
+```json
+{ "error": { "code": "FORBIDDEN_READ", "message": "…" } }
+```
+
+| Status | Code(s)                                                    | When                                             |
+| ------ | ---------------------------------------------------------- | ------------------------------------------------ |
+| 401    | `UNAUTHENTICATED`                                          | `auth` returned `null` (or a non-`ChatpackUser`) |
+| 400    | `INVALID_INPUT`                                            | bad body/query params                            |
+| 403    | `FORBIDDEN_READ`, `FORBIDDEN_WRITE`, `NOT_MESSAGE_SENDER`  | not allowed                                      |
+| 404    | `CONVERSATION_NOT_FOUND`, `MESSAGE_NOT_FOUND`, `NOT_FOUND` | missing resource/route                           |
+| 409    | `MESSAGE_DELETED`                                          | editing a deleted message                        |
+| 500    | `INTERNAL_ERROR`                                           | unexpected server error (opaque)                 |
+
+More on branching by code in [Error handling](/docs/concepts/errors).
+
+## SSE events
+
+Durable events on `GET /stream` (replayed from storage on reconnect via
+`Last-Event-ID`; event id is `conversationId:seq`):
+
+| Event             | Data          | When                                                    |
+| ----------------- | ------------- | ------------------------------------------------------- |
+| `message.created` | `{ message }` | a message was sent to one of your conversations         |
+| `message.updated` | `{ message }` | a message was edited                                    |
+| `message.deleted` | `{ message }` | a message was soft-deleted (body `""`, `deletedAt` set) |
+
+Ephemeral plugin events (never stored, never replayed, no `id:` field):
+
+| Event                                  | Plugin       |
+| -------------------------------------- | ------------ |
+| `typing.started` / `typing.stopped`    | `typing()`   |
+| `presence.online` / `presence.offline` | `presence()` |
+| `receipt.delivered` / `receipt.read`   | `receipts()` |
+
+Ephemeral data payload:
+`{ type, ephemeral: true, conversationId?, senderId, payload, at }`.
+
+## Handler options
+
+```ts
+chat.handler({
+  basePath: "/api/chat", // default
+  heartbeatIntervalMs: 15_000, // default - SSE keep-alive comment interval
+});
+```
+
+`GET`/`POST`/`PATCH`/`DELETE`/`fetch` on the returned handler are **all the
+same function** - the method names only exist so they can be re-exported from
+a Next.js route file. Any of them serves every route, including `/stream`.

@@ -5,22 +5,26 @@
 **Open-source chat infrastructure for developers.**
 
 Install a package, wire up your database and auth, and get a production-ready
-1:1 chat backend — conversations, messages, permissions, read-state, and
-real-time delivery — without rebuilding it from scratch.
+1:1 chat backend - conversations, messages, permissions, read-state, and
+real-time delivery - without rebuilding it from scratch.
 
 [![CI](https://github.com/chddaniel/chatpack/actions/workflows/ci.yml/badge.svg)](https://github.com/chddaniel/chatpack/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+
+**[Documentation](./apps/docs)** - quickstart, concepts, real-time, storage
+adapters, framework guides, and the full REST reference. Run it locally with
+`pnpm --filter @chatpack/docs dev`.
 
 </div>
 
 ---
 
-> **Status: `0.2.x` — v0 MVP + real-time plugins, live on npm.** The v0 MVP
+> **Status: `0.2.x` - v0 MVP + real-time plugins, live on npm.** The v0 MVP
 > (core engine, HTTP handler, real-time SSE, Postgres adapter) plus the opt-in
-> real-time plugins — **`typing()`, `presence()`, and `receipts()`, all shipping
+> real-time plugins - **`typing()`, `presence()`, and `receipts()`, all shipping
 > today inside `@chatpack/core` under the `@chatpack/core/plugins` subpath** (see
-> [Real-time plugins](#real-time-plugins-typing-presence-read-ticks)) — are
-> published and installable now. The API is young — expect minor breaking
+> [Real-time plugins](#real-time-plugins-typing-presence-read-ticks)) - are
+> published and installable now. The API is young - expect minor breaking
 > changes before `1.0`. Follow along or [contribute](./CONTRIBUTING.md).
 
 ## Why
@@ -28,12 +32,12 @@ real-time delivery — without rebuilding it from scratch.
 Every app that needs messaging ends up rebuilding the same things: conversations,
 messages, permissions, read receipts, real-time delivery, and countless edge cases.
 
-Chatpack removes that repetition — the same way BetterAuth did for authentication.
+Chatpack removes that repetition - the same way BetterAuth did for authentication.
 You bring your **auth** and your **frontend**; Chatpack gives you a small,
 well-designed chat backend that just works.
 
 Real-time comes built in: your frontend opens **one `EventSource`** and gets
-live messages with automatic reconnection and missed-message backfill — no
+live messages with automatic reconnection and missed-message backfill - no
 WebSocket server, no Socket.IO, no reconnect code to write.
 
 ## How it fits together
@@ -58,12 +62,12 @@ Your database
 ## Quickstart
 
 > Prefer learning from a complete app? [`examples/messenger`](./examples/messenger)
-> is a full 1:1 messenger — sidebar, live messages, read receipts — in vanilla
+> is a full 1:1 messenger - sidebar, live messages, read receipts - in vanilla
 > HTML+JS with a step-by-step tutorial README.
 
 ### 1. Install
 
-Both packages are needed for the quickstart — `@chatpack/core` is the engine,
+Both packages are needed for the quickstart - `@chatpack/core` is the engine,
 `@chatpack/adapter-memory` is the storage it plugs into:
 
 ```sh
@@ -76,7 +80,7 @@ bun  add     @chatpack/core @chatpack/adapter-memory
 > **Bun note:** if Bun's supply-chain guard (`minimumReleaseAge`) is enabled,
 > versions published in the last 24 h are skipped and Bun silently resolves an
 > older release. If you get an unexpectedly old version right after a release,
-> that's the guard — not a broken package. Check with
+> that's the guard - not a broken package. Check with
 > `npm view @chatpack/core dist-tags`.
 
 ### 2. Create your chat server
@@ -88,7 +92,7 @@ import { memoryAdapter } from "@chatpack/adapter-memory";
 
 export const chat = chatpack({
   storage: memoryAdapter(),
-  // resolve the current user from a request — the ONLY auth touchpoint.
+  // resolve the current user from a request - the ONLY auth touchpoint.
   // Concrete example with a session cookie (works with any auth library):
   auth: async (req) => {
     const session = await getSessionFromCookie(req.headers.get("cookie"));
@@ -97,16 +101,16 @@ export const chat = chatpack({
 });
 ```
 
-> **The `auth` hook must return `ChatpackUser | null`** — an object with at
+> **The `auth` hook must return `ChatpackUser | null`** - an object with at
 > least `{ id: string }` (extra fields are allowed and ignored), or `null`
 > for unauthenticated requests. Returning a bare string is treated as
 > unauthenticated and every request will get a `401`.
 >
 > **Prefer cookie-based sessions** over `Authorization` headers: the browser
-> sends cookies automatically on every request — including the SSE stream in
+> sends cookies automatically on every request - including the SSE stream in
 > step 5, where custom headers are impossible.
 >
-> The hook receives a raw Web-standard `Request` — there is no
+> The hook receives a raw Web-standard `Request` - there is no
 > `request.cookies` helper. Parse the `cookie` header yourself:
 >
 > ```ts
@@ -120,14 +124,14 @@ export const chat = chatpack({
 >
 > **Setting the demo cookie in an embedded preview (Lovable, v0, Bolt, ...)?**
 > Those editors show your app inside a cross-site iframe, where browsers
-> silently drop `SameSite=Lax` cookies — the app 401s in the preview pane but
+> silently drop `SameSite=Lax` cookies - the app 401s in the preview pane but
 > works in a real tab. Set demo cookies with iframe-proof attributes:
 >
 > ```ts
 > document.cookie = "demo_user=alice; Path=/; Max-Age=86400; SameSite=None; Secure; Partitioned";
 > ```
 
-For production, swap the storage line for Postgres —
+For production, swap the storage line for Postgres -
 [`@chatpack/adapter-drizzle`](./packages/adapter-drizzle):
 
 ```ts
@@ -142,15 +146,23 @@ export const chat = chatpack({
 
 > **No direct Postgres connection string?** Platforms that only expose a
 > database client (Supabase's JS client, Convex, and most AI-builder clouds)
-> are supported through a custom `StorageAdapter`. The full guide — reference
-> schema, invariants, skeleton, and a verification checklist — is Part 2 of
+> are supported through a custom `StorageAdapter`. The full guide - reference
+> schema, invariants, skeleton, and a verification checklist - is Part 2 of
 > [`llms.txt`](./llms.txt).
 >
 > **Building with an AI assistant or app builder?** [`llms.txt`](./llms.txt)
 > is the single-fetch integration guide (hard rules, wiring, per-framework
 > mount recipes, preview-iframe cookie recipe, verification steps). It also
-> ships inside every `@chatpack/*` npm package as `llms.txt` — point your
+> ships inside every `@chatpack/*` npm package as `llms.txt` - point your
 > agent at `node_modules/@chatpack/core/llms.txt`.
+>
+> Using a coding agent (Claude Code, Cursor, Codex)? Install the
+> [Chatpack agent skill](./skills) into your app's repo so the agent follows
+> the correct workflow automatically:
+>
+> ```sh
+> npx skills add chddaniel/chatpack
+> ```
 
 ### 3. Mount the API (Next.js App Router)
 
@@ -169,21 +181,21 @@ import { chat } from "@/lib/chat";
 export const { GET, POST, PATCH, DELETE } = toNextRouteHandlers(chat);
 ```
 
-> **The route file must be a catch-all** (`[...chatpack]` in Next.js) —
+> **The route file must be a catch-all** (`[...chatpack]` in Next.js) -
 > Chatpack serves many sub-paths under `basePath` (default `/api/chat`), so a
 > single `app/api/chat/route.ts` would 404 everything but the root.
 >
 > **Never hand-write your own message or stream routes.** The one handler
-> already serves every route — conversations, messages, read-state, plugins,
+> already serves every route - conversations, messages, read-state, plugins,
 > and the SSE stream. Custom `/api/messages`-style routes split state and
 > break live delivery.
 
-Your chat backend is now live at `/api/chat` — find-or-create conversations,
+Your chat backend is now live at `/api/chat` - find-or-create conversations,
 send/list/edit/delete messages, read-state, and a **live SSE stream** at
 `/api/chat/stream`, with your auth enforced on every request.
 
 Not on Next.js? The handler is Web-standard (`Request` → `Response`) and
-`GET`/`POST`/`PATCH`/`DELETE`/`fetch` are **all the same function** — the
+`GET`/`POST`/`PATCH`/`DELETE`/`fetch` are **all the same function** - the
 method names only exist so they can be re-exported from a Next.js route file.
 Any of them serves every route, including `/stream`:
 
@@ -212,7 +224,7 @@ curl -X POST /api/chat/conversations \
 ```
 
 > **Chatpack never owns a users table**, so it cannot check that
-> `otherUserId` actually exists — a typo silently creates a conversation
+> `otherUserId` actually exists - a typo silently creates a conversation
 > with a ghost user. Validate recipient ids against your own users table
 > before calling.
 
@@ -231,7 +243,7 @@ curl -X POST /api/chat/conversations \
 }
 ```
 
-Send a message — note the field is **`body`**:
+Send a message - note the field is **`body`**:
 
 ```sh
 curl -X POST /api/chat/conversations/conv_1/messages \
@@ -266,7 +278,7 @@ curl '/api/chat/conversations/conv_1/messages?limit=50'
 { "messages": [{ "id": "msg_1", "body": "hey bob!", "seq": 1, "…": "…" }], "nextCursor": null }
 ```
 
-Errors are JSON with a stable machine-readable code and a mapped HTTP status —
+Errors are JSON with a stable machine-readable code and a mapped HTTP status -
 `401` when `auth` returns `null`, `400` for invalid input, `403`/`404`/`409`
 for domain errors:
 
@@ -283,10 +295,10 @@ codes) lives in [`@chatpack/core`'s README](./packages/core#rest-api).
 const events = new EventSource("/api/chat/stream");
 
 // TypeScript: custom event names fall outside EventSourceEventMap, so the
-// listener parameter is typed `Event` — cast to MessageEvent for `.data`.
+// listener parameter is typed `Event` - cast to MessageEvent for `.data`.
 events.addEventListener("message.created", (e) => {
   const { message } = JSON.parse((e as MessageEvent).data);
-  // render it — reconnection & missed-message backfill are automatic
+  // render it - reconnection & missed-message backfill are automatic
 });
 
 events.onerror = () => {
@@ -295,26 +307,26 @@ events.onerror = () => {
     // Re-authenticate, then create a new EventSource.
   }
   // Otherwise it's a dropped connection: EventSource retries automatically
-  // and sends Last-Event-ID — no action needed.
+  // and sends Last-Event-ID - no action needed.
 };
 ```
 
 If the connection drops, `EventSource` reconnects with `Last-Event-ID` and
-Chatpack replays whatever was missed **from storage** — durable-first delivery,
+Chatpack replays whatever was missed **from storage** - durable-first delivery,
 no lost messages.
 
 Two things to know before going live:
 
-- **Browser auth must be cookie-based for SSE** — `EventSource` can't send
+- **Browser auth must be cookie-based for SSE** - `EventSource` can't send
   custom headers, so your `auth` hook needs to resolve the user from a session
   cookie (sent automatically same-origin). Bearer-token headers work for the
-  REST routes but not `/stream` — if your app uses them, write the `auth`
+  REST routes but not `/stream` - if your app uses them, write the `auth`
   hook to accept either (header first, cookie fallback); worked example in
   [`@chatpack/core`'s README](./packages/core#real-time-sse). If the app runs
   inside an embedded preview iframe (AI-builder editors), the cookie needs
-  `SameSite=None; Secure` — see the quickstart note in step 2.
+  `SameSite=None; Secure` - see the quickstart note in step 2.
 - **SSE + `memoryAdapter` need one long-lived process.** On serverless/edge
-  (Workers, Lambda) each isolate has its own memory — use a
+  (Workers, Lambda) each isolate has its own memory - use a
   [database adapter](./packages/adapter-drizzle) there and poll for new
   messages until a distributed transport ships. Details in
   [`@chatpack/core`'s README](./packages/core#real-time-sse).
@@ -342,12 +354,12 @@ const { messages } = await chat.api.listMessages({
 });
 ```
 
-That's it. Only the two participants can read or write — enforced by default,
+That's it. Only the two participants can read or write - enforced by default,
 customizable via the `permissions` hooks.
 
 ### 7. Bonus: chat with an AI assistant
 
-To Chatpack, an AI assistant is **just another participant** — pick a
+To Chatpack, an AI assistant is **just another participant** - pick a
 synthetic user id (any string you'll never issue to a real user, e.g.
 `ai:assistant`) and have your backend send its replies. No special AI support
 needed, and the same 1:1 permissions apply:
@@ -376,12 +388,12 @@ await chat.api.sendMessage({
   userId: ASSISTANT_ID,
   conversationId: conversation.id,
   body: reply,
-  role: "assistant", // "user" | "assistant" | "system" — stored & returned as-is
+  role: "assistant", // "user" | "assistant" | "system" - stored & returned as-is
 });
 ```
 
 Chatpack stores, orders, and delivers the messages; the LLM call is yours
-(model, keys, prompts, streaming). `role` is a plain label for your UI —
+(model, keys, prompts, streaming). `role` is a plain label for your UI -
 core never behaves differently based on it. Since `otherUserId` accepts any
 non-empty string, make sure your `auth`/validation layer prevents real users
 from registering ids in your synthetic namespace (e.g. reserve the `ai:`
@@ -390,7 +402,7 @@ prefix).
 ## Real-time plugins: typing, presence, read ticks
 
 The "feels alive" features are **opt-in plugins** that ship inside
-`@chatpack/core` — no extra install:
+`@chatpack/core` - no extra install:
 
 ```ts
 import { chatpack } from "@chatpack/core";
@@ -405,13 +417,13 @@ export const chat = chatpack({
 
 They publish **ephemeral events** on the same `/stream` connection you already
 have: fire-and-forget signals that are never stored and never replayed on
-reconnect (miss a typing ping and it's gone — that's correct; durable state
+reconnect (miss a typing ping and it's gone - that's correct; durable state
 like `lastReadMessageId` stays in core). Listen exactly like message events:
 
 ```ts
 events.addEventListener("typing.started", (e) => {
   const { senderId, conversationId } = JSON.parse((e as MessageEvent).data);
-  // show "… is typing" — and hide it if no new ping arrives within ~5s
+  // show "… is typing" - and hide it if no new ping arrives within ~5s
 });
 events.addEventListener("presence.online", (e) => {
   /* light up the dot */
@@ -428,14 +440,14 @@ What each plugin adds:
 | ------------ | -------------------------------- | ------------------------------------- |
 | `typing()`   | `POST /conversations/:id/typing` | `typing.started`, `typing.stopped`    |
 | `presence()` | `GET /presence?userIds=a,b`      | `presence.online`, `presence.offline` |
-| `receipts()` | — (hooks into send + mark-read)  | `receipt.delivered`, `receipt.read`   |
+| `receipts()` | - (hooks into send + mark-read)  | `receipt.delivered`, `receipt.read`   |
 
 Notes that keep the design honest:
 
 - **Typing** is stateless: while the user types, `POST …/typing` at most once
   every few seconds; the other side clears the indicator if no ping arrives
   within ~5s. Send `{ "isTyping": false }` to clear it eagerly.
-- **Presence needs no heartbeat endpoint** — the SSE connection _is_ the
+- **Presence needs no heartbeat endpoint** - the SSE connection _is_ the
   heartbeat. Multi-tab safe; a short grace period (default 5s,
   `presence({ offlineDelayMs })`) stops the online dot from blinking during
   `EventSource` auto-reconnects. Snapshots via `GET /presence` only reveal
@@ -443,12 +455,12 @@ Notes that keep the design honest:
 - **Receipts** are instant ✓/✓✓ pings while both sides are online:
   `receipt.delivered` fires to the sender the moment the recipient's stream
   receives the message; `receipt.read` fires when the other side calls
-  mark-read. Ticks are at-least-once — dedupe by `payload.messageId`. The
+  mark-read. Ticks are at-least-once - dedupe by `payload.messageId`. The
   durable truth is still `lastReadMessageId`.
 - Like the default transport, plugin state is **in-memory and single-node**
   (MVP §5). Multi-node fan-out is a future transport, not an API change.
 
-Want to write your own plugin? The seam is public — see `ChatpackPlugin` in
+Want to write your own plugin? The seam is public - see `ChatpackPlugin` in
 [`@chatpack/core`](./packages/core) and
 [ADR 0008](./docs/decisions/0008-ephemeral-events-in-core-plugins.md).
 
@@ -483,32 +495,32 @@ React UI. See [docs/MVP.md](./docs/MVP.md) for the full scope and reasoning.
 
 | Example                                            | What it shows                                            |
 | -------------------------------------------------- | -------------------------------------------------------- |
-| [`examples/messenger`](./examples/messenger)       | **A complete 1:1 messenger** — vanilla HTML+JS, tutorial |
+| [`examples/messenger`](./examples/messenger)       | **A complete 1:1 messenger** - vanilla HTML+JS, tutorial |
 | [`examples/next-backend`](./examples/next-backend) | The quickstart, runnable: Next.js App Router + SSE       |
 | [`examples/node-server`](./examples/node-server)   | Plain Node http server, in-memory or Postgres storage    |
 
 ## Design principles
 
-- **Developers bring their own auth** — Chatpack never owns a users table.
-- **Adapter-driven** — storage is an interface; Postgres, MySQL, or in-memory
+- **Developers bring their own auth** - Chatpack never owns a users table.
+- **Adapter-driven** - storage is an interface; Postgres, MySQL, or in-memory
   are just adapters.
-- **Durable-first real-time** — a message is persisted before anyone is
+- **Durable-first real-time** - a message is persisted before anyone is
   notified about it.
-- **Small surface, no magic** — every feature must justify its existence.
+- **Small surface, no magic** - every feature must justify its existence.
 
 Read more in [docs/ARCHITECTURE.md](./docs/ARCHITECTURE.md).
 
 ## Telemetry
 
 Chatpack ships **anonymous, opt-out telemetry**: aggregate counters only.
-Twice a day (at most) it POSTs a small JSON body — counter deltas
+Twice a day (at most) it POSTs a small JSON body - counter deltas
 (`messagesSent`, `conversationsCreated`), the library version, and a random
 per-process id that is never persisted. Never message bodies, user ids,
 conversation ids, or hostnames. The payload shape is a documented public type
 ([`TelemetryPayload`](./packages/core/src/telemetry.ts)) so you can audit
 exactly what leaves your server.
 
-Opt out any time — either works:
+Opt out any time - either works:
 
 ```ts
 chatpack({ storage, telemetry: false });
@@ -523,7 +535,7 @@ alive. Details in [docs/MVP.md §12](./docs/MVP.md).
 
 ## Contributing
 
-Contributions are very welcome — see [CONTRIBUTING.md](./CONTRIBUTING.md) for
+Contributions are very welcome - see [CONTRIBUTING.md](./CONTRIBUTING.md) for
 repo layout, dev workflow, and the adapter contract.
 
 ## License

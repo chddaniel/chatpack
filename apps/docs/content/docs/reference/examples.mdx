@@ -1,0 +1,47 @@
+---
+title: Examples
+description: Complete, runnable example apps - from a full vanilla-JS messenger to a curl-able Node server.
+---
+
+All examples live in the repo under
+[`examples/`](https://github.com/chddaniel/chatpack/tree/main/examples), each
+with its own README.
+
+## Messenger (vanilla HTML + JS)
+
+**A complete 1:1 messenger** - sidebar, live messages, read receipts - in
+vanilla HTML+JS, with a 10-step tutorial README that walks from server setup
+to real-time plugins.
+
+The best place to see everything working together: inbox, start-chat flow,
+history pagination, sending, the SSE stream, read receipts, edit/delete, and
+the typing/presence/receipts plugins.
+
+→ [`examples/messenger`](https://github.com/chddaniel/chatpack/tree/main/examples/messenger)
+
+## Next.js backend
+
+The [Quickstart](/docs/quickstart) as a runnable app: Next.js App Router, a
+`[...chatpack]` catch-all route, and a curl walkthrough.
+
+→ [`examples/next-backend`](https://github.com/chddaniel/chatpack/tree/main/examples/next-backend)
+
+## Plain Node server
+
+A dependency-free Node `http` server bridged to the Web-standard handler -
+in-memory or Postgres storage, with a full curl walkthrough including SSE
+reconnect gap-fill. Copy its bridge if you're on Express or plain Node.
+
+→ [`examples/node-server`](https://github.com/chddaniel/chatpack/tree/main/examples/node-server)
+
+## Running them
+
+```sh
+git clone https://github.com/chddaniel/chatpack.git
+cd chatpack
+pnpm install && pnpm build
+
+# then follow the example's README, e.g.
+cd examples/messenger
+pnpm dev
+```

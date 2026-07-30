@@ -1,4 +1,4 @@
-# Chatpack — v0 MVP Plan
+# Chatpack - v0 MVP Plan
 
 > Status: **shipped.** v0 MVP + real-time plugins are published on npm
 > (`@chatpack/core@0.2.0`). This doc is the original plan; see §4 for what
@@ -11,21 +11,21 @@ v0's single job is to prove that the **backend core API for one-to-one chat is s
 
 Developers bring their own **auth** and their own **frontend**. We give them a small, well-designed HTTP + SSE API and a clean server-side integration. A frontend is easy to generate once the API is simple and predictable, so we deliberately do not ship one in v0.
 
-**v0 supports 1:1 (direct) conversations only** — exactly two participants. Groups come later. Restricting _who can talk_ simplifies the domain; it does **not** require shipping every consumer-chat polish feature (typing, presence, attachment uploads, etc.). Those are a separate scope axis.
+**v0 supports 1:1 (direct) conversations only** - exactly two participants. Groups come later. Restricting _who can talk_ simplifies the domain; it does **not** require shipping every consumer-chat polish feature (typing, presence, attachment uploads, etc.). Those are a separate scope axis.
 
-We still include the genuinely hard part — **real-time delivery** — because a chat backend without it is just CRUD. Real-time in v0 means the **server** exposes an SSE stream endpoint; clients (which developers build) consume it. SSE is a backend feature; no React client is required.
+We still include the genuinely hard part - **real-time delivery** - because a chat backend without it is just CRUD. Real-time in v0 means the **server** exposes an SSE stream endpoint; clients (which developers build) consume it. SSE is a backend feature; no React client is required.
 
 ## 2. In scope for v0
 
-Core backend (`@chatpack/core`) — the irreducible, durable domain:
+Core backend (`@chatpack/core`) - the irreducible, durable domain:
 
-- **1:1 conversations** — find-or-create by a pair of user ids; exactly two members; list/fetch for the current user
-- **Text messages** — send, list/paginate, edit, soft-delete
-- **Permissions** — only the two participants can read/write (simple default; overridable via hook)
-- **Durable read-state** — `last_read_message_id` per participant (survives reconnect; answers “have they seen up to X?”)
-- **Auth/identity hook** — developers bring the authenticated user; we never do auth and never own a users table
-- **Server-side SSE stream endpoint** — live delivery of new/edited/deleted messages
-- **Framework handler** — mounts the whole API on one route (Web-standard `Request`/`Response`; Next.js App Router as the first documented target)
+- **1:1 conversations** - find-or-create by a pair of user ids; exactly two members; list/fetch for the current user
+- **Text messages** - send, list/paginate, edit, soft-delete
+- **Permissions** - only the two participants can read/write (simple default; overridable via hook)
+- **Durable read-state** - `last_read_message_id` per participant (survives reconnect; answers “have they seen up to X?”)
+- **Auth/identity hook** - developers bring the authenticated user; we never do auth and never own a users table
+- **Server-side SSE stream endpoint** - live delivery of new/edited/deleted messages
+- **Framework handler** - mounts the whole API on one route (Web-standard `Request`/`Response`; Next.js App Router as the first documented target)
 
 Reference adapters shipped with v0:
 
@@ -34,13 +34,13 @@ Reference adapters shipped with v0:
 
 Product / trust (small, but decide early):
 
-- **Anonymous opt-out telemetry** — aggregate usage counters only (e.g. messages sent per month) for social proof. See §12. Shipped: counter hooks in core plus a fire-and-forget flusher (M5).
+- **Anonymous opt-out telemetry** - aggregate usage counters only (e.g. messages sent per month) for social proof. See §12. Shipped: counter hooks in core plus a fire-and-forget flusher (M5).
 
 That's the entire surface. Everything else is deferred.
 
 ## 3. Why 1:1 does _not_ pull in polish features
 
-Two different scope axes — do not collapse them:
+Two different scope axes - do not collapse them:
 
 | Axis                                     | Question                              | v0 choice         |
 | ---------------------------------------- | ------------------------------------- | ----------------- |
@@ -63,10 +63,10 @@ WhatsApp-style extras feel related to 1:1 because consumer apps bundle them. Cha
 
 **Shipped in `0.2.0` (opt-in, live on npm now):**
 
-- ✅ **Typing indicators** — `typing()` in `@chatpack/core/plugins` (ADR 0008)
-- ✅ **Presence** — `presence()` in `@chatpack/core/plugins` (ADR 0008)
-- ✅ **Live delivery/read receipt pings** — `receipts()` in `@chatpack/core/plugins`; ephemeral ticks only, durable last-read stays in core (ADR 0008)
-- ✅ **Generic ephemeral-event primitive** on the transport — `EphemeralEvent` (ADR 0008)
+- ✅ **Typing indicators** - `typing()` in `@chatpack/core/plugins` (ADR 0008)
+- ✅ **Presence** - `presence()` in `@chatpack/core/plugins` (ADR 0008)
+- ✅ **Live delivery/read receipt pings** - `receipts()` in `@chatpack/core/plugins`; ephemeral ticks only, durable last-read stays in core (ADR 0008)
+- ✅ **Generic ephemeral-event primitive** on the transport - `EphemeralEvent` (ADR 0008)
 
 **Still deferred to a later release:**
 
@@ -76,18 +76,18 @@ WhatsApp-style extras feel related to 1:1 because consumer apps bundle them. Cha
 > **Packaging note (ADR 0008):** the original sketch named these
 > `@chatpack/plugin-typing` etc. as separate npm packages. They shipped instead
 > as opt-in plugins _inside_ `@chatpack/core` (subpath export
-> `@chatpack/core/plugins`) — they are ephemeral-only and feather-light, so
+> `@chatpack/core/plugins`) - they are ephemeral-only and feather-light, so
 > separate packages were pure overhead. Separate packages are reserved for
 > plugins with heavy deps, a different runtime (`@chatpack/react`), or
 > third-party authors.
 
 ## 5. Explicit non-goals (say no loudly)
 
-- **Attachments / file uploads** as a first-class API — storage/CDN opinions; huge scope
+- **Attachments / file uploads** as a first-class API - storage/CDN opinions; huge scope
 - **Push / email notifications**
-- **AI features** — leave `metadata` / `role` escape hatches only; do not design for AI
+- **AI features** - leave `metadata` / `role` escape hatches only; do not design for AI
 - **Threads, reactions, search, moderation, multi-tenant admin**
-- **Horizontal multi-node fan-out** — single-node is correct for v0; transport is shaped so a Redis/pub-sub adapter can drop in later **without public API changes**
+- **Horizontal multi-node fan-out** - single-node is correct for v0; transport is shaped so a Redis/pub-sub adapter can drop in later **without public API changes**
 
 ## 6. Architecture (backend-only, adapter-driven)
 
@@ -106,12 +106,12 @@ Core engine  (@chatpack/core)
 
 Two interfaces carry the whole design:
 
-- **StorageAdapter** — durable reads/writes. Reference: Drizzle + Postgres. Interface-based, so Prisma/MySQL/SQLite/community adapters need no core changes.
-- **Transport** — publish/subscribe of live message events to connected SSE clients. v0 ships a single-node in-process implementation; shaped so multi-node can come later with no public API change.
+- **StorageAdapter** - durable reads/writes. Reference: Drizzle + Postgres. Interface-based, so Prisma/MySQL/SQLite/community adapters need no core changes.
+- **Transport** - publish/subscribe of live message events to connected SSE clients. v0 ships a single-node in-process implementation; shaped so multi-node can come later with no public API change.
 
 Durable data and live events stay separate: different reliability requirements; coupling them is how chat backends rot.
 
-### Teaching note — adapters & core domain
+### Teaching note - adapters & core domain
 
 - **Core domain** = chat concepts and rules (conversation, message, “only participants can write”), independent of Postgres or Next.js.
 - **Adapter** = a plug that implements a contract for a specific tool (e.g. Drizzle writes rows; in-memory uses maps).
@@ -121,7 +121,7 @@ The core depends on the interface, not on Postgres. That keeps tests fast and ba
 
 ## 7. Public API sketch (illustrative, not final)
 
-Server setup — one object, sensible defaults:
+Server setup - one object, sensible defaults:
 
 ```ts
 // lib/chat.ts
@@ -131,7 +131,7 @@ import { db } from "./db";
 
 export const chat = chatpack({
   storage: drizzleAdapter(db),
-  // resolve the current user from a request — the ONLY auth touchpoint
+  // resolve the current user from a request - the ONLY auth touchpoint
   auth: async (req) => getSessionUser(req),
   // optional; default = only the two participants
   permissions: {
@@ -141,7 +141,7 @@ export const chat = chatpack({
 });
 ```
 
-Mount it — one route, handler does the rest:
+Mount it - one route, handler does the rest:
 
 ```ts
 // app/api/chat/[...chatpack]/route.ts   (Next.js App Router)
@@ -163,12 +163,12 @@ The developer builds any frontend against those REST + SSE endpoints.
 
 Designed for exactly two participants. `metadata` JSON columns keep AI/custom use cases possible without designing for them.
 
-- **conversations**: `id`, `created_at`, `metadata`  
-  — no `type` field required in v0 (everything is direct). A `type` column can be added later when groups land without breaking the 1:1 path.
-- **conversation_participants**: `conversation_id`, `user_id`, `joined_at`, `last_read_message_id`  
-  — always two rows per conversation; uniqueness on `(conversation_id, user_id)`; a deterministic pair key (e.g. sorted `userA:userB`) prevents duplicate DMs between the same two users.
-- **messages**: `id`, `conversation_id`, `sender_id`, `body`, `role` (defaults `user` — AI escape hatch), `created_at`, `edited_at`, `deleted_at` (soft delete), `metadata`
-- Users are **referenced by id only** — we never own the users table.
+- **conversations**: `id`, `created_at`, `metadata`
+  - no `type` field required in v0 (everything is direct). A `type` column can be added later when groups land without breaking the 1:1 path.
+- **conversation_participants**: `conversation_id`, `user_id`, `joined_at`, `last_read_message_id`
+  - always two rows per conversation; uniqueness on `(conversation_id, user_id)`; a deterministic pair key (e.g. sorted `userA:userB`) prevents duplicate DMs between the same two users.
+- **messages**: `id`, `conversation_id`, `sender_id`, `body`, `role` (defaults `user` - AI escape hatch), `created_at`, `edited_at`, `deleted_at` (soft delete), `metadata`
+- Users are **referenced by id only** - we never own the users table.
 
 Messages carry a monotonic sort key (`created_at` + tiebreaker, or a sequence) so a client can reconcile SSE events against fetched history deterministically.
 
@@ -187,20 +187,20 @@ Documented v0 limitations: single-node fan-out only; SSE is server→client (sen
   - `@chatpack/core`, `@chatpack/adapter-drizzle`, `@chatpack/adapter-memory`, `@chatpack/next`
 - **Build:** `tsup` (dual ESM/CJS + `.d.ts`), strict TS, `exports` maps, no default exports in the public API.
 - **Testing:** Vitest. Core tested against the in-memory adapter; one Postgres integration suite (Testcontainers / docker-compose) in CI.
-- **Example:** `examples/next-backend` — minimal Next.js app that mounts the handler and exercises REST + SSE (getting-started + e2e bed). No UI beyond proving endpoints.
+- **Example:** `examples/next-backend` - minimal Next.js app that mounts the handler and exercises REST + SSE (getting-started + e2e bed). No UI beyond proving endpoints.
 - **Docs:** README with a 5-minute quickstart is the primary adoption artifact.
 - **Release:** Changesets; everything `0.x`. CI on PRs (typecheck, lint, test, build).
 - **License:** MIT. Add `CONTRIBUTING.md` + code of conduct.
 
 ## 11. Milestones (each independently shippable/demoable)
 
-1. **M1 — Core + in-memory, no real-time.** ✅ **Done.** 1:1 data model, storage adapter interface, in-memory adapter, find-or-create DM, send/list messages, permissions, last-read, unit tests. _DoD: two users get a conversation and exchange messages via the core API in a test._
-2. **M2 — Framework handler + REST + auth hook.** ✅ **Done.** `chat.handler()`, Next.js route, validation, permissions enforced. _DoD: curl can find-or-create, send, and list over HTTP with auth enforced._
-3. **M3 — Server-side SSE.** ✅ **Done.** One SSE connection per client, live delivery, reconnection/gap-fill. _DoD: two SSE clients see each other’s messages live; drop the connection, messages backfill on reconnect._
-4. **M4 — Drizzle/Postgres adapter.** ✅ **Done.** Real persistence + integration tests (PGlite). _DoD: example app runs on Postgres._
-5. **M5 — Launch polish.** ✅ **Done.** README quickstart (including telemetry + how to opt out), anonymous telemetry flusher + docs, `examples/next-backend`, Changesets, CI, publish `0.1.0` to npm.
+1. **M1 - Core + in-memory, no real-time.** ✅ **Done.** 1:1 data model, storage adapter interface, in-memory adapter, find-or-create DM, send/list messages, permissions, last-read, unit tests. _DoD: two users get a conversation and exchange messages via the core API in a test._
+2. **M2 - Framework handler + REST + auth hook.** ✅ **Done.** `chat.handler()`, Next.js route, validation, permissions enforced. _DoD: curl can find-or-create, send, and list over HTTP with auth enforced._
+3. **M3 - Server-side SSE.** ✅ **Done.** One SSE connection per client, live delivery, reconnection/gap-fill. _DoD: two SSE clients see each other’s messages live; drop the connection, messages backfill on reconnect._
+4. **M4 - Drizzle/Postgres adapter.** ✅ **Done.** Real persistence + integration tests (PGlite). _DoD: example app runs on Postgres._
+5. **M5 - Launch polish.** ✅ **Done.** README quickstart (including telemetry + how to opt out), anonymous telemetry flusher + docs, `examples/next-backend`, Changesets, CI, publish `0.1.0` to npm.
 
-## 12. Anonymous telemetry (opt-out) — decide early
+## 12. Anonymous telemetry (opt-out) - decide early
 
 **Why:** social proof for the project (“X messages sent last month”), not surveillance. Note it now so core can expose counter hooks before we publish; retrofitting telemetry into a “finished” public API is painful and trust-sensitive.
 
@@ -223,10 +223,10 @@ Documented v0 limitations: single-node fan-out only; SSE is server→client (sen
 
 **How it works (v0 shape):**
 
-1. Core increments **in-process counters** on successful domain actions (e.g. after a message is persisted) — zero network on the send path.
+1. Core increments **in-process counters** on successful domain actions (e.g. after a message is persisted) - zero network on the send path.
 2. A lightweight flusher (timer or process lifecycle) POSTs a small JSON payload to Chatpack’s telemetry endpoint: `{ installId, version, period, messagesSent, conversationsCreated }`.
 3. Flush is **fire-and-forget**: timeouts, errors, and offline do not affect chat. No retries that could amplify load.
-4. `installId` is a random UUID generated once per deployment (e.g. stored beside process state or a tiny local file) — not derived from user data or hostname.
+4. `installId` is a random UUID generated once per deployment (e.g. stored beside process state or a tiny local file) - not derived from user data or hostname.
 
 **API sketch (illustrative):**
 
@@ -239,4 +239,4 @@ export const chat = chatpack({
 });
 ```
 
-**Non-goals for telemetry:** product analytics dashboards for developers’ end users, per-tenant reporting, or anything that requires reading message content. If we ever need richer stats, that is a separate, explicitly scoped product — not this.
+**Non-goals for telemetry:** product analytics dashboards for developers’ end users, per-tenant reporting, or anything that requires reading message content. If we ever need richer stats, that is a separate, explicitly scoped product - not this.

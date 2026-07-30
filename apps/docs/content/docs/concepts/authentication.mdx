@@ -1,0 +1,139 @@
+---
+title: Authentication
+description: The auth hook contract, cookie-based sessions, iframe-proof demo auth, and hybrid bearer-token setups.
+---
+
+Chatpack **never owns a users table** and never issues sessions. The single
+auth touchpoint is the `auth` hook: a function that receives the raw
+Web-standard `Request` and returns the current user.
+
+## The contract
+
+```ts
+type AuthHook = (request: Request) => Promise<ChatpackUser | null> | ChatpackUser | null;
+
+interface ChatpackUser {
+  id: string; // required, non-empty
+  [key: string]: unknown; // extra fields allowed and ignored
+}
+```
+
+<Callout type="error">
+  The hook must return `{ id: string }` or `null`. A bare string or `{ userId: ... }` is treated as
+  unauthenticated - every request gets a `401`. The `401` response body names the exact failure
+  (bad hook return shape vs. missing cookie vs. unparsed cookie); read it before changing code.
+</Callout>
+
+The hook receives a raw `Request` - there is no `request.cookies` helper.
+Parse the `cookie` header yourself:
+
+```ts
+// demo auth: a plain cookie naming the user (swap for your auth library)
+auth: (request) => {
+  const cookie = request.headers.get("cookie") ?? "";
+  const id = /(?:^|;\s*)demo_user=([^;]+)/.exec(cookie)?.[1] ?? null;
+  return id ? { id: decodeURIComponent(id) } : null;
+},
+```
+
+With a real auth library, resolve the session however that library does it:
+
+```ts
+auth: async (req) => {
+  const session = await getSessionFromCookie(req.headers.get("cookie"));
+  return session ? { id: session.userId } : null;
+},
+```
+
+## Why cookies (and not headers)
+
+Live delivery uses `EventSource`, which **cannot send custom headers**. Your
+`auth` hook must be able to resolve the user from what the browser sends
+automatically - typically a session cookie (`EventSource` sends same-origin
+cookies by default; pass `{ withCredentials: true }` for cross-origin).
+
+Bearer-token headers work for the REST routes but not for `/stream`.
+
+## Hybrid auth (bearer tokens + SSE)
+
+If your app authenticates REST calls with an `Authorization` header (Supabase,
+Clerk, Firebase JWTs, ...), keep it - write the hook to accept _either_
+credential, with a session cookie as the fallback that makes `/stream` work:
+
+```ts
+export const chat = chatpack({
+  storage,
+  auth: async (req) => {
+    // 1. Bearer token - what your frontend already sends on REST calls.
+    const bearer = req.headers.get("authorization")?.replace(/^Bearer /, "");
+    if (bearer) {
+      const user = await verifyJwt(bearer); // your auth provider's verify
+      return user ? { id: user.id } : null;
+    }
+    // 2. Cookie fallback - the only thing EventSource can send.
+    const session = await getSessionFromCookie(req.headers.get("cookie"));
+    return session ? { id: session.userId } : null;
+  },
+});
+```
+
+The cookie can be your auth provider's own session cookie if it sets one, or a
+short-lived one you set yourself from an authenticated endpoint right before
+opening the stream.
+
+<Callout type="warn">
+  Avoid tokens in the `/stream` query string - URLs end up in server logs and browser history.
+</Callout>
+
+## Demo auth that survives embedded iframes
+
+This applies to ANY environment that shows your app inside a **cross-site
+iframe**: AI-builder editors (Lovable's `*.lovable.app` pane inside
+lovable.dev, v0's `*.vusercontent.net` inside v0.app, Bolt, Shipper, Replit),
+site-builder embeds, and in-app browsers.
+
+Browsers refuse to store or send `SameSite=Lax` cookies there, so the classic
+demo cookie silently disappears and every request 401s - while the same app
+works when opened as a top-level tab. This is the #1 cause of 401s in embedded
+previews. Set demo cookies like this:
+
+```ts
+function signInAs(userId: string) {
+  // SameSite=None + Secure  → allowed in cross-site iframes
+  // Partitioned             → survives Chrome's third-party-cookie phaseout
+  // localhost counts as a secure context, so this exact line works in dev too
+  document.cookie = `demo_user=${encodeURIComponent(userId)}; Path=/; Max-Age=86400; SameSite=None; Secure; Partitioned`;
+}
+```
+
+Server-side login endpoints: the same attributes on the `Set-Cookie` header
+(plus `HttpOnly` for real sessions):
+
+```text
+Set-Cookie: session=...; Path=/; HttpOnly; Secure; SameSite=None; Partitioned
+```
+
+<Callout type="info">
+  For production apps that never run inside an iframe, your auth library's defaults (usually
+  `SameSite=Lax`) are correct and more CSRF-resistant.
+</Callout>
+
+## Debugging a 401
+
+1. **Read the 401 body.** The error message says _why_: bad hook return shape
+   vs. missing cookie vs. unparsed cookie.
+2. In the browser: after "sign in", `document.cookie` must actually contain
+   the cookie, and the Network tab must show it on `/api/chat/*` requests. If
+   it's missing there, revisit the cookie attributes (iframe rules above).
+3. **Auth runs before routing** - an unauthenticated request to a wrong path
+   still 401s. Fix auth first; then a lingering `404 NOT_FOUND` means your
+   mount path or `basePath` is wrong.
+
+Verify from the command line:
+
+```sh
+# expect 200 with a conversation, not 401
+curl -si -X POST localhost:3000/api/chat/conversations \
+  -H 'cookie: demo_user=alice' -H 'content-type: application/json' \
+  -d '{"otherUserId":"bob"}'
+```

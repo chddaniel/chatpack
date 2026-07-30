@@ -7,13 +7,15 @@ need to get productive in the repo.
 
 ```
 chatpack/
+├── apps/
+│   └── docs/              # The documentation site (Fumadocs / Next.js)
 ├── docs/                  # Project docs: vision, MVP scope, architecture, ADRs
-│   └── decisions/         # Short ADRs — one file per non-obvious decision
+│   └── decisions/         # Short ADRs - one file per non-obvious decision
 ├── packages/
-│   ├── core/              # @chatpack/core — the chat engine + HTTP handler
-│   ├── adapter-drizzle/   # @chatpack/adapter-drizzle — Drizzle/Postgres storage
-│   ├── adapter-memory/    # @chatpack/adapter-memory — in-memory storage
-│   └── next/              # @chatpack/next — Next.js App Router integration
+│   ├── core/              # @chatpack/core - the chat engine + HTTP handler
+│   ├── adapter-drizzle/   # @chatpack/adapter-drizzle - Drizzle/Postgres storage
+│   ├── adapter-memory/    # @chatpack/adapter-memory - in-memory storage
+│   └── next/              # @chatpack/next - Next.js App Router integration
 ├── examples/
 │   ├── next-backend/      # The quickstart as a runnable Next.js app
 │   └── node-server/       # Curl-able demo server (plain Node)
@@ -57,9 +59,9 @@ pnpm --filter @chatpack/core test
 
 Two interfaces carry the whole design (see [docs/MVP.md](./docs/MVP.md) §6):
 
-- **`StorageAdapter`** — durable reads/writes (conversations, messages,
+- **`StorageAdapter`** - durable reads/writes (conversations, messages,
   read-state). Core depends on the interface, never on a specific database.
-- **`Transport`** — publish/subscribe of live message events to connected SSE
+- **`Transport`** - publish/subscribe of live message events to connected SSE
   clients. The engine publishes only _after_ the storage write succeeds
   (durable-first); v0 ships a single-node in-process transport, and the SSE
   endpoint recovers missed messages on reconnect from storage via
@@ -67,7 +69,7 @@ Two interfaces carry the whole design (see [docs/MVP.md](./docs/MVP.md) §6):
 
 The core engine (`@chatpack/core`) contains all domain logic: 1:1
 conversations, permission checks, validation. Adapters contain **no** domain
-logic — they only persist and retrieve.
+logic - they only persist and retrieve.
 
 ### Writing a storage adapter
 
@@ -76,28 +78,28 @@ in-memory adapter ([packages/adapter-memory](./packages/adapter-memory)) is the
 reference implementation and the easiest place to start reading; the Drizzle
 adapter ([packages/adapter-drizzle](./packages/adapter-drizzle)) shows what the
 contract looks like on a real database (atomic `seq` assignment, idempotent
-pair-key creation — see [ADR 0007](./docs/decisions/0007-postgres-adapter.md)).
+pair-key creation - see [ADR 0007](./docs/decisions/0007-postgres-adapter.md)).
 
 **Don't design a schema from scratch:** `@chatpack/adapter-drizzle` exports
-the official data model as `migrationSql` (plain idempotent Postgres DDL — no
+the official data model as `migrationSql` (plain idempotent Postgres DDL - no
 Drizzle required to execute it) and `chatpackSchema` (Drizzle table objects).
-The complete adapter-author guide — database-agnostic invariants, the
-reference schema, a skeleton, pitfalls, and a verification checklist — lives
+The complete adapter-author guide - database-agnostic invariants, the
+reference schema, a skeleton, pitfalls, and a verification checklist - lives
 in Part 2 of [`llms.txt`](./llms.txt) at the repo root (written to be equally
 usable by humans and AI coding agents; Part 1 is the integration guide, and
 the whole file ships inside each published npm package).
 
 Rules of thumb:
 
-- Adapters never enforce permissions — core does that before calling you.
+- Adapters never enforce permissions - core does that before calling you.
 - `getOrCreateDirectConversation` must be idempotent per user pair (core hands
-  you a deterministic `pairKey`) — including under concurrency.
-- `addMessage` must assign a strictly increasing per-conversation `seq` —
+  you a deterministic `pairKey`) - including under concurrency.
+- `addMessage` must assign a strictly increasing per-conversation `seq` -
   including under concurrency.
 - Message listing is **newest-first** with cursor pagination. Cursors are
   opaque strings the adapter defines; core round-trips them verbatim, so any
   URL-safe encoding works.
-- Date fields are real `Date` instances in and out — never ISO strings
+- Date fields are real `Date` instances in and out - never ISO strings
   (drivers and HTTP database clients often return strings; convert at the
   adapter boundary).
 - The adapter generates conversation and message ids (any unique string).
@@ -106,23 +108,26 @@ Rules of thumb:
 
 - Strict TypeScript. No `any` in the public API.
 - **No default exports** in public APIs (enforced by ESLint).
-- Every exported symbol gets a TSDoc comment — docs are generated from source.
+- Every exported symbol gets a TSDoc comment - docs are generated from source.
 - Prettier formats everything; CI checks it.
 
 ## Documentation
 
 Docs are a first-class deliverable:
 
-- Public-API changes must update TSDoc and, if user-facing, the README.
+- Public-API changes must update TSDoc and, if user-facing, the README and
+  the docs site (`apps/docs/content/docs/` - MDX pages).
 - Non-obvious design decisions get a short ADR in `docs/decisions/`
   (copy the format of an existing one).
+- Preview the docs site locally: `pnpm --filter @chatpack/docs dev`
+  (serves on http://localhost:3333).
 
 ## Tests
 
 - Vitest everywhere.
-- Core is tested against the in-memory adapter — fast and deterministic.
+- Core is tested against the in-memory adapter - fast and deterministic.
 - The Drizzle adapter is tested against **real Postgres via PGlite** (Postgres
-  in WASM) — `pnpm test` needs no Docker or database setup.
+  in WASM) - `pnpm test` needs no Docker or database setup.
 - New features need tests; bug fixes need a regression test.
 
 ## Submitting changes

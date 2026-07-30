@@ -1,0 +1,89 @@
+---
+title: Real-time with SSE
+description: One EventSource - live messages, automatic reconnection, and missed-message backfill from storage.
+---
+
+`GET /stream` is a Server-Sent Events endpoint. Each connected user receives
+`message.created` / `message.updated` / `message.deleted` events for **their
+conversations only** - participation is re-checked server-side per event.
+
+No WebSocket server, no Socket.IO, no reconnect code to write.
+
+## Connect
+
+```ts
+const events = new EventSource("/api/chat/stream");
+
+// TypeScript: custom event names fall outside EventSourceEventMap, so cast
+// the listener parameter to MessageEvent to access `.data`.
+events.addEventListener("message.created", (e) => {
+  const { message } = JSON.parse((e as MessageEvent).data);
+  // dedupe by message.id (delivery is at-least-once), then render
+});
+
+events.addEventListener("message.updated", (e) => {
+  const { message } = JSON.parse((e as MessageEvent).data);
+  // re-render the edited message
+});
+
+events.addEventListener("message.deleted", (e) => {
+  const { message } = JSON.parse((e as MessageEvent).data);
+  // render a tombstone - body is "" and deletedAt is set
+});
+
+events.onerror = () => {
+  if (events.readyState === EventSource.CLOSED) {
+    // Fatal (e.g. 401): the browser will NOT retry. Re-auth, then recreate.
+  }
+  // Otherwise: dropped connection - EventSource retries automatically with
+  // Last-Event-ID and the server replays what was missed.
+};
+```
+
+## No lost messages
+
+Events are published only _after_ the storage write succeeds
+(**durable-first**), and every durable event id is `conversationId:seq`. On
+reconnect, `EventSource` sends `Last-Event-ID` automatically and the server
+replays whatever was missed **from storage** before resuming live delivery.
+
+Delivery is **at-least-once** - dedupe by `message.id` in the client.
+
+## Auth for the stream
+
+`EventSource` cannot send custom headers, so your `auth` hook must resolve the
+user from what the browser sends automatically - typically a session cookie
+(same-origin cookies are sent by default; pass `{ withCredentials: true }` for
+cross-origin).
+
+Bearer-token schemes work for the REST routes but not for `/stream` - write
+the hook to accept either credential. Full recipes (including iframe-proof
+cookies for embedded previews) in
+[Authentication](/docs/concepts/authentication).
+
+## Deployment reality check
+
+<Callout type="warn">
+  The default transport is **in-process** and `memoryAdapter` is **per-process** - both assume one
+  long-lived server (a Node server, a single Fly/Railway container, `next start`, `Bun.serve`). On
+  serverless/edge platforms (Cloudflare Workers, Vercel/AWS Lambda), each isolate has its own
+  memory: SSE events won't reach connections held by other isolates. Use a database adapter there
+  and poll `GET /conversations/:id/messages` until a distributed transport ships (e.g. Redis - same
+  public API, no code change). Details in [Deployment](/docs/integrations/deployment).
+</Callout>
+
+## Heartbeats
+
+The handler sends an SSE comment as a heartbeat every 15 seconds by default -
+tune it via `chat.handler({ heartbeatIntervalMs })`. This keeps proxies and
+load balancers from closing idle connections.
+
+## Verify it works
+
+```sh
+# expect ": connected", then events as messages are sent
+curl -sN localhost:3000/api/chat/stream -H 'cookie: demo_user=bob'
+```
+
+Send a message as `alice` in another terminal and watch the `message.created`
+event arrive on `bob`'s stream.

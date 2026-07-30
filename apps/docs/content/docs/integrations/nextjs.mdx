@@ -1,0 +1,88 @@
+---
+title: Next.js
+description: Mount the chat API on one catch-all App Router route - with or without the @chatpack/next helper.
+---
+
+## Mount the handler
+
+The route file **must be a catch-all** (`[...chatpack]`) - Chatpack serves
+many sub-paths under `basePath` (default `/api/chat`), so a single
+`app/api/chat/route.ts` would 404 everything but the root.
+
+<Tabs items={['chat.handler()', '@chatpack/next helper']}>
+
+<Tab value="chat.handler()">
+
+```ts title="app/api/chat/[...chatpack]/route.ts"
+import { chat } from "@/lib/chat";
+
+export const { GET, POST, PATCH, DELETE } = chat.handler();
+```
+
+</Tab>
+
+<Tab value="@chatpack/next helper">
+
+Same result, reads better:
+
+```sh
+npm install @chatpack/next
+```
+
+```ts title="app/api/chat/[...chatpack]/route.ts"
+import { toNextRouteHandlers } from "@chatpack/next";
+import { chat } from "@/lib/chat";
+
+export const { GET, POST, PATCH, DELETE } = toNextRouteHandlers(chat);
+```
+
+</Tab>
+
+</Tabs>
+
+The instance itself lives in one shared module:
+
+```ts title="lib/chat.ts"
+import { chatpack, type ChatpackInstance } from "@chatpack/core";
+import { memoryAdapter } from "@chatpack/adapter-memory";
+
+// globalThis guard: next dev HMR re-evaluates modules - don't reset state
+const g = globalThis as typeof globalThis & { __chatpack__?: ChatpackInstance };
+export const chat = (g.__chatpack__ ??= chatpack({
+  storage: memoryAdapter(),
+  auth: async (req) => {
+    const session = await getSessionFromCookie(req.headers.get("cookie"));
+    return session ? { id: session.userId } : null;
+  },
+}));
+```
+
+<Callout type="error">
+  **Never hand-write your own message or stream routes.** The one handler already serves every route
+  - conversations, messages, read-state, plugins, and the SSE stream. Custom `/api/messages`-style
+  routes split state and break live delivery.
+</Callout>
+
+## Custom base path
+
+Mounting somewhere other than `/api/chat`? Tell the handler:
+
+```ts title="app/api/messaging/[...chatpack]/route.ts"
+export const { GET, POST, PATCH, DELETE } = chat.handler({
+  basePath: "/api/messaging",
+});
+```
+
+## Deployment notes
+
+- `next start` on a long-lived server (Railway, Fly, Render, a VPS): SSE and
+  even the memory adapter work as-is.
+- **Vercel / serverless:** each invocation may hit a different isolate - use
+  the [Drizzle adapter](/docs/storage/drizzle) and poll for new messages
+  instead of relying on `/stream`. Details in
+  [Deployment](/docs/integrations/deployment).
+
+## Runnable example
+
+[`examples/next-backend`](https://github.com/chddaniel/chatpack/tree/main/examples/next-backend)
+is the quickstart as a runnable Next.js app, with a curl walkthrough.

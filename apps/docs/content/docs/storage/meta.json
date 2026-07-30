@@ -1,0 +1,5 @@
+{
+  "title": "Storage",
+  "icon": "Database",
+  "pages": ["memory", "drizzle", "custom-adapter"]
+}
