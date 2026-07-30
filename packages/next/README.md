@@ -1,7 +1,7 @@
 # @chatpack/next
 
 Next.js App Router integration for
-[Chatpack](https://github.com/chddaniel/chatpack) — mount the whole chat API
+[Chatpack](https://github.com/chddaniel/chatpack) - mount the whole chat API
 on one catch-all route.
 
 The Chatpack handler is already Web-standard (`Request` → `Response`), which is
@@ -30,9 +30,9 @@ export const chat = chatpack({
 });
 ```
 
-> The `auth` hook must return `ChatpackUser | null` — an object with at least
+> The `auth` hook must return `ChatpackUser | null` - an object with at least
 > `{ id: string }`, or `null` for unauthenticated requests (`401`). A bare
-> string is treated as unauthenticated. Prefer cookie-based sessions —
+> string is treated as unauthenticated. Prefer cookie-based sessions -
 > `EventSource` (the SSE stream) cannot send custom headers.
 
 ```ts
@@ -44,7 +44,7 @@ export const { GET, POST, PATCH, DELETE } = toNextRouteHandlers(chat);
 ```
 
 > The route file must be a **catch-all** (`[...chatpack]`) so every sub-path
-> under `/api/chat` — including `/api/chat/stream` — reaches the handler.
+> under `/api/chat` - including `/api/chat/stream` - reaches the handler.
 
 Mounting somewhere other than `/api/chat`? Pass the base path:
 

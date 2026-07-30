@@ -1,7 +1,7 @@
 /**
  * M4 integration suite: the core engine running on real Postgres.
  *
- * Uses PGlite — actual Postgres compiled to WASM, in-process — so these tests
+ * Uses PGlite - actual Postgres compiled to WASM, in-process - so these tests
  * exercise real SQL semantics (unique indexes, ON CONFLICT, atomic UPDATE ...
  * RETURNING) with zero external setup, locally and in CI.
  *

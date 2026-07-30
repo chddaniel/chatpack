@@ -1,11 +1,11 @@
 /**
- * The Chatpack server instance — exactly the quickstart from the root README.
+ * The Chatpack server instance - exactly the quickstart from the root README.
  *
  * In-memory storage keeps the example zero-setup; swap in
  * `drizzleAdapter(db)` from `@chatpack/adapter-drizzle` for Postgres.
  *
  * DEMO AUTH ONLY: we trust an `x-user-id` header so you can drive the API
- * with curl. In a real app, resolve your session/JWT here — this hook is the
+ * with curl. In a real app, resolve your session/JWT here - this hook is the
  * single auth touchpoint in Chatpack.
  */
 import { chatpack } from "@chatpack/core";

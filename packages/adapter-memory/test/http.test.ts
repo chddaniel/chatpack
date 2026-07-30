@@ -1,10 +1,10 @@
 /**
  * M2 HTTP suite: the whole REST API driven through `chat.handler()` with
- * Web-standard Requests — exactly what curl exercises in the M2 DoD:
+ * Web-standard Requests - exactly what curl exercises in the M2 DoD:
  * "curl can find-or-create, send, and list over HTTP with auth enforced."
  *
  * Auth simulation: the test auth hook reads an `x-user-id` header. Real apps
- * resolve a session/JWT instead — same shape, one async function.
+ * resolve a session/JWT instead - same shape, one async function.
  */
 import { describe, expect, it } from "vitest";
 
@@ -52,7 +52,7 @@ function send(
   );
 }
 
-describe("M2 Definition of Done — find-or-create, send, list over HTTP with auth", () => {
+describe("M2 Definition of Done - find-or-create, send, list over HTTP with auth", () => {
   it("runs the full curl flow", async () => {
     const handler = createHttpChat();
 

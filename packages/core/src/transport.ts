@@ -1,5 +1,5 @@
 /**
- * The transport contract — the second of the two interfaces that carry the
+ * The transport contract - the second of the two interfaces that carry the
  * whole Chatpack design (MVP §6): publish/subscribe of live message events to
  * connected SSE clients.
  *
@@ -11,11 +11,11 @@
  *
  * Two kinds of events travel on the transport (`docs/decisions/0008`):
  *
- * - {@link ChatEvent} — durable message events, backed by storage, replayable
+ * - {@link ChatEvent} - durable message events, backed by storage, replayable
  *   on reconnect via `Last-Event-ID` gap-fill.
- * - {@link EphemeralEvent} — fire-and-forget signals (typing, presence,
+ * - {@link EphemeralEvent} - fire-and-forget signals (typing, presence,
  *   receipt ticks) that are never stored and never replayed. Miss one and
- *   it's gone — which is correct for "Alice is typing…".
+ *   it's gone - which is correct for "Alice is typing…".
  *
  * @module
  */
@@ -26,7 +26,7 @@ import type { Message } from "./types";
  * A live event published on the transport whenever a message is created,
  * edited, or soft-deleted.
  *
- * Every event carries the full {@link Message} snapshot — consumers reconcile
+ * Every event carries the full {@link Message} snapshot - consumers reconcile
  * by `message.id` + `message.seq` (see `docs/decisions/0003`), so events are
  * safe to receive more than once (at-least-once delivery, MVP §9).
  */
@@ -84,7 +84,7 @@ export type TransportListener = (event: TransportEvent) => void;
  * Publish/subscribe of live chat events.
  *
  * Implementations must be fire-and-forget on the publish side: a slow or
- * failing subscriber must never block or fail the send path (MVP §9 —
+ * failing subscriber must never block or fail the send path (MVP §9 -
  * durable-first: the message already exists in storage before publish).
  */
 export interface Transport {
@@ -95,7 +95,7 @@ export interface Transport {
   publish(event: TransportEvent): void;
   /**
    * Subscribe to all events. Filtering (per-user, per-conversation) is the
-   * caller's job — core re-checks participation server-side on every publish
+   * caller's job - core re-checks participation server-side on every publish
    * rather than trusting subscription parameters (MVP §9).
    *
    * Returns an unsubscribe function.

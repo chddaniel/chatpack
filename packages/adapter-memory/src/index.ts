@@ -1,8 +1,8 @@
 /**
- * `@chatpack/adapter-memory` — in-memory {@link StorageAdapter} for Chatpack.
+ * `@chatpack/adapter-memory` - in-memory {@link StorageAdapter} for Chatpack.
  *
  * Zero-setup storage backed by JavaScript Maps. Perfect for demos, examples,
- * and fast deterministic tests. **Data is lost when the process exits** — use
+ * and fast deterministic tests. **Data is lost when the process exits** - use
  * a database adapter (e.g. `@chatpack/adapter-drizzle`) in production.
  *
  * This is also the reference implementation of the `StorageAdapter` contract:
@@ -184,7 +184,7 @@ export function memoryAdapter(): StorageAdapter {
     async listMessagesAfterSeq(input: ListMessagesAfterSeqInput): Promise<Message[]> {
       const ids = messageIdsByConversation.get(input.conversationId) ?? [];
       const result: Message[] = [];
-      // Stored ascending by seq — walk forward, collect seq > afterSeq.
+      // Stored ascending by seq - walk forward, collect seq > afterSeq.
       for (const id of ids) {
         const message = messages.get(id);
         if (!message || message.seq <= input.afterSeq) continue;

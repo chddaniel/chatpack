@@ -1,8 +1,8 @@
 /**
- * `@chatpack/next` — Next.js App Router integration for Chatpack.
+ * `@chatpack/next` - Next.js App Router integration for Chatpack.
  *
  * The Chatpack handler is already Web-standard (`Request` → `Response`), which
- * is exactly what App Router route handlers expect — so this package is a
+ * is exactly what App Router route handlers expect - so this package is a
  * deliberately thin convenience wrapper: it derives the `basePath` from your
  * route file location and returns the named exports a route file needs.
  *

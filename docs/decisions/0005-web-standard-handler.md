@@ -1,4 +1,4 @@
-# ADR 0005 — One Web-standard handler; framework packages are thin wrappers
+# ADR 0005 - One Web-standard handler; framework packages are thin wrappers
 
 - Status: accepted
 - Date: 2026-07-22
@@ -7,7 +7,7 @@
 
 MVP §2 requires a "framework handler [that] mounts the whole API on one route
 (Web-standard `Request`/`Response`; Next.js App Router as the first documented
-target)". The tempting shortcut is to build a Next.js handler directly — but
+target)". The tempting shortcut is to build a Next.js handler directly - but
 that couples the HTTP surface to one framework and forces a rewrite for Bun,
 Deno, Workers, Express, etc.
 
@@ -17,9 +17,9 @@ The HTTP layer lives in core as `createHandler()`
 (`packages/core/src/handler.ts`), speaking only WHATWG `Request`/`Response`.
 `chat.handler()` returns the same function under several names:
 
-- `GET` / `POST` / `PATCH` / `DELETE` — re-exportable verbatim from a Next.js
+- `GET` / `POST` / `PATCH` / `DELETE` - re-exportable verbatim from a Next.js
   App Router route file;
-- `fetch` — the generic entry point for `Bun.serve`, Deno, and Workers.
+- `fetch` - the generic entry point for `Bun.serve`, Deno, and Workers.
 
 Framework packages stay thin: `@chatpack/next` is a one-function wrapper
 (`toNextRouteHandlers`). Node's `http` module needs a ~20-line bridge, shown
@@ -36,7 +36,7 @@ request).
 
 ## Consequences
 
-- New runtimes need zero core changes — SSE (M3) will follow the same shape.
+- New runtimes need zero core changes - SSE (M3) will follow the same shape.
 - The REST surface is testable with plain `Request` objects; no framework
   test harness required.
 - `@chatpack/next` looks almost too small to exist. That is the point: it

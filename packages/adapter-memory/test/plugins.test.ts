@@ -69,7 +69,7 @@ class SseClient {
         if (line.startsWith("id: ")) id = line.slice(4);
         else if (line.startsWith("event: ")) event = line.slice(7);
         else if (line.startsWith("data: ")) data = line.slice(6);
-        // lines starting with ":" are comments (heartbeats) — ignored
+        // lines starting with ":" are comments (heartbeats) - ignored
       }
       if (data) this.events.push({ id, event, data: JSON.parse(data) as Record<string, unknown> });
     }
@@ -316,7 +316,7 @@ describe("receipts()", () => {
     expect(delivered!.data["senderId"]).toBe("bob");
     expect(delivered!.data["payload"]).toEqual({ messageId: message.id, seq: message.seq });
 
-    // bob (the recipient) gets no delivered tick — it's for the sender only.
+    // bob (the recipient) gets no delivered tick - it's for the sender only.
     const bobTicks = await bob.waitFor((e) => e.event === "receipt.delivered", 1, 300);
     expect(bobTicks).toHaveLength(0);
   });

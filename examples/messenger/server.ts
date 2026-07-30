@@ -1,5 +1,5 @@
 /**
- * A complete 1:1 messenger — Chatpack backend + vanilla HTML/JS frontend,
+ * A complete 1:1 messenger - Chatpack backend + vanilla HTML/JS frontend,
  * served by this single Node file. Zero configuration, in-memory storage.
  *
  * What lives where:
@@ -9,7 +9,7 @@
  *
  * Auth is cookie-based on purpose: the browser sends cookies automatically
  * on every request INCLUDING the SSE stream, where `EventSource` cannot set
- * custom headers. The cookie here is just the raw username — DEMO ONLY. In a
+ * custom headers. The cookie here is just the raw username - DEMO ONLY. In a
  * real app, use your auth library's session and verify it in the `auth` hook.
  *
  * Run:   pnpm --filter example-messenger start
@@ -24,13 +24,13 @@ import { typing, presence, receipts } from "@chatpack/core/plugins";
 import { memoryAdapter } from "@chatpack/adapter-memory";
 
 const SESSION_COOKIE = "demo_user";
-// No ":" allowed — Chatpack derives conversation pairKeys as "idA:idB".
+// No ":" allowed - Chatpack derives conversation pairKeys as "idA:idB".
 const USERNAME_RE = /^[a-zA-Z0-9_-]{1,32}$/;
 
 // ---------------------------------------------------------------------------
-// 1. The chat server — this is the entire Chatpack setup.
+// 1. The chat server - this is the entire Chatpack setup.
 //    The plugins line is everything needed for typing indicators, online
-//    presence, and live ✓/✓✓ ticks — all opt-in, all ephemeral (never stored).
+//    presence, and live ✓/✓✓ ticks - all opt-in, all ephemeral (never stored).
 // ---------------------------------------------------------------------------
 const chat = chatpack({
   storage: memoryAdapter(),
@@ -48,7 +48,7 @@ const PORT = Number(process.env.PORT ?? 3000);
 const PUBLIC_DIR = join(import.meta.dirname, "public");
 
 // ---------------------------------------------------------------------------
-// 2. Demo auth routes — replace with your real auth library in production.
+// 2. Demo auth routes - replace with your real auth library in production.
 // ---------------------------------------------------------------------------
 function json(
   res: ServerResponse,
@@ -84,7 +84,7 @@ async function handleAuth(req: IncomingMessage, res: ServerResponse, pathname: s
       {
         // SameSite=Lax is right for a top-level local demo. If your app is
         // shown inside a cross-site iframe (AI-builder previews: Lovable, v0,
-        // Bolt), browsers drop Lax cookies — use this instead:
+        // Bolt), browsers drop Lax cookies - use this instead:
         //   `${SESSION_COOKIE}=...; Path=/; HttpOnly; Secure; SameSite=None; Partitioned`
         "set-cookie": `${SESSION_COOKIE}=${encodeURIComponent(username)}; Path=/; HttpOnly; SameSite=Lax`,
       },
@@ -115,7 +115,7 @@ async function handleAuth(req: IncomingMessage, res: ServerResponse, pathname: s
 }
 
 // ---------------------------------------------------------------------------
-// 3. Static frontend — index.html, app.js, styles.css from ./public.
+// 3. Static frontend - index.html, app.js, styles.css from ./public.
 // ---------------------------------------------------------------------------
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -168,7 +168,7 @@ async function serveChat(req: IncomingMessage, res: ServerResponse, url: string)
         res.write(value);
       }
     } catch {
-      // client disconnected mid-stream — fine
+      // client disconnected mid-stream - fine
     }
   }
   res.end();
@@ -184,6 +184,6 @@ const server = createServer(async (req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`Messenger running — open http://localhost:${PORT} in two browser windows`);
+  console.log(`Messenger running - open http://localhost:${PORT} in two browser windows`);
   console.log(`(sign in as e.g. "alice" in one and "bob" in the other)`);
 });

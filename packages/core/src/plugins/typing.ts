@@ -1,5 +1,5 @@
 /**
- * Typing indicators — the `typing()` plugin.
+ * Typing indicators - the `typing()` plugin.
  *
  * Adds one route:
  *
@@ -13,7 +13,7 @@
  * The plugin is stateless by design. Client conventions (documented in the
  * README): throttle `isTyping: true` to at most one POST every few seconds
  * while the user types, and clear the indicator locally if no new
- * `typing.started` arrives within ~5 seconds — so a client that disappears
+ * `typing.started` arrives within ~5 seconds - so a client that disappears
  * mid-keystroke never leaves a stuck "is typing…".
  *
  * @module

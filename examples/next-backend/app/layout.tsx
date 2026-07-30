@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
 export const metadata = {
-  title: "Chatpack — Next.js backend example",
+  title: "Chatpack - Next.js backend example",
   description: "A minimal Next.js App Router backend running Chatpack.",
 };
 

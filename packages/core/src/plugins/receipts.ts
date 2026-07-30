@@ -1,18 +1,18 @@
 /**
- * Live delivery / read ticks — the `receipts()` plugin.
+ * Live delivery / read ticks - the `receipts()` plugin.
  *
  * Two ephemeral signals, no routes:
  *
- * - `receipt.delivered` — sent to the **message sender** the moment a
+ * - `receipt.delivered` - sent to the **message sender** the moment a
  *   recipient's live SSE stream receives their `message.created` event
  *   (the instant ✓✓-while-both-online case). If the recipient is offline,
- *   no tick fires — durable state is what `lastReadMessageId` is for.
- * - `receipt.read` — sent to the **other participant** whenever a user
+ *   no tick fires - durable state is what `lastReadMessageId` is for.
+ * - `receipt.read` - sent to the **other participant** whenever a user
  *   durably updates their read-state via `POST /conversations/:id/read`.
  *
  * Both are at-least-once pings (a recipient with two tabs triggers two
  * delivered ticks): clients dedupe by `payload.messageId`. Durable read-state
- * stays in core, untouched — miss a tick and the truth is still in storage.
+ * stays in core, untouched - miss a tick and the truth is still in storage.
  *
  * @module
  */

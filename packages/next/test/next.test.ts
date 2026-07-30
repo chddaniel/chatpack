@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { chatpack, type StorageAdapter } from "@chatpack/core";
 import { toNextRouteHandlers } from "../src/index";
 
-// Minimal stub — routing/auth behavior is what this package forwards to.
+// Minimal stub - routing/auth behavior is what this package forwards to.
 const stubStorage = {
   async getOrCreateDirectConversation(input) {
     const now = new Date();

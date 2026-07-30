@@ -1,11 +1,11 @@
 # @chatpack/adapter-memory
 
 In-memory storage adapter for [Chatpack](https://github.com/chddaniel/chatpack).
-Zero setup, backed by JavaScript Maps — perfect for demos, examples, and fast
+Zero setup, backed by JavaScript Maps - perfect for demos, examples, and fast
 deterministic tests.
 
 > **Data is lost when the process exits.** Use a database adapter in
-> production —
+> production -
 > [`@chatpack/adapter-drizzle`](https://github.com/chddaniel/chatpack/tree/main/packages/adapter-drizzle)
 > (Postgres) is published and ready. On serverless/edge platforms each isolate
 > has its own memory, so this adapter effectively stores nothing there.

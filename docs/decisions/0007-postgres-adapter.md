@@ -1,4 +1,4 @@
-# ADR 0007: Postgres adapter — atomic seq via `UPDATE ... RETURNING`, PGlite for tests
+# ADR 0007: Postgres adapter - atomic seq via `UPDATE ... RETURNING`, PGlite for tests
 
 - **Status:** accepted
 - **Date:** 2026-07-22
@@ -38,16 +38,16 @@ with no retry loops and no extra round-trips. A unique index on
 
 Alternatives rejected:
 
-- **`MAX(seq) + 1` at insert** — racy without `SERIALIZABLE` isolation or
+- **`MAX(seq) + 1` at insert** - racy without `SERIALIZABLE` isolation or
   explicit locking; needs retry loops.
-- **Postgres sequences per conversation** — unbounded object creation, awkward
+- **Postgres sequences per conversation** - unbounded object creation, awkward
   DDL at runtime.
-- **One global sequence** — workable, but per-conversation gaps confuse
+- **One global sequence** - workable, but per-conversation gaps confuse
   gap-fill debugging and leak cross-conversation volume information.
 
 The same `UPDATE` also maintains `last_activity_at`, which gives
 `listConversations` its most-recently-active ordering with a plain indexed
-keyset query — no `MAX(messages.created_at)` join.
+keyset query - no `MAX(messages.created_at)` join.
 
 ### Idempotent find-or-create: `ON CONFLICT (pair_key) DO NOTHING`
 
@@ -59,7 +59,7 @@ conversation. Tested with 8 parallel `getOrCreateConversation` calls.
 ### Tests: PGlite (real Postgres in WASM), not Docker
 
 The integration suite runs the **entire core engine** against the adapter on
-[PGlite](https://pglite.dev) — actual Postgres compiled to WASM, in-process.
+[PGlite](https://pglite.dev) - actual Postgres compiled to WASM, in-process.
 This exercises the real behaviors the adapter depends on (unique-index
 conflicts, `ON CONFLICT`, atomic `UPDATE ... RETURNING`, `jsonb`,
 `timestamptz`) with zero external services, identically on a contributor's
@@ -82,15 +82,15 @@ examples, tests, and quick starts.
 
 - **Good:** concurrency-safe ordering with one SQL statement; the invariant is
   enforced twice (row lock + unique index).
-- **Good:** contributors run the full Postgres suite with `pnpm test` — no
+- **Good:** contributors run the full Postgres suite with `pnpm test` - no
   Docker, no services in CI.
 - **Good:** `users` remain id-only strings; no FK into a users table
-  (MVP §8 — we never own users).
+  (MVP §8 - we never own users).
 - **Trade-off:** every send does two statements (bump + insert) instead of
   one. Acceptable: both hit primary keys, and correctness beats a
-  micro-optimization. They are not wrapped in an explicit transaction — a
+  micro-optimization. They are not wrapped in an explicit transaction - a
   crash between them leaves only an unused seq (a gap), which the contract
   allows ("strictly increasing", not "gapless").
 - **Trade-off:** table names are prefixed (`chatpack_*`) rather than
-  configurable — avoids schema-injection surface and keeps v0 simple; a
+  configurable - avoids schema-injection surface and keeps v0 simple; a
   naming option can be added later without breaking the interface.

@@ -1,4 +1,4 @@
-# ADR 0002 — Deterministic pair key prevents duplicate DMs
+# ADR 0002 - Deterministic pair key prevents duplicate DMs
 
 - Status: accepted
 - Date: 2026-07-22
@@ -8,7 +8,7 @@
 v0 is 1:1-only, and "find-or-create a direct conversation" is the entry point
 of the whole API (MVP §2). If two users can end up with two conversations
 between them (e.g. both call create at the same time), every downstream
-feature — listing, unread counts, notifications — silently degrades.
+feature - listing, unread counts, notifications - silently degrades.
 
 ## Decision
 
@@ -26,7 +26,7 @@ insert-on-conflict-select).
 
 - Duplicate-DM prevention is enforced by data shape, not by application-level
   "check then insert" races.
-- The pair key is derived purely from user ids — no extra lookups needed.
+- The pair key is derived purely from user ids - no extra lookups needed.
 - When groups land, group conversations simply won't carry a pair key; the
   1:1 path is unaffected (MVP §8).
 

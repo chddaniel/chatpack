@@ -2,7 +2,7 @@
   "name": "example-next-backend",
   "private": true,
   "version": "0.0.0",
-  "description": "Minimal Next.js App Router backend mounting Chatpack — the 5-minute quickstart, runnable",
+  "description": "Minimal Next.js App Router backend mounting Chatpack - the 5-minute quickstart, runnable",
   "license": "MIT",
   "type": "module",
   "scripts": {

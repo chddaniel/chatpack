@@ -1,8 +1,8 @@
 # example-next-backend
 
-The Chatpack quickstart as a runnable Next.js App Router app: **two files** —
+The Chatpack quickstart as a runnable Next.js App Router app: **two files** -
 `lib/chat.ts` (create the instance) and
-`app/api/chat/[...chatpack]/route.ts` (mount it) — give you the whole REST +
+`app/api/chat/[...chatpack]/route.ts` (mount it) - give you the whole REST +
 SSE chat backend.
 
 > Auth here trusts an `x-user-id` header. **Demo only.** In a real app your
@@ -15,7 +15,7 @@ pnpm install
 pnpm --filter example-next-backend dev
 ```
 
-Then exercise it exactly like the [node-server example](../node-server) — same
+Then exercise it exactly like the [node-server example](../node-server) - same
 API, same curl walkthrough, same SSE stream, just served by Next.js:
 
 ```sh

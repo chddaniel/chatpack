@@ -3,20 +3,20 @@
  *
  * Three tables carry the whole durable domain:
  *
- * - `chatpack_conversations` — one row per 1:1 conversation, unique per
+ * - `chatpack_conversations` - one row per 1:1 conversation, unique per
  *   `pair_key` (see `docs/decisions/0002-pair-key.md`). Also holds the
  *   per-conversation `last_seq` counter (atomic message ordering, ADR 0003)
  *   and `last_activity_at` (most-recently-active conversation listing).
- * - `chatpack_conversation_participants` — always exactly two rows per
+ * - `chatpack_conversation_participants` - always exactly two rows per
  *   conversation; carries durable read-state (`last_read_message_id`).
- * - `chatpack_messages` — messages with monotonic `seq`, soft-delete, and the
+ * - `chatpack_messages` - messages with monotonic `seq`, soft-delete, and the
  *   `metadata` escape hatch.
  *
- * Users are referenced **by id only** — Chatpack never owns a users table,
+ * Users are referenced **by id only** - Chatpack never owns a users table,
  * so there are no foreign keys into your `users` table (MVP §8).
  *
  * To create the tables, add these exports to your Drizzle schema and run your
- * usual `drizzle-kit` migration flow — or, for a quick start, execute
+ * usual `drizzle-kit` migration flow - or, for a quick start, execute
  * {@link migrationSql} (multi-statement drivers) or
  * {@link migrationStatements} (one-statement-per-call drivers like Neon HTTP).
  *
@@ -34,7 +34,7 @@ import {
   uniqueIndex,
 } from "drizzle-orm/pg-core";
 
-/** `chatpack_conversations` — one row per 1:1 conversation. */
+/** `chatpack_conversations` - one row per 1:1 conversation. */
 export const conversations = pgTable(
   "chatpack_conversations",
   {
@@ -45,7 +45,7 @@ export const conversations = pgTable(
     metadata: jsonb("metadata").notNull().default({}),
     /**
      * The seq of the latest message (0 = none yet). Incremented atomically on
-     * insert — the source of monotonic message ordering (ADR 0003).
+     * insert - the source of monotonic message ordering (ADR 0003).
      */
     lastSeq: integer("last_seq").notNull().default(0),
     /** Timestamp of the latest message (or creation). Drives list ordering. */
@@ -57,14 +57,14 @@ export const conversations = pgTable(
   ],
 );
 
-/** `chatpack_conversation_participants` — two rows per conversation. */
+/** `chatpack_conversation_participants` - two rows per conversation. */
 export const conversationParticipants = pgTable(
   "chatpack_conversation_participants",
   {
     conversationId: text("conversation_id")
       .notNull()
       .references(() => conversations.id, { onDelete: "cascade" }),
-    /** The developer's user id — never a foreign key (you own the users table). */
+    /** The developer's user id - never a foreign key (you own the users table). */
     userId: text("user_id").notNull(),
     joinedAt: timestamp("joined_at", { withTimezone: true, mode: "date" }).notNull(),
     /** Durable read-state: last message this user has read (MVP §2). */
@@ -76,7 +76,7 @@ export const conversationParticipants = pgTable(
   ],
 );
 
-/** `chatpack_messages` — messages with monotonic per-conversation `seq`. */
+/** `chatpack_messages` - messages with monotonic per-conversation `seq`. */
 export const messages = pgTable(
   "chatpack_messages",
   {
@@ -87,7 +87,7 @@ export const messages = pgTable(
     senderId: text("sender_id").notNull(),
     /** Empty string for soft-deleted messages (tombstone). */
     body: text("body").notNull(),
-    /** "user" | "assistant" | "system" — AI escape hatch (MVP §5). */
+    /** "user" | "assistant" | "system" - AI escape hatch (MVP §5). */
     role: text("role").notNull().default("user"),
     /** Monotonic per-conversation sort key (ADR 0003). */
     seq: bigint("seq", { mode: "number" }).notNull(),
@@ -111,7 +111,7 @@ export const chatpackSchema = {
  * in dependency order.
  *
  * Use this instead of {@link migrationSql} with drivers that execute **one
- * statement per call** — e.g. Neon's HTTP driver (`@neondatabase/serverless`
+ * statement per call** - e.g. Neon's HTTP driver (`@neondatabase/serverless`
  * `sql`), Cloudflare D1, or `@vercel/postgres` `sql`:
  *
  * ```ts

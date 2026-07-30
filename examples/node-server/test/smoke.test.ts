@@ -1,6 +1,6 @@
 /**
  * End-to-end smoke test: boots the real example server (`server.ts`) as a
- * child process and exercises every route over actual localhost HTTP —
+ * child process and exercises every route over actual localhost HTTP -
  * including live SSE delivery and reconnect gap-fill.
  *
  * This is the automated version of the README curl walkthrough. It exists to
@@ -8,8 +8,8 @@
  * http <-> Web-standard bridge, real network streaming, process boot, etc.
  *
  * Storage backends:
- *   - in-memory — always runs, zero setup
- *   - real Postgres — runs when SMOKE_DATABASE_URL is set (e.g. a Neon URL);
+ *   - in-memory - always runs, zero setup
+ *   - real Postgres - runs when SMOKE_DATABASE_URL is set (e.g. a Neon URL);
  *     the server creates tables on boot and the suite uses run-unique user
  *     ids so a persistent database never bleeds state between runs.
  */
@@ -152,7 +152,7 @@ interface Backend {
 }
 
 // In-memory always runs; real Postgres joins in when SMOKE_DATABASE_URL is
-// set (never hardcode credentials here — pass the URL via the environment).
+// set (never hardcode credentials here - pass the URL via the environment).
 const backends: Backend[] = [{ name: "in-memory", databaseUrl: "" }];
 if (process.env.SMOKE_DATABASE_URL) {
   backends.push({ name: "Postgres", databaseUrl: process.env.SMOKE_DATABASE_URL });
@@ -207,7 +207,7 @@ describe.each(backends)("storage: $name", ({ databaseUrl }) => {
     });
 
     it("find-or-create is idempotent, then send / list / read / edit / delete", async () => {
-      // alice finds-or-creates a conversation with bob — twice, same id
+      // alice finds-or-creates a conversation with bob - twice, same id
       const first = await json(
         await request(users.alice, "POST", "/conversations", { otherUserId: users.bob }),
       );

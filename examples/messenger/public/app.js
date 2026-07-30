@@ -1,19 +1,19 @@
 /**
  * The entire messenger frontend, in plain JavaScript. No framework, no build
- * step, no Chatpack client library — just fetch() + EventSource against the
+ * step, no Chatpack client library - just fetch() + EventSource against the
  * REST + SSE API that `chat.handler()` serves.
  *
  * Sections mirror the tutorial in this example's README:
- *   1. auth        — who am I? (your app's concern, not Chatpack's)
- *   2. api()       — tiny fetch wrapper for Chatpack's JSON envelopes/errors
- *   3. inbox       — GET  /conversations
- *   4. new chat    — POST /conversations           (find-or-create)
- *   5. open thread — GET  /conversations/:id/messages (+ scroll-back cursor)
- *   6. send        — POST /conversations/:id/messages
- *   7. edit/delete — PATCH/DELETE /messages/:id
- *   8. read state  — POST /conversations/:id/read
- *   9. realtime    — GET  /stream via EventSource
- *  10. plugins     — typing, presence, ✓/✓✓ ticks (ephemeral events)
+ *   1. auth        - who am I? (your app's concern, not Chatpack's)
+ *   2. api()       - tiny fetch wrapper for Chatpack's JSON envelopes/errors
+ *   3. inbox       - GET  /conversations
+ *   4. new chat    - POST /conversations           (find-or-create)
+ *   5. open thread - GET  /conversations/:id/messages (+ scroll-back cursor)
+ *   6. send        - POST /conversations/:id/messages
+ *   7. edit/delete - PATCH/DELETE /messages/:id
+ *   8. read state  - POST /conversations/:id/read
+ *   9. realtime    - GET  /stream via EventSource
+ *  10. plugins     - typing, presence, ✓/✓✓ ticks (ephemeral events)
  */
 
 const BASE = "/api/chat";
@@ -26,7 +26,7 @@ let messages = []; //       messages of `current`, oldest -> newest
 let olderCursor = null; //  nextCursor for scroll-back, or null when exhausted
 const unread = new Set(); // conversation ids with unseen messages
 let stream = null; //       EventSource
-// Plugin state — all ephemeral, so all of it lives client-side:
+// Plugin state - all ephemeral, so all of it lives client-side:
 const presenceByUser = new Map(); // userId -> { online, lastSeenAt }
 const deliveredSeq = new Map(); //  conversationId -> highest seq confirmed ✓✓
 let typingHideTimer = null; //      clears "is typing…" when pings stop
@@ -35,7 +35,7 @@ let lastTypingSentAt = 0; //        throttle for our own typing POSTs
 const $ = (id) => document.getElementById(id);
 
 // --- 1. auth (demo) ----------------------------------------------------------
-// Chatpack never sees these routes — it only cares that its own requests
+// Chatpack never sees these routes - it only cares that its own requests
 // carry the session cookie, which the browser attaches automatically.
 
 async function whoAmI() {
@@ -116,7 +116,7 @@ function renderSidebar() {
 }
 
 // --- 4. start a chat: find-or-create by user pair ----------------------------
-// POST /conversations is idempotent per pair — "chatting again" with the same
+// POST /conversations is idempotent per pair - "chatting again" with the same
 // user returns the existing conversation instead of creating a duplicate.
 
 $("new-chat").addEventListener("submit", async (e) => {
@@ -171,7 +171,7 @@ $("load-older").addEventListener("click", async () => {
 });
 
 // --- 6. send a message --------------------------------------------------------
-// We don't append locally on success — our own message comes back through the
+// We don't append locally on success - our own message comes back through the
 // SSE stream like everyone else's, so there's exactly one code path.
 
 $("composer").addEventListener("submit", async (e) => {
@@ -206,8 +206,8 @@ async function deleteMessage(message) {
 // --- 8. durable read-state ------------------------------------------------------
 // markRead persists "I've read up to message X" server-side. The other side's
 // read-state is on their Participant entry (`lastReadMessageId`), which we get
-// whenever we (re)fetch the conversation — that's what the "Seen" label uses.
-// (The receipts() plugin also pushes a live `receipt.read` ping — see §10 —
+// whenever we (re)fetch the conversation - that's what the "Seen" label uses.
+// (The receipts() plugin also pushes a live `receipt.read` ping - see §10 -
 // so the label updates instantly while both sides are online.)
 
 async function markRead() {
@@ -242,7 +242,7 @@ function startStream() {
   stream.addEventListener("message.created", (e) => {
     const { message } = JSON.parse(e.data);
     if (current && message.conversationId === current.id) {
-      if (message.senderId !== me.id) hideTyping(); // they sent — not typing anymore
+      if (message.senderId !== me.id) hideTyping(); // they sent - not typing anymore
       if (!messages.some((m) => m.id === message.id)) {
         messages.push(message);
         renderMessages();
@@ -268,7 +268,7 @@ function startStream() {
   stream.addEventListener("message.deleted", applyUpdate);
 
   // Ephemeral plugin events (§10). Unlike message events they carry no SSE id
-  // and are never replayed on reconnect — miss one and it's simply gone.
+  // and are never replayed on reconnect - miss one and it's simply gone.
   stream.addEventListener("typing.started", (e) => {
     const { conversationId, senderId } = JSON.parse(e.data);
     if (current && conversationId === current.id) showTyping(senderId);
@@ -315,7 +315,7 @@ async function bumpConversation(conversationId) {
     // first message of a conversation someone else started with me
     const { conversation } = await api(`/conversations/${conversationId}`);
     conversations.unshift(conversation);
-    refreshPresence(); // a brand-new partner — fetch their presence too
+    refreshPresence(); // a brand-new partner - fetch their presence too
   } else {
     conversations.unshift(conversations.splice(index, 1)[0]);
   }
@@ -324,7 +324,7 @@ async function bumpConversation(conversationId) {
 
 // --- 10. real-time plugins: typing, presence, ✓/✓✓ ticks -----------------------
 // Enabled server-side with `plugins: [typing(), presence(), receipts()]`.
-// Everything here is ephemeral — never stored, never replayed — so the durable
+// Everything here is ephemeral - never stored, never replayed - so the durable
 // truth (message history, lastReadMessageId) is always what's in storage.
 
 // Typing: while the user types, ping at most every 2.5s. The other side clears

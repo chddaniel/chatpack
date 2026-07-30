@@ -1,5 +1,5 @@
 /**
- * Minimal curl-able Chatpack server — REST + SSE, on in-memory or Postgres
+ * Minimal curl-able Chatpack server - REST + SSE, on in-memory or Postgres
  * storage (the M2/M3/M4 demo).
  *
  * Storage:
@@ -83,7 +83,7 @@ const server = createServer(async (req, res) => {
         res.write(value);
       }
     } catch {
-      // client disconnected mid-stream — fine
+      // client disconnected mid-stream - fine
     }
   }
   res.end();

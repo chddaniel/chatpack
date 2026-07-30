@@ -26,7 +26,7 @@ It is about building the infrastructure that powers those kinds of experiences.
 
 The most important principle is developer experience.
 
-We are building for developers—not end users.
+We are building for developers-not end users.
 
 Developers will judge every decision we make.
 
@@ -125,16 +125,16 @@ The project should be:
 
 # Telemetry (anonymous, opt-out)
 
-Decide this early — not after launch.
+Decide this early - not after launch.
 
 Chatpack should ship **anonymous, opt-out telemetry** so we can report big-picture usage for social proof (e.g. “a million messages were sent last month”). That is the sole purpose: credibility for an open-source project, not product analytics on end users.
 
 Rules:
 
-- **Anonymous only** — aggregate counters (messages sent, conversations created, library version). Never message bodies, user ids, conversation ids, emails, or hostnames that identify a customer.
-- **Opt-out** — on by default; disabled with one config flag or env var. Documented loudly in the README.
-- **Never on the hot path** — counting and flushing must not slow down send/receive. Fire-and-forget; failures are silent.
-- **Design the hook now** — even if the collector ships late in v0 (launch polish), core should expose a place to increment counters so we do not retrofit later.
+- **Anonymous only** - aggregate counters (messages sent, conversations created, library version). Never message bodies, user ids, conversation ids, emails, or hostnames that identify a customer.
+- **Opt-out** - on by default; disabled with one config flag or env var. Documented loudly in the README.
+- **Never on the hot path** - counting and flushing must not slow down send/receive. Fire-and-forget; failures are silent.
+- **Design the hook now** - even if the collector ships late in v0 (launch polish), core should expose a place to increment counters so we do not retrofit later.
 
 Details: `docs/MVP.md` §12.
 

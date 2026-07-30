@@ -1,5 +1,5 @@
 /**
- * `@chatpack/core` — open-source chat infrastructure for developers.
+ * `@chatpack/core` - open-source chat infrastructure for developers.
  *
  * The public surface is intentionally small (MVP §2): the {@link chatpack}
  * factory, the {@link StorageAdapter} contract for adapter authors, and the
@@ -57,7 +57,7 @@ export type {
 // HTTP handler (M2) + SSE (M3)
 export { createHandler, type ChatpackHandler, type HandlerOptions } from "./handler";
 
-// Transport (M3) — live event pub/sub
+// Transport (M3) - live event pub/sub
 export {
   inProcessTransport,
   isEphemeralEvent,
@@ -68,7 +68,7 @@ export {
   type TransportListener,
 } from "./transport";
 
-// Plugin seam (docs/decisions/0008) — first-party plugins live in
+// Plugin seam (docs/decisions/0008) - first-party plugins live in
 // `@chatpack/core/plugins`; these types are for plugin authors.
 export type {
   ChatpackPlugin,
@@ -83,7 +83,7 @@ export type {
 // Errors
 export { ChatpackError, type ChatpackErrorCode } from "./errors";
 
-// Telemetry (MVP §12 — anonymous aggregate counters + fire-and-forget flusher)
+// Telemetry (MVP §12 - anonymous aggregate counters + fire-and-forget flusher)
 export {
   TelemetryCounters,
   startTelemetryFlusher,

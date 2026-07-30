@@ -1,9 +1,9 @@
 /**
- * `@chatpack/adapter-drizzle` — Drizzle ORM (Postgres) {@link StorageAdapter}
+ * `@chatpack/adapter-drizzle` - Drizzle ORM (Postgres) {@link StorageAdapter}
  * for Chatpack. Real persistence for production (M4).
  *
- * Works with any Drizzle Postgres driver — node-postgres, postgres.js, PGlite,
- * Neon, Vercel Postgres — because it only uses the dialect-agnostic Drizzle
+ * Works with any Drizzle Postgres driver - node-postgres, postgres.js, PGlite,
+ * Neon, Vercel Postgres - because it only uses the dialect-agnostic Drizzle
  * query builder.
  *
  * ```ts
@@ -19,7 +19,7 @@
  *
  * - **Monotonic `seq` under concurrency:** `addMessage` increments the
  *   conversation's `last_seq` with a single atomic
- *   `UPDATE ... SET last_seq = last_seq + 1 RETURNING` — Postgres row
+ *   `UPDATE ... SET last_seq = last_seq + 1 RETURNING` - Postgres row
  *   locking makes concurrent sends serialize correctly with no gaps-by-race
  *   and no duplicates (ADR 0003, ADR 0007).
  * - **Idempotent find-or-create:** conversation creation uses
@@ -73,7 +73,7 @@ type MessageRow = typeof messages.$inferSelect;
 
 function generateId(prefix: string): string {
   // 128 bits of randomness via the Web Crypto API (available in Node 19+,
-  // Bun, Deno, Workers) — no extra dependency.
+  // Bun, Deno, Workers) - no extra dependency.
   return `${prefix}_${crypto.randomUUID().replaceAll("-", "")}`;
 }
 
@@ -110,7 +110,7 @@ function toConversation(row: ConversationRow, participantRows: ParticipantRow[])
 /**
  * Create a Drizzle/Postgres storage adapter.
  *
- * The Chatpack tables must exist — generate a migration from the exported
+ * The Chatpack tables must exist - generate a migration from the exported
  * schema with `drizzle-kit`, or run the exported {@link migrationSql} once.
  *
  * @param db - Any Drizzle Postgres database instance.
@@ -200,7 +200,7 @@ export function drizzleAdapter(db: DrizzlePgDatabase): StorageAdapter {
 
     async listConversations(input: ListConversationsInput): Promise<ListConversationsResult> {
       // Most-recently-active first, keyset pagination on
-      // (last_activity_at, id) — the cursor encodes both.
+      // (last_activity_at, id) - the cursor encodes both.
       let cursorFilter = undefined;
       if (input.cursor) {
         const separator = input.cursor.indexOf(":");

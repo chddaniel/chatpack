@@ -1,5 +1,5 @@
 /**
- * Presence — the `presence()` plugin.
+ * Presence - the `presence()` plugin.
  *
  * The SSE connection **is** the heartbeat: no extra ping endpoint. The plugin
  * counts open streams per user (multi-tab safe) and, on 0↔1 transitions,
@@ -12,7 +12,7 @@
  * | ------ | --------------------------- | ---------------------------------------------- |
  * | GET    | `/presence?userIds=a,b`     | `{ presence: { [id]: { online, lastSeenAt } } }` |
  *
- * Snapshots are restricted to users the caller shares a conversation with —
+ * Snapshots are restricted to users the caller shares a conversation with -
  * you can't probe the presence of strangers.
  *
  * State is in-memory and **single-node**, exactly like the default SSE
@@ -76,7 +76,7 @@ export function presence(options: PresenceOptions = {}): ChatpackPlugin {
   function publishTransition(ctx: PluginContext, userId: string, online: boolean): void {
     const lastSeenAt = entries.get(userId)?.lastSeenAt ?? new Date();
     // Hooks are sync; the partner lookup is async, so it runs fire-and-forget
-    // and must swallow its own failures — presence must never break a stream.
+    // and must swallow its own failures - presence must never break a stream.
     void partnerIdsOf(ctx, userId)
       .then((recipientIds) => {
         if (recipientIds.length === 0) return;

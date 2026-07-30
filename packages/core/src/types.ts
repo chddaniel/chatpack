@@ -2,7 +2,7 @@
  * Core domain types for Chatpack.
  *
  * These types describe the durable chat domain from MVP §8: 1:1 conversations,
- * participants, and messages. Users are referenced **by id only** — Chatpack
+ * participants, and messages. Users are referenced **by id only** - Chatpack
  * never owns a users table.
  *
  * @module
@@ -21,14 +21,14 @@ export type Metadata = Record<string, unknown>;
  * The role of a message sender.
  *
  * Defaults to `"user"`. `"assistant"` and `"system"` exist purely as the AI
- * escape hatch (MVP §5, §8) — core never behaves differently based on role.
+ * escape hatch (MVP §5, §8) - core never behaves differently based on role.
  */
 export type MessageRole = "user" | "assistant" | "system";
 
 /**
  * A 1:1 (direct) conversation between exactly two users.
  *
- * v0 has no `type` field — every conversation is direct (MVP §8). A `type`
+ * v0 has no `type` field - every conversation is direct (MVP §8). A `type`
  * column can be added later when groups land without breaking this shape.
  */
 export interface Conversation {
@@ -37,7 +37,7 @@ export interface Conversation {
   /**
    * Deterministic key for the pair of participants, computed by core as the
    * sorted user ids joined with `":"` (e.g. `"alice:bob"`). Guarantees a
-   * single conversation per user pair — see `docs/decisions/0002-pair-key.md`.
+   * single conversation per user pair - see `docs/decisions/0002-pair-key.md`.
    */
   pairKey: string;
   /** Creation timestamp. */

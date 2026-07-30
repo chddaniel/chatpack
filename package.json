@@ -1,7 +1,7 @@
 {
   "name": "chatpack-monorepo",
   "private": true,
-  "description": "Chatpack monorepo — open-source chat infrastructure for developers",
+  "description": "Chatpack monorepo - open-source chat infrastructure for developers",
   "license": "MIT",
   "repository": {
     "type": "git",

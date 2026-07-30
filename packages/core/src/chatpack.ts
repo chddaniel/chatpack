@@ -21,7 +21,7 @@ const MAX_LIMIT = 200;
 
 /**
  * Compute the deterministic pair key for two user ids: sorted and joined with
- * `":"`. Guarantees one direct conversation per user pair (MVP §8) — see
+ * `":"`. Guarantees one direct conversation per user pair (MVP §8) - see
  * `docs/decisions/0002-pair-key.md`.
  */
 export function pairKeyFor(userIdA: string, userIdB: string): string {
@@ -131,7 +131,7 @@ export interface ChatpackApi {
 
   /**
    * Fetch one conversation. Requires read permission. Throws
-   * `CONVERSATION_NOT_FOUND` for unknown ids — unlike
+   * `CONVERSATION_NOT_FOUND` for unknown ids - unlike
    * `StorageAdapter.getConversation`, it never resolves to `null`.
    */
   getConversation(input: GetConversationInput): Promise<Conversation>;
@@ -188,7 +188,7 @@ export interface ChatpackInstance {
 }
 
 /**
- * Create a Chatpack instance — the single entry point of `@chatpack/core`.
+ * Create a Chatpack instance - the single entry point of `@chatpack/core`.
  *
  * @example
  * ```ts
@@ -281,7 +281,7 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
     });
   }
 
-  // Assigned right below `api` — the two reference each other, but plugin
+  // Assigned right below `api` - the two reference each other, but plugin
   // hooks only run inside api calls, which can't happen before chatpack()
   // returns.
 

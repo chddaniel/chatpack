@@ -11,11 +11,11 @@
  *
  * Guarantees (see docs/MVP.md §12):
  *
- * - **Anonymous aggregates only** — counts, library version, and a random
+ * - **Anonymous aggregates only** - counts, library version, and a random
  *   per-process instance id (never persisted, never derived from anything).
  *   Never message bodies, user ids, conversation ids, or hostnames.
- * - **Opt-out** — `telemetry: false` in config or `CHATPACK_TELEMETRY=0`.
- * - **Never on the hot path** — incrementing is a synchronous integer add;
+ * - **Opt-out** - `telemetry: false` in config or `CHATPACK_TELEMETRY=0`.
+ * - **Never on the hot path** - incrementing is a synchronous integer add;
  *   flushing is fire-and-forget with a timeout.
  *
  * @module
@@ -79,10 +79,10 @@ export function resolveTelemetryEnabled(configFlag: boolean | undefined): boolea
 /** Where aggregate counters are POSTed. Overridable for self-hosters/tests. */
 export const DEFAULT_TELEMETRY_ENDPOINT = "https://telemetry.chatpack.dev/v1/aggregates";
 
-/** How often deltas are flushed (12h). Slow on purpose — this is not APM. */
+/** How often deltas are flushed (12h). Slow on purpose - this is not APM. */
 export const DEFAULT_FLUSH_INTERVAL_MS = 12 * 60 * 60 * 1000;
 
-/** The exact JSON body a telemetry flush sends — documented, auditable. */
+/** The exact JSON body a telemetry flush sends - documented, auditable. */
 export interface TelemetryPayload {
   /** Random UUID generated per process start. Never persisted. */
   instanceId: string;
@@ -104,7 +104,7 @@ export interface TelemetryFlusherOptions {
  * Start the periodic telemetry flusher for a set of counters.
  *
  * Sends **deltas** since the last successful flush, so restarts and failed
- * requests never double-count. The timer is `unref`'d — it will never keep a
+ * requests never double-count. The timer is `unref`'d - it will never keep a
  * process alive. Every failure mode (offline, DNS, 500, timeout) is silently
  * ignored. Returns a stop function.
  *

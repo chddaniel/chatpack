@@ -2,7 +2,7 @@
   "name": "example-messenger",
   "private": true,
   "version": "0.0.0",
-  "description": "A complete 1:1 messenger in vanilla HTML + JS — one Node file serves the UI, cookie auth, and the Chatpack API",
+  "description": "A complete 1:1 messenger in vanilla HTML + JS - one Node file serves the UI, cookie auth, and the Chatpack API",
   "license": "MIT",
   "type": "module",
   "scripts": {

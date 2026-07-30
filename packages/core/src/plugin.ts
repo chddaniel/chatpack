@@ -1,8 +1,8 @@
 /**
  * The in-core plugin seam (`docs/decisions/0008`).
  *
- * Plugins extend Chatpack with real-time behavior — extra HTTP routes and
- * reactions to core actions — without touching storage. The first-party trio
+ * Plugins extend Chatpack with real-time behavior - extra HTTP routes and
+ * reactions to core actions - without touching storage. The first-party trio
  * (typing, presence, receipts) lives in `@chatpack/core/plugins`; the seam is
  * deliberately minimal: exactly the hooks those plugins need and nothing more.
  *
@@ -118,7 +118,7 @@ export interface ChatpackPlugin {
   /**
    * A durable event was delivered to a connected user's live stream.
    * Fires once per connected stream (a user with two tabs triggers it twice)
-   * — consumers must treat derived signals as at-least-once.
+   * - consumers must treat derived signals as at-least-once.
    */
   onEventDelivered?(ctx: PluginEventDeliveredContext): void;
 }

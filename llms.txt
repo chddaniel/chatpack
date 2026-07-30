@@ -1,8 +1,8 @@
-# Chatpack — single-fetch guide for AI builders & coding agents
+# Chatpack - single-fetch guide for AI builders & coding agents
 
 > Chatpack (npm: `@chatpack/core`) is an open-source TypeScript chat backend:
 > 1:1 conversations, messages, permissions, read-state, and real-time SSE.
-> **Part 1 is the integration guide** — read it before generating any code
+> **Part 1 is the integration guide** - read it before generating any code
 > that uses Chatpack. Part 2 covers writing a custom storage adapter (only
 > needed when the official adapters don't fit).
 >
@@ -14,30 +14,30 @@ Packages (all on npm):
 | Package                    | What it is                                             |
 | -------------------------- | ------------------------------------------------------ |
 | `@chatpack/core`           | The engine: API, HTTP handler, SSE, plugins            |
-| `@chatpack/adapter-memory` | In-memory storage — demos/tests, single process only   |
-| `@chatpack/adapter-drizzle`| Postgres storage via Drizzle — production              |
+| `@chatpack/adapter-memory` | In-memory storage - demos/tests, single process only   |
+| `@chatpack/adapter-drizzle`| Postgres storage via Drizzle - production              |
 | `@chatpack/next`           | Next.js App Router mount helper (`toNextRouteHandlers`)|
 
-# Part 1 — Integrating Chatpack
+# Part 1 - Integrating Chatpack
 
 ## Hard rules (violating any of these is the #1 cause of broken integrations)
 
 1. **Mount the ONE handler on a catch-all route. Never hand-write your own
    message/stream/API routes.** `chat.handler()` already serves every route
-   in the table below — conversations, messages, read-state, typing,
-   presence, AND the SSE stream — under one `basePath` (default `/api/chat`).
+   in the table below - conversations, messages, read-state, typing,
+   presence, AND the SSE stream - under one `basePath` (default `/api/chat`).
    Writing your own `/api/messages` or `/api/chat/stream` route breaks the
    wiring (split state, missed events) and is never needed.
 2. **These are the only server-side methods** on `chat.api`:
    `getOrCreateConversation`, `listConversations`, `getConversation`,
    `sendMessage`, `listMessages`, `editMessage`, `deleteMessage`, `markRead`,
    `listMessagesAfter`. There is **no** `chat.api.getOrCreateDirectConversation`
-   (that name is a low-level *storage adapter* method — never call the
+   (that name is a low-level *storage adapter* method - never call the
    adapter directly). Do not invent methods; if a name is not in this list,
    it does not exist.
 3. **Conversation ids are server-generated opaque strings** (e.g. `conv_1`).
    Get one from `POST /conversations` / `chat.api.getOrCreateConversation`
-   with `{ otherUserId }`. **Never construct ids like `"alice-bob"`** —
+   with `{ otherUserId }`. **Never construct ids like `"alice-bob"`** -
    the sorted pair key is internal to Chatpack.
 4. **Create exactly ONE `chatpack()` instance** in one module and import it
    everywhere. Under dev-server HMR (Vite, Next dev, TanStack Start), guard
@@ -49,19 +49,19 @@ Packages (all on npm):
    ```
 5. **The `auth` hook must return `{ id: string }` (non-empty) or `null`.**
    A bare string or `{ userId: ... }` is treated as unauthenticated → 401 on
-   every request. The hook receives the raw WHATWG `Request` — there is no
+   every request. The hook receives the raw WHATWG `Request` - there is no
    `request.cookies`; parse `request.headers.get("cookie")` yourself.
 6. **Browser auth must be cookie-based**, because the live stream is
    `EventSource`, which cannot send custom headers. Whenever the app renders
-   inside a cross-site iframe — every AI-builder preview pane (Lovable, v0,
-   Bolt, Shipper, Replit, ...) works this way — the cookie must be
-   `SameSite=None; Secure` — see the demo-auth recipe below. This is the
+   inside a cross-site iframe - every AI-builder preview pane (Lovable, v0,
+   Bolt, Shipper, Replit, ...) works this way - the cookie must be
+   `SameSite=None; Secure` - see the demo-auth recipe below. This is the
    #1 cause of 401s in embedded previews.
 
 ## 60-second wiring (framework-agnostic core)
 
 ```ts
-// chat.server.ts — the whole backend setup
+// chat.server.ts - the whole backend setup
 import { chatpack, type ChatpackInstance } from "@chatpack/core";
 import { typing, presence, receipts } from "@chatpack/core/plugins";
 import { memoryAdapter } from "@chatpack/adapter-memory";
@@ -86,24 +86,24 @@ Then mount `chatHandler` on a catch-all route (per-framework recipes below),
 and the frontend talks plain HTTP + one `EventSource`:
 
 ```ts
-// 1. sign in (demo): set the cookie — iframe-proof attributes, see below
+// 1. sign in (demo): set the cookie - iframe-proof attributes, see below
 document.cookie = "demo_user=alice; Path=/; Max-Age=86400; SameSite=None; Secure; Partitioned";
 
-// 2. open a conversation — the SERVER generates/returns the id
+// 2. open a conversation - the SERVER generates/returns the id
 const { conversation } = await fetch("/api/chat/conversations", {
   method: "POST",
   headers: { "content-type": "application/json" },
   body: JSON.stringify({ otherUserId: "bob" }),
 }).then((r) => r.json());
 
-// 3. send a message — the text field is `body`
+// 3. send a message - the text field is `body`
 await fetch(`/api/chat/conversations/${conversation.id}/messages`, {
   method: "POST",
   headers: { "content-type": "application/json" },
   body: JSON.stringify({ body: "hey bob!" }),
 });
 
-// 4. live updates — ONE EventSource; reconnection + gap-fill are automatic
+// 4. live updates - ONE EventSource; reconnection + gap-fill are automatic
 const events = new EventSource("/api/chat/stream");
 events.addEventListener("message.created", (e) => {
   const { message } = JSON.parse((e as MessageEvent).data);
@@ -118,7 +118,7 @@ iframe**: AI-builder editors (Lovable's `*.lovable.app` pane inside
 lovable.dev, v0's `*.vusercontent.net` inside v0.app, Bolt, Shipper, Replit,
 and whatever ships next), site-builder embeds, and in-app browsers. Browsers
 refuse to store or send `SameSite=Lax` cookies there, so the classic demo
-cookie silently disappears and every request 401s — while the same app works
+cookie silently disappears and every request 401s - while the same app works
 when opened as a top-level tab. Set demo cookies like this:
 
 ```ts
@@ -138,7 +138,7 @@ For production apps that never run inside an iframe, your auth library's
 defaults (usually `SameSite=Lax`) are correct and more CSRF-resistant.
 
 **Real auth (bearer tokens + SSE):** if REST calls send an `Authorization`
-header (Supabase/Clerk/Firebase JWTs), keep it — write the hook to accept
+header (Supabase/Clerk/Firebase JWTs), keep it - write the hook to accept
 either credential; the cookie is the fallback that makes `/stream` work:
 
 ```ts
@@ -193,7 +193,7 @@ app.all("/api/chat/*", (c) => chatHandler.fetch(c.req.raw));          // Hono
 app.all("/api/chat/*", ({ request }) => chatHandler.fetch(request));  // Elysia
 ```
 
-**Express / plain Node** (bridge Node req/res ↔ Web Request/Response —
+**Express / plain Node** (bridge Node req/res ↔ Web Request/Response -
 `req.originalUrl` matters under Express mounts; streaming the body is what
 makes SSE work):
 
@@ -232,12 +232,12 @@ A complete plain-Node version lives in `examples/node-server` in the repo.
 | ------ | ----------------------------- | -------------------------------------- | ----------------------------------------- |
 | POST   | `/conversations`              | `{ otherUserId, metadata? }`           | `{ conversation }`                        |
 | GET    | `/conversations`              | `?limit=&cursor=`                      | `{ conversations, nextCursor }`           |
-| GET    | `/conversations/:id`          | —                                      | `{ conversation }`                        |
+| GET    | `/conversations/:id`          | -                                      | `{ conversation }`                        |
 | POST   | `/conversations/:id/messages` | `{ body, role?, metadata? }`           | `{ message }` (201)                       |
-| GET    | `/conversations/:id/messages` | `?limit=&cursor=`                      | `{ messages, nextCursor }` — newest first |
+| GET    | `/conversations/:id/messages` | `?limit=&cursor=`                      | `{ messages, nextCursor }` - newest first |
 | POST   | `/conversations/:id/read`     | `{ messageId }`                        | `{ ok: true }`                            |
 | PATCH  | `/messages/:id`               | `{ body }`                             | `{ message }`                             |
-| DELETE | `/messages/:id`               | —                                      | `{ message }` (soft-deleted)              |
+| DELETE | `/messages/:id`               | -                                      | `{ message }` (soft-deleted)              |
 | GET    | `/stream`                     | SSE; auto `Last-Event-ID` on reconnect | `text/event-stream`                       |
 
 Plugin routes (only when the plugin is passed to `chatpack({ plugins })`):
@@ -250,21 +250,21 @@ Plugin routes (only when the plugin is passed to `chatpack({ plugins })`):
 Semantics that trip up generated clients:
 
 - Responses are **enveloped** (`{ conversation }`, `{ message }`,
-  `{ messages, nextCursor }`) — unwrap them. Server-side `chat.api.*` returns
+  `{ messages, nextCursor }`) - unwrap them. Server-side `chat.api.*` returns
   the bare objects instead; don't share types between the two.
 - Message lists are **newest-first**; reverse for a chronological transcript.
   Paginate with `nextCursor` → `?cursor=`.
 - The message text field is **`body`** (not `text`/`content`).
-- `role` is `"user" | "assistant" | "system"` (default `"user"`) — a stored
+- `role` is `"user" | "assistant" | "system"` (default `"user"`) - a stored
   label; core never branches on it. Anything else is a 400.
 - `otherUserId` is **not validated to exist** (Chatpack never owns a users
-  table) — validate recipients in your app.
+  table) - validate recipients in your app.
 - Timestamps are `Date` in server-side calls, ISO strings over HTTP.
-- Errors: `{ "error": { "code", "message" } }` — 401 `UNAUTHENTICATED`
+- Errors: `{ "error": { "code", "message" } }` - 401 `UNAUTHENTICATED`
   (the message says *why*: bad hook return shape vs. missing cookie vs.
   unparsed cookie), 400 `INVALID_INPUT`, 403 `FORBIDDEN_*`, 404 `*_NOT_FOUND`,
   409 `MESSAGE_DELETED`, 500 `INTERNAL_ERROR` (opaque).
-- **Auth runs before routing** — an unauthenticated request to a wrong path
+- **Auth runs before routing** - an unauthenticated request to a wrong path
   still 401s. Fix auth first; then a lingering 404 `NOT_FOUND` means your
   mount path/basePath is wrong.
 
@@ -273,7 +273,7 @@ Semantics that trip up generated clients:
 `GET /stream` pushes `message.created` / `message.updated` /
 `message.deleted` for the authenticated user's conversations (participation
 re-checked server-side per event). Reconnects gap-fill automatically from
-storage via `Last-Event-ID` — durable-first, no lost messages; delivery is
+storage via `Last-Event-ID` - durable-first, no lost messages; delivery is
 at-least-once, so **dedupe by `message.id`**.
 
 Plugins add ephemeral events on the same stream (never stored, never
@@ -287,7 +287,7 @@ after ~5s; dedupe ticks by `payload.messageId`; durable read-state truth is
 ```ts
 events.onerror = () => {
   if (events.readyState === EventSource.CLOSED) {
-    // Fatal (e.g. 401): browser will NOT retry — re-auth, then recreate.
+    // Fatal (e.g. 401): browser will NOT retry - re-auth, then recreate.
   } // otherwise EventSource retries + gap-fills automatically
 };
 ```
@@ -297,11 +297,11 @@ events.onerror = () => {
 | Environment                                                                                          | Storage                          | Real-time                                     |
 | ---------------------------------------------------------------------------------------------------- | -------------------------------- | --------------------------------------------- |
 | One long-lived process: `node`/`Bun.serve`, `next start`, Railway/Fly/Render, Replit Reserved VM, **AI-builder previews** (Lovable/v0 preview sandboxes behave like a dev server) | `memoryAdapter` (demo) or Drizzle | `/stream` SSE works                           |
-| Serverless / edge / multi-instance: Vercel & AWS Lambda, Cloudflare Workers, **published AI-builder apps**, Replit Autoscale | Drizzle (or custom adapter) — `memoryAdapter` is per-isolate and loses everything | Poll `GET /conversations/:id/messages`; don't rely on `/stream` across isolates until a distributed transport ships |
+| Serverless / edge / multi-instance: Vercel & AWS Lambda, Cloudflare Workers, **published AI-builder apps**, Replit Autoscale | Drizzle (or custom adapter) - `memoryAdapter` is per-isolate and loses everything | Poll `GET /conversations/:id/messages`; don't rely on `/stream` across isolates until a distributed transport ships |
 
 The default transport and plugin state (typing/presence/receipts) are
 in-process, single-node. A demo on `memoryAdapter` + `/stream` is correct in
-a preview and wrong in a serverless deploy — say so in the app's README.
+a preview and wrong in a serverless deploy - say so in the app's README.
 
 ## Verify the integration (before declaring success)
 
@@ -322,17 +322,17 @@ curl -sN localhost:3000/api/chat/stream -H 'cookie: demo_user=bob'
 ```
 
 In the browser: after "sign in", `document.cookie` must actually contain the
-demo cookie, and the Network tab must show it on `/api/chat/*` requests —
+demo cookie, and the Network tab must show it on `/api/chat/*` requests -
 if it's missing there, revisit the cookie attributes (iframe rules above).
 A 401 response body names the exact failure; read it before changing code.
 
 ## AI assistant pattern (user↔AI chat)
 
-Chatpack has no AI features — an assistant is just a participant with a
+Chatpack has no AI features - an assistant is just a participant with a
 synthetic user id:
 
 1. Reserve an id like `"ai:assistant"` (block the prefix in your own
-   auth/validation — `otherUserId` accepts any non-empty string).
+   auth/validation - `otherUserId` accepts any non-empty string).
 2. `chat.api.getOrCreateConversation({ userId, otherUserId: "ai:assistant" })`.
 3. Persist the user message with `chat.api.sendMessage` as usual.
 4. Your backend calls the LLM (your keys), then
@@ -341,7 +341,7 @@ synthetic user id:
 Token streaming is your concern; Chatpack stores whole messages (send the
 final text, or edit a placeholder as chunks arrive).
 
-# Part 2 — Writing a custom storage adapter
+# Part 2 - Writing a custom storage adapter
 
 Only needed on platforms where the official adapters don't fit
 (Supabase/PostgREST clients, Convex, Firebase, proprietary AI-builder
@@ -354,7 +354,7 @@ clouds, ...).
   Fly, Replit, Vercel Postgres): `@chatpack/adapter-drizzle`. Do NOT write a
   custom adapter for these.
 - Postgres behind an HTTP client only (e.g. Supabase JS on Lovable/Bolt), or a
-  non-SQL store (Convex, Firestore, DynamoDB): write a custom adapter —
+  non-SQL store (Convex, Firestore, DynamoDB): write a custom adapter -
   continue below.
 
 ## The contract
@@ -364,7 +364,7 @@ pass it as `chatpack({ storage: yourAdapter() })`. Nine async methods:
 
 | Method                          | Contract                                                                  |
 | ------------------------------- | ------------------------------------------------------------------------- |
-| `getOrCreateDirectConversation` | Find or atomically create by `pairKey` — concurrent calls must converge   |
+| `getOrCreateDirectConversation` | Find or atomically create by `pairKey` - concurrent calls must converge   |
 | `getConversation`               | Fetch by id (with both participants), or `null`                           |
 | `listConversations`             | A user's conversations, most-recently-active first, cursor-paginated      |
 | `addMessage`                    | Persist + assign the next strictly-increasing `seq` for that conversation |
@@ -387,11 +387,11 @@ Exact TypeScript signatures and per-method TSDoc ship in the package's
   (`"user" | "assistant" | "system"`), `seq: number`, `createdAt: Date`,
   `editedAt: Date | null`, `deletedAt: Date | null`, `metadata`.
 
-Users are opaque string ids. Chatpack never owns a users table — do not add
+Users are opaque string ids. Chatpack never owns a users table - do not add
 foreign keys into the app's users table and do not validate user existence in
 the adapter.
 
-## Level 1 — invariants (database-agnostic; these are the contract)
+## Level 1 - invariants (database-agnostic; these are the contract)
 
 Satisfy every one of these however your platform does atomicity. Everything
 else is implementation detail.
@@ -401,13 +401,13 @@ else is implementation detail.
    `"alice:bob"`) and hands it to you. Two concurrent
    `getOrCreateDirectConversation` calls with the same `pairKey` must converge
    on a single conversation (`created: true` for at most one caller). A
-   JS-side "select, then insert if missing" is NOT enough — enforce uniqueness
+   JS-side "select, then insert if missing" is NOT enough - enforce uniqueness
    in the database (unique index + insert-on-conflict, transaction, or your
    platform's equivalent).
 2. **`seq` is strictly increasing per conversation and assigned atomically
    with the message insert.** Never reused, never decreasing; gaps are
    allowed. Concurrent sends to the same conversation must serialize. Do NOT
-   compute `MAX(seq) + 1` in application code — that races.
+   compute `MAX(seq) + 1` in application code - that races.
 3. **Adapters generate ids.** `getOrCreateDirectConversation` and `addMessage`
    create the `id` themselves (any unique string; the official adapters use
    prefixed random ids like `msg_<uuid>`). Ids must be unique and stable.
@@ -415,14 +415,14 @@ else is implementation detail.
    permission hooks *before* calling you. Return whatever is asked for.
    Corollary for hosted platforms: the adapter must run **server-side with
    full DB privileges** (e.g. the Supabase service-role key), and the
-   Chatpack tables must NOT be readable or writable by browser/anon clients —
+   Chatpack tables must NOT be readable or writable by browser/anon clients -
    otherwise users can read each other's messages around Chatpack entirely.
 5. **Cursors are opaque strings that the adapter defines.** Core (and the
    HTTP layer) round-trip your `nextCursor` back into `input.cursor`
    verbatim, without inspecting it. Pick any encoding that survives a URL
    query parameter. Return `nextCursor: null` when there are no more results.
-   Reference encodings: `listMessages` — the `seq` of the last message on the
-   page; `listConversations` — `"<lastActivityMs>:<conversationId>"` (keyset)
+   Reference encodings: `listMessages` - the `seq` of the last message on the
+   page; `listConversations` - `"<lastActivityMs>:<conversationId>"` (keyset)
    or simply the last conversation id.
 6. **Ordering.** `listMessages`: newest-first (descending `seq`).
    `listMessagesAfterSeq`: oldest-first (ascending `seq`), only `seq >
@@ -431,7 +431,7 @@ else is implementation detail.
    time), with a stable tiebreak so pagination never skips or repeats.
 7. **Return real `Date` instances, never ISO strings.** The interface types
    say `Date` and core does not coerce. Database drivers and HTTP clients
-   (PostgREST, Convex, Firestore) often hand back strings or numbers —
+   (PostgREST, Convex, Firestore) often hand back strings or numbers -
    convert at the adapter boundary, both directions. JSON serialization is
    the HTTP handler's job, never yours.
 8. **Soft delete is an update, not a removal.** Core calls
@@ -443,12 +443,12 @@ else is implementation detail.
 9. **`metadata` is an arbitrary JSON object.** Store and return it losslessly
    (default `{}`).
 
-## Level 2 — reference realization (Postgres SQL)
+## Level 2 - reference realization (Postgres SQL)
 
 The official Postgres schema. If your store speaks SQL, use it as-is; if not,
 translate the shapes and satisfy the Level-1 invariants instead. Also
 available programmatically: `import { migrationSql, chatpackSchema } from
-"@chatpack/adapter-drizzle"` (`migrationSql` is plain idempotent DDL — no
+"@chatpack/adapter-drizzle"` (`migrationSql` is plain idempotent DDL - no
 Drizzle required to execute it).
 
 ```sql
@@ -495,7 +495,7 @@ CREATE UNIQUE INDEX IF NOT EXISTS "chatpack_messages_conv_seq_idx"
 How the reference implementation satisfies the two hard invariants
 (ADR 0007 in `docs/decisions/`):
 
-- **Atomic `seq`** — one statement, row-locked by Postgres:
+- **Atomic `seq`** - one statement, row-locked by Postgres:
 
   ```sql
   UPDATE chatpack_conversations
@@ -506,17 +506,17 @@ How the reference implementation satisfies the two hard invariants
 
   then insert the message with the returned value. The unique index on
   `(conversation_id, seq)` backstops the invariant. On Supabase/PostgREST you
-  cannot express this UPDATE through the client — wrap it in a SQL function
+  cannot express this UPDATE through the client - wrap it in a SQL function
   and call it via RPC.
 
-- **Idempotent pair creation** — `INSERT ... ON CONFLICT (pair_key) DO
+- **Idempotent pair creation** - `INSERT ... ON CONFLICT (pair_key) DO
   NOTHING`, then re-select by `pair_key`; zero inserted rows means a
   concurrent call won and both converge on the same row.
 
 ### Non-SQL platforms (Convex, Firestore, ...)
 
 Ignore the SQL; keep the three-collection shape and satisfy Level 1 with your
-platform's transaction primitive. Example — on Convex, each adapter method
+platform's transaction primitive. Example - on Convex, each adapter method
 becomes a Convex query/mutation (DB access only exists inside Convex
 functions) and the `StorageAdapter` object calls them through the Convex
 client; `addMessage` is a single mutation (read counter → increment → insert),
@@ -579,7 +579,7 @@ export function myAdapter(client: MyDbClient): StorageAdapter {
 - Hard-deleting messages, or dropping `seq`/row on delete (must tombstone).
 - `listMessages` returned oldest-first (must be newest-first), or
   `listMessagesAfterSeq` returned newest-first (must be oldest-first).
-- Stubbing `nextCursor` as always-`null` — pagination silently breaks once
+- Stubbing `nextCursor` as always-`null` - pagination silently breaks once
   history exceeds one page.
 - Exposing `chatpack_*` tables to browser/anon database clients (bypasses
   Chatpack's permission layer; adapter must be server-only with privileged
@@ -590,24 +590,24 @@ export function myAdapter(client: MyDbClient): StorageAdapter {
 ## Verify your adapter
 
 Run these checks against your implementation before calling it done. All of
-them go through the normal Chatpack API (`chat.api.*` or the HTTP routes) —
+them go through the normal Chatpack API (`chat.api.*` or the HTTP routes) -
 if any fails, the bug is in the adapter.
 
 1. **Round trip.** Create a conversation (A→B), send a message, restart the
-   process (or hit a fresh serverless isolate), list messages — the message
+   process (or hit a fresh serverless isolate), list messages - the message
    is still there with the same `id`, `seq: 1`, and `createdAt` as a valid
    timestamp.
 2. **Pair idempotency, both directions.** `getOrCreateConversation(A→B)` then
-   `(B→A)` — same conversation id both times, and only one row/document
+   `(B→A)` - same conversation id both times, and only one row/document
    exists.
 3. **Pair idempotency, concurrent.** Fire 5+ parallel
-   `getOrCreateConversation` calls for the same new pair — exactly one
+   `getOrCreateConversation` calls for the same new pair - exactly one
    conversation exists afterwards.
 4. **Seq under concurrent sends.** Fire 10 parallel `sendMessage` calls into
-   one conversation — afterwards all 10 `seq` values are distinct and
+   one conversation - afterwards all 10 `seq` values are distinct and
    strictly increasing; no duplicates, no failures.
 5. **Pagination walk.** Send 25 messages, list with `limit: 10`, follow
-   `nextCursor` until `null` — you get exactly 25 unique messages,
+   `nextCursor` until `null` - you get exactly 25 unique messages,
    newest-first, no repeats, no gaps. Same walk for `listConversations`.
 6. **Gap-fill.** After sending messages 1..N, `listMessagesAfterSeq` with
    `afterSeq: 3` returns 4..N oldest-first.
@@ -615,7 +615,7 @@ if any fails, the bug is in the adapter.
    delete it (body `""`, `deletedAt` set, still present in `listMessages`
    with its original `seq`); editing the deleted message now fails with
    `MESSAGE_DELETED`.
-8. **Read-state.** `markRead` then re-fetch the conversation — that
+8. **Read-state.** `markRead` then re-fetch the conversation - that
    participant's `lastReadMessageId` is updated and survives a restart.
 9. **Types at the boundary.** `createdAt instanceof Date` is `true` on
    returned conversations and messages (catches ISO-string leakage).
@@ -625,7 +625,7 @@ if any fails, the bug is in the adapter.
 ## Real-time plugins and custom adapters
 
 `typing()`, `presence()`, `receipts()` publish **ephemeral events** on the
-SSE stream — never stored, never replayed — so custom storage adapters need
+SSE stream - never stored, never replayed - so custom storage adapters need
 **zero changes** to support them. If you implement a custom `Transport`,
 note `publish`/`subscribe` carry `TransportEvent = ChatEvent |
 EphemeralEvent` since core 0.2.0 (discriminate with `isEphemeralEvent`).

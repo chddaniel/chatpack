@@ -1,7 +1,7 @@
 # example-node-server
 
 The smallest possible Chatpack deployment: one file, a header-based demo auth
-hook — so you can exercise the whole REST API **and the live SSE stream** with
+hook - so you can exercise the whole REST API **and the live SSE stream** with
 curl. Runs on in-memory storage by default, or real Postgres with one env var.
 
 > Auth here trusts an `x-user-id` header. **Demo only.** In a real app your
@@ -47,7 +47,7 @@ DATABASE_URL=postgres://localhost:5432/chatpack_demo \
   pnpm --filter example-node-server start
 ```
 
-Everything below works identically — but now messages survive a server
+Everything below works identically - but now messages survive a server
 restart, and you can watch rows land:
 
 ```sh
@@ -82,7 +82,7 @@ curl -s -X POST $BASE/conversations/$CONV/messages \
 # 5. bob lists the history (newest first)
 curl -s $BASE/conversations/$CONV/messages -H 'x-user-id: bob'
 
-# 6. mallory is not a participant — permissions enforced
+# 6. mallory is not a participant - permissions enforced
 curl -si $BASE/conversations/$CONV/messages -H 'x-user-id: mallory' | head -1
 # HTTP/1.1 403 Forbidden
 ```
@@ -91,13 +91,13 @@ curl -si $BASE/conversations/$CONV/messages -H 'x-user-id: mallory' | head -1
 
 Open **two terminals**.
 
-Terminal 1 — bob listens:
+Terminal 1 - bob listens:
 
 ```sh
 curl -N http://localhost:3000/api/chat/stream -H 'x-user-id: bob'
 ```
 
-Terminal 2 — alice sends:
+Terminal 2 - alice sends:
 
 ```sh
 BASE=http://localhost:3000/api/chat
@@ -124,7 +124,7 @@ Edits arrive as `message.updated`, soft-deletes as `message.deleted`.
 
 Every event's `id` is `conversationId:seq`. If the connection drops, reconnect
 with the last id you saw and the server replays what you missed from storage
-before resuming live delivery — no lost messages:
+before resuming live delivery - no lost messages:
 
 ```sh
 # Ctrl-C the listener, send a few messages as alice, then:

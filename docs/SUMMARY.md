@@ -1,4 +1,4 @@
-# Chatpack — Summary (for stakeholders)
+# Chatpack - Summary (for stakeholders)
 
 > Non-technical overview. Technical detail lives in `docs/MVP.md` and `docs/ARCHITECTURE.md`.
 
@@ -25,11 +25,11 @@ Developers bring their own authentication and frontend. Chatpack focuses solely 
 
 ## Social proof (telemetry)
 
-From early on, Chatpack should include **anonymous, opt-out telemetry** — only big-picture counts such as messages sent per month. The goal is social proof for the open-source project (“a million messages were sent last month”), not tracking end users. Message content and personal data are never collected. Developers can turn it off with one setting. Details: `docs/MVP.md` §12.
+From early on, Chatpack should include **anonymous, opt-out telemetry** - only big-picture counts such as messages sent per month. The goal is social proof for the open-source project (“a million messages were sent last month”), not tracking end users. Message content and personal data are never collected. Developers can turn it off with one setting. Details: `docs/MVP.md` §12.
 
 ## Design philosophy
 
-The project is being built for developers. Success isn’t measured by the number of features — it is measured by how simple and enjoyable it is to use.
+The project is being built for developers. Success isn’t measured by the number of features - it is measured by how simple and enjoyable it is to use.
 
 Every decision should prioritize:
 
@@ -49,17 +49,17 @@ In a year, the ambition is exactly what was described on the Loom:
 - **Group chats**
 - Discord-like **rooms / channels**
 - Rich UI/UX building blocks (images, GIFs, typing, presence, and more)
-- All of it **configurable**: install Chatpack and say “I only want one-to-one,” or “one-to-one plus images and GIFs,” or “groups with rooms” — and get a pre-built path instead of rebuilding from scratch
+- All of it **configurable**: install Chatpack and say “I only want one-to-one,” or “one-to-one plus images and GIFs,” or “groups with rooms” - and get a pre-built path instead of rebuilding from scratch
 
 That year-one product is real. The important discipline is **not** trying to ship the year-one product in the first week. We draw the line the same way BetterAuth did: ship a foundation people love, then grow the surface carefully.
 
-**Where we draw the line early:** anything that is polish, media hosting, or multi-product complexity (groups, rooms, file uploads, push notifications, AI-specific features) waits until the core is solid. Typing, presence, and live ticks have since shipped as optional add-ons on top of the finished core — exactly in the order this plan called for. Details: `docs/MVP.md` §§4–5.
+**Where we draw the line early:** anything that is polish, media hosting, or multi-product complexity (groups, rooms, file uploads, push notifications, AI-specific features) waits until the core is solid. Typing, presence, and live ticks have since shipped as optional add-ons on top of the finished core - exactly in the order this plan called for. Details: `docs/MVP.md` §§4–5.
 
-## What ships when — answering “3 days vs 7 vs 14”
+## What ships when - answering “3 days vs 7 vs 14”
 
 Estimated effort for the first public release is still **~3 focused days (roughly 24–30 hours)**. Below is what the package contains at each horizon if we keep building after that foundation lands.
 
-### In ~3 days — first release (v0)
+### In ~3 days - first release (v0)
 
 **What’s in the package:** the minimum that still feels like real chat infrastructure.
 
@@ -89,10 +89,10 @@ Estimated effort for the first public release is still **~3 focused days (roughl
 
 ---
 
-### In ~7 days — next slice on top of v0
+### In ~7 days - next slice on top of v0
 
 **Status: the real-time portion of this slice has shipped.** Typing
-indicators, presence, and live ticks are live as optional add-ons — a
+indicators, presence, and live ticks are live as optional add-ons - a
 developer turns them on with one line, or leaves them off entirely
 (configurable, exactly like the Loom vision). React hooks are the next item.
 
@@ -106,24 +106,24 @@ developer turns them on with one line, or leaves them off entirely
 
 **Still out at day 7:** groups, Discord-like rooms, attachments as a first-class feature, push notifications, AI framework features.
 
-**Bottom line for day 7:** 1:1 chat that _feels_ closer to a consumer messenger (typing, presence, live ticks), with a smoother path to build UI — still configurable to turn those extras off.
+**Bottom line for day 7:** 1:1 chat that _feels_ closer to a consumer messenger (typing, presence, live ticks), with a smoother path to build UI - still configurable to turn those extras off.
 
 ---
 
-### In ~14 days — toward “pick what you need”
+### In ~14 days - toward “pick what you need”
 
 **What’s added to the package:**
 
 | Added around day 14                                 | What it means in plain terms                                                                  |
 | --------------------------------------------------- | --------------------------------------------------------------------------------------------- |
 | Group conversations                                 | Chat with more than two people                                                                |
-| First pass at rooms / channels (lightweight)        | Early Discord-like structure — not full Discord parity                                        |
-| Attachments (images / GIFs / files) — first version | Send media, with clear limits and a simple upload story                                       |
-| More configuration knobs                            | “1:1 only,” “1:1 + images,” “groups on/off” — closer to the Loom vision of install-and-choose |
+| First pass at rooms / channels (lightweight)        | Early Discord-like structure - not full Discord parity                                        |
+| Attachments (images / GIFs / files) - first version | Send media, with clear limits and a simple upload story                                       |
+| More configuration knobs                            | “1:1 only,” “1:1 + images,” “groups on/off” - closer to the Loom vision of install-and-choose |
 
 **Still later than 14 days (toward the year vision):** full Discord-like product depth, push/email notification suites, moderation/admin suites, search, reactions/threads at scale, multi-region infrastructure, and deep AI chat tooling.
 
-**Bottom line for day 14:** the package starts to match the Loom story in miniature — developers can choose a shape (1:1 vs groups, text vs media) instead of rebuilding those choices themselves. The year-long roadmap is how that becomes Telegram/Discord-class breadth.
+**Bottom line for day 14:** the package starts to match the Loom story in miniature - developers can choose a shape (1:1 vs groups, text vs media) instead of rebuilding those choices themselves. The year-long roadmap is how that becomes Telegram/Discord-class breadth.
 
 ---
 
@@ -131,7 +131,7 @@ developer turns them on with one line, or leaves them off entirely
 
 | Horizon      | Package focus                                                                | Rough effort                               |
 | ------------ | ---------------------------------------------------------------------------- | ------------------------------------------ |
-| **~3 days**  | Solid 1:1 foundation (text, live, permissions, read status, easy integrate)  | ✅ Shipped — first public release          |
+| **~3 days**  | Solid 1:1 foundation (text, live, permissions, read status, easy integrate)  | ✅ Shipped - first public release          |
 | **~7 days**  | 1:1 + typing, presence, live ticks (✅ shipped), UI helpers (next)           | ~additional week of focused work           |
 | **~14 days** | Groups + early rooms + first attachments + clearer “configure what you want” | ~two weeks cumulative                      |
 | **~1 year**  | Telegram-like + Discord-like breadth, rich configurable UX                   | Continuous product growth on a stable core |

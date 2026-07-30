@@ -1,4 +1,4 @@
-# ADR 0001 — Storage is an interface; core never touches a database
+# ADR 0001 - Storage is an interface; core never touches a database
 
 - Status: accepted
 - Date: 2026-07-22
@@ -27,7 +27,7 @@ Division of responsibility:
 
 ## Consequences
 
-- Core tests run against the in-memory adapter — fast and deterministic.
+- Core tests run against the in-memory adapter - fast and deterministic.
 - Community adapters (Prisma, MySQL, ...) need no changes to core.
 - The interface is part of the public API: changes to it are breaking changes
   and go through changesets like any other public-surface change.

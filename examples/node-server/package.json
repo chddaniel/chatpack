@@ -2,7 +2,7 @@
   "name": "example-node-server",
   "private": true,
   "version": "0.0.0",
-  "description": "Minimal curl-able Chatpack server — Node http bridged to the Web-standard handler; in-memory or Postgres storage",
+  "description": "Minimal curl-able Chatpack server - Node http bridged to the Web-standard handler; in-memory or Postgres storage",
   "license": "MIT",
   "type": "module",
   "scripts": {

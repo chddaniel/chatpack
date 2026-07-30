@@ -40,7 +40,7 @@ export type ChatpackErrorCode =
  * ```
  */
 export class ChatpackError extends Error {
-  /** Stable machine-readable code — switch on this, not on `message`. */
+  /** Stable machine-readable code - switch on this, not on `message`. */
   readonly code: ChatpackErrorCode;
 
   constructor(code: ChatpackErrorCode, message: string) {

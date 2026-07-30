@@ -12,7 +12,7 @@ without polling. The MVP (§9) chose Server-Sent Events over WebSockets for v0:
 runs over plain HTTP (no upgrade dance, works with every proxy/load balancer),
 and browsers give us reconnection + `Last-Event-ID` for free via `EventSource`.
 
-The hard part of any realtime system isn't the happy path — it's what happens
+The hard part of any realtime system isn't the happy path - it's what happens
 when the connection drops. If events only exist in flight, a dropped connection
 means lost messages.
 
@@ -26,15 +26,15 @@ means lost messages.
 2. **The event stream is a hint; storage is the truth.** SSE event ids are
    `conversationId:seq`. On reconnect, the client presents its last seen id
    (browsers do this automatically via the `Last-Event-ID` header) and the
-   server replays everything after that `seq` **from storage** — via the same
-   permission-checked `api.listMessagesAfter` path — before live events resume.
+   server replays everything after that `seq` **from storage** - via the same
+   permission-checked `api.listMessagesAfter` path - before live events resume.
    Missed events are recovered from the durable log, not from a transport
    buffer.
 
 3. **Subscribe before replaying.** The stream subscribes to live events first
-   and gap-fills second. The overlap can duplicate an event (harmless —
+   and gap-fills second. The overlap can duplicate an event (harmless -
    at-least-once + dedupe by id); the reverse order would leave a gap
-   (a message sent between replay and subscribe is lost — not acceptable).
+   (a message sent between replay and subscribe is lost - not acceptable).
 
 4. **Participation is enforced server-side per event.** Each published event
    carries `recipientIds` computed by the engine from the conversation's
@@ -52,10 +52,10 @@ means lost messages.
 ## Consequences
 
 - **Good:** no lost messages across reconnects, and the guarantee is testable
-  (see `sse.test.ts` — "drop the connection, messages backfill on reconnect").
+  (see `sse.test.ts` - "drop the connection, messages backfill on reconnect").
 - **Good:** the send path's latency and reliability are independent of how
   many SSE clients are connected or how broken they are.
-- **Good:** works on every Web-standard runtime — the endpoint returns a
+- **Good:** works on every Web-standard runtime - the endpoint returns a
   `Response` with a `ReadableStream` body; heartbeat comments (default 15s)
   keep proxies from reaping idle connections.
 - **Trade-off:** at-least-once means clients must dedupe by message id. This is

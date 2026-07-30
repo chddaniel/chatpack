@@ -1,5 +1,5 @@
 /**
- * `@chatpack/core/plugins` — first-party opt-in plugins (`docs/decisions/0008`).
+ * `@chatpack/core/plugins` - first-party opt-in plugins (`docs/decisions/0008`).
  *
  * All three are ephemeral-only: they add live signals and routes, never
  * storage. Pass them via `chatpack({ plugins: [...] })`:

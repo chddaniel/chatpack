@@ -2,7 +2,7 @@
  * The generic Web-standard HTTP handler (M2).
  *
  * Mounts the whole Chatpack REST API on one route using only WHATWG
- * `Request`/`Response` (MVP §2) — so it runs unchanged on Next.js App Router,
+ * `Request`/`Response` (MVP §2) - so it runs unchanged on Next.js App Router,
  * Bun, Deno, Cloudflare Workers, or Node (via a tiny bridge, see
  * `examples/node-server`).
  *
@@ -53,7 +53,7 @@ export interface HandlerOptions {
 /**
  * The value returned by `chat.handler()`.
  *
- * `GET`/`POST`/`PATCH`/`DELETE` are the same function — named so they can be
+ * `GET`/`POST`/`PATCH`/`DELETE` are the same function - named so they can be
  * re-exported directly from a Next.js App Router route file. `fetch` is the
  * same function again, named for generic Web-standard servers (Bun, Deno,
  * Workers).
@@ -140,7 +140,7 @@ function parseLimit(params: URLSearchParams): number | undefined {
  *
  * Durable message events carry an `id:` of `conversationId:seq` so a
  * reconnecting client's `Last-Event-ID` tells the server exactly where to
- * gap-fill from. Ephemeral events carry **no** `id:` line — `EventSource`
+ * gap-fill from. Ephemeral events carry **no** `id:` line - `EventSource`
  * never adopts them as `Last-Event-ID`, so typing/presence/receipt signals
  * can't disturb message gap-fill (`docs/decisions/0008`).
  */
@@ -182,9 +182,9 @@ function unauthenticatedResponse(request: Request, user: unknown): Response {
     hint =
       "The auth hook returned null and the request carried no `cookie` header. " +
       "If you expected cookie auth: the cookie was never sent. Browsers drop `SameSite=Lax` " +
-      "cookies inside cross-site iframes (e.g. AI-builder preview panes) — set the " +
+      "cookies inside cross-site iframes (e.g. AI-builder preview panes) - set the " +
       "session cookie with `SameSite=None; Secure` (add `Partitioned` for Chrome). " +
-      "If you expected header auth: `EventSource` cannot send custom headers — use a cookie for /stream.";
+      "If you expected header auth: `EventSource` cannot send custom headers - use a cookie for /stream.";
   } else {
     hint =
       "The auth hook returned null even though the request had a `cookie` header. " +
@@ -230,14 +230,14 @@ export function createHandler(
   const heartbeatIntervalMs = options.heartbeatIntervalMs ?? 15_000;
 
   /**
-   * GET /stream — one SSE connection per client (MVP §9).
+   * GET /stream - one SSE connection per client (MVP §9).
    *
    * - Live events: subscribes to the transport; server-side participation is
    *   re-checked per event via `recipientIds` (never trusted from the client).
    * - Gap-fill: `Last-Event-ID` header (or `?lastEventId=`) of the form
    *   `conversationId:seq` replays missed messages from storage before live
    *   events flow. Replayed events are `message.created` with the current
-   *   snapshot — at-least-once semantics; clients dedupe by message id.
+   *   snapshot - at-least-once semantics; clients dedupe by message id.
    */
   function openStream(request: Request, url: URL, userId: string): Response {
     if (!transport) {
@@ -273,7 +273,7 @@ export function createHandler(
           // Participation re-checked server-side on every publish (MVP §9).
           if (!event.recipientIds.includes(userId)) return;
           enqueue(sseFrame(event));
-          // Only durable events count as "delivered" — ephemeral events must
+          // Only durable events count as "delivered" - ephemeral events must
           // never trigger further ephemeral events (no feedback loops).
           if (!closed && plugins?.hasPlugins && !isEphemeralEvent(event)) {
             plugins.notifyEventDelivered(userId, event);
@@ -346,7 +346,7 @@ export function createHandler(
       .split("/")
       .filter((s) => s !== "");
 
-    // Authenticate — the only auth touchpoint (MVP §2).
+    // Authenticate - the only auth touchpoint (MVP §2).
     const user = await resolveUser(request);
     if (!user || typeof user.id !== "string" || user.id === "") {
       return unauthenticatedResponse(request, user);
@@ -355,12 +355,12 @@ export function createHandler(
     const method = request.method.toUpperCase();
 
     try {
-      // GET /stream — SSE live events (M3)
+      // GET /stream - SSE live events (M3)
       if (method === "GET" && segments.length === 1 && segments[0] === "stream") {
         return openStream(request, url, userId);
       }
 
-      // POST /conversations — find-or-create a DM
+      // POST /conversations - find-or-create a DM
       if (method === "POST" && segments.length === 1 && segments[0] === "conversations") {
         const body = await readJsonBody(request);
         const metadata = optionalMetadata(body["metadata"]);
@@ -372,7 +372,7 @@ export function createHandler(
         return json(200, { conversation });
       }
 
-      // GET /conversations — list mine
+      // GET /conversations - list mine
       if (method === "GET" && segments.length === 1 && segments[0] === "conversations") {
         const limit = parseLimit(url.searchParams);
         const cursor = url.searchParams.get("cursor") ?? undefined;
@@ -393,7 +393,7 @@ export function createHandler(
         return json(200, { conversation });
       }
 
-      // POST /conversations/:id/messages — send
+      // POST /conversations/:id/messages - send
       if (
         method === "POST" &&
         segments.length === 3 &&
@@ -419,7 +419,7 @@ export function createHandler(
         return json(201, { message });
       }
 
-      // GET /conversations/:id/messages — history
+      // GET /conversations/:id/messages - history
       if (
         method === "GET" &&
         segments.length === 3 &&
@@ -437,7 +437,7 @@ export function createHandler(
         return json(200, result);
       }
 
-      // POST /conversations/:id/read — durable read-state
+      // POST /conversations/:id/read - durable read-state
       if (
         method === "POST" &&
         segments.length === 3 &&
@@ -453,7 +453,7 @@ export function createHandler(
         return json(200, { ok: true });
       }
 
-      // PATCH /messages/:id — edit
+      // PATCH /messages/:id - edit
       if (method === "PATCH" && segments.length === 2 && segments[0] === "messages") {
         const body = await readJsonBody(request);
         const message = await api.editMessage({
@@ -464,13 +464,13 @@ export function createHandler(
         return json(200, { message });
       }
 
-      // DELETE /messages/:id — soft-delete
+      // DELETE /messages/:id - soft-delete
       if (method === "DELETE" && segments.length === 2 && segments[0] === "messages") {
         const message = await api.deleteMessage({ userId, messageId: segments[1]! });
         return json(200, { message });
       }
 
-      // No core route matched — offer the request to plugins before the 404.
+      // No core route matched - offer the request to plugins before the 404.
       if (plugins?.hasPlugins) {
         const pluginResponse = await plugins.handleRequest({
           request,
@@ -487,7 +487,7 @@ export function createHandler(
       if (err instanceof ChatpackError) {
         return errorResponse(STATUS_BY_CODE[err.code], err.code, err.message);
       }
-      // Never leak internals — log server-side, return an opaque 500.
+      // Never leak internals - log server-side, return an opaque 500.
       console.error("chatpack: unhandled error while handling request", err);
       return errorResponse(500, "INTERNAL_ERROR", "Something went wrong.");
     }

@@ -1,6 +1,6 @@
 /**
  * M1 integration suite: the Chatpack core engine driven through the
- * in-memory adapter (MVP §10 — "core tested against the in-memory adapter").
+ * in-memory adapter (MVP §10 - "core tested against the in-memory adapter").
  *
  * The first test is the M1 Definition of Done, verbatim from MVP §11:
  * "two users get a conversation and exchange messages via the core API in a test."

@@ -1,4 +1,4 @@
-# ADR 0003 — Per-conversation monotonic `seq` as the message sort key
+# ADR 0003 - Per-conversation monotonic `seq` as the message sort key
 
 - Status: accepted
 - Date: 2026-07-22
@@ -18,7 +18,7 @@ conversation**, assigned by the storage adapter at insert time (in-memory: a
 counter; Postgres later: a sequence or `max(seq)+1` inside the insert
 transaction).
 
-`seq` — not `createdAt` — is the ordering contract:
+`seq` - not `createdAt` - is the ordering contract:
 
 - `listMessages` returns newest-first by descending `seq`.
 - Pagination cursors point at message positions in `seq` order.

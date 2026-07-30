@@ -1,5 +1,5 @@
 /**
- * The storage adapter contract — one of the two interfaces that carry the
+ * The storage adapter contract - one of the two interfaces that carry the
  * whole Chatpack design (MVP §6).
  *
  * Core depends on this interface, never on a concrete database. Reference
@@ -11,13 +11,13 @@
  * (invariants, reference schema, skeleton, verification checklist). Key
  * rules:
  *
- * - Adapters never enforce permissions — core does that before calling you.
+ * - Adapters never enforce permissions - core does that before calling you.
  * - `getOrCreateDirectConversation` must be idempotent per `pairKey`.
  * - Message listing is newest-first with cursor pagination.
  * - Cursors are opaque strings **defined by the adapter**: core round-trips
  *   your `nextCursor` back into `input.cursor` verbatim. Any URL-safe
  *   encoding works.
- * - Date fields must be real `Date` instances, never ISO strings — core does
+ * - Date fields must be real `Date` instances, never ISO strings - core does
  *   not coerce, and many database drivers/HTTP clients return strings.
  * - The adapter generates conversation and message ids (any unique string).
  *
@@ -55,7 +55,7 @@ export interface ListConversationsInput {
   limit: number;
   /**
    * Opaque cursor from a previous page's `nextCursor`, or `undefined` for the
-   * first page. The encoding is adapter-defined — core passes your
+   * first page. The encoding is adapter-defined - core passes your
    * `nextCursor` back verbatim. Ordering is most-recently-active first (by
    * latest message `seq`, falling back to conversation creation time).
    */
@@ -85,7 +85,7 @@ export interface ListMessagesInput {
   limit: number;
   /**
    * Opaque cursor from a previous page's `nextCursor`, or `undefined` for the
-   * first page. The encoding is adapter-defined — core passes your
+   * first page. The encoding is adapter-defined - core passes your
    * `nextCursor` back verbatim (the Drizzle adapter uses the previous page's
    * last `seq`). Ordering is newest-first (descending `seq`).
    */

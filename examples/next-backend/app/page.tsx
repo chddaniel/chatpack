@@ -1,13 +1,13 @@
 /**
  * A tiny index page listing the mounted endpoints. This example is a backend
- * (MVP §10) — there is deliberately no chat UI; drive it with curl or fetch.
+ * (MVP §10) - there is deliberately no chat UI; drive it with curl or fetch.
  */
 export default function Home() {
   return (
     <main>
       <h1>Chatpack is mounted at /api/chat</h1>
       <p>
-        This example is a <strong>backend</strong> — no UI. Try it with curl (auth here is a demo{" "}
+        This example is a <strong>backend</strong> - no UI. Try it with curl (auth here is a demo{" "}
         <code>x-user-id</code> header):
       </p>
       <pre>{`# find-or-create a conversation

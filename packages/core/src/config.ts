@@ -22,7 +22,7 @@ export interface ChatpackUser {
 }
 
 /**
- * Resolves the current user from an incoming request — the **only** auth
+ * Resolves the current user from an incoming request - the **only** auth
  * touchpoint in Chatpack (MVP §2). Developers bring their own auth; Chatpack
  * never owns a users table and never issues sessions.
  *
@@ -46,7 +46,7 @@ export interface PermissionContext {
 
 /**
  * Permission hooks (MVP §2). The default for both is
- * "only the two participants" — override to loosen or tighten.
+ * "only the two participants" - override to loosen or tighten.
  */
 export interface PermissionHooks {
   /** May `user` read `conversation`? Default: participants only. */
@@ -57,7 +57,7 @@ export interface PermissionHooks {
 
 /** Options accepted by the `chatpack()` factory. */
 export interface ChatpackOptions {
-  /** Durable storage — e.g. `memoryAdapter()` or (from M4) `drizzleAdapter(db)`. */
+  /** Durable storage - e.g. `memoryAdapter()` or (from M4) `drizzleAdapter(db)`. */
   storage: StorageAdapter;
   /**
    * Resolve the current user from a request. Optional in M1 (core API takes
@@ -73,7 +73,7 @@ export interface ChatpackOptions {
    */
   transport?: Transport;
   /**
-   * Opt-in plugins (`docs/decisions/0008`) — e.g. `typing()`, `presence()`,
+   * Opt-in plugins (`docs/decisions/0008`) - e.g. `typing()`, `presence()`,
    * `receipts()` from `@chatpack/core/plugins`. Default: none. Plugins add
    * ephemeral real-time behavior (extra routes, live signals) and never touch
    * storage.

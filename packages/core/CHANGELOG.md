@@ -6,7 +6,7 @@
 
 - AI-builder first-shot integration pass:
 
-  - **Self-diagnosing 401** — the `UNAUTHENTICATED` body now names the exact
+  - **Self-diagnosing 401** - the `UNAUTHENTICATED` body now names the exact
     failure: malformed auth-hook return shape (bare string / `{ userId }`),
     request with no `cookie` header (with the preview-iframe
     `SameSite=None; Secure; Partitioned` fix inline), or an unparsed/mismatched
@@ -30,12 +30,12 @@
 
   New:
 
-  - **Ephemeral events** — a new transport primitive for fire-and-forget live signals that are never stored and never replayed on reconnect. Their SSE frames carry no `id:` field, so `Last-Event-ID` message gap-fill is unaffected.
-  - **Plugin seam** — `chatpack({ plugins: [...] })` accepts `ChatpackPlugin` objects with `handleRequest` (extra routes), `onStreamOpen`/`onStreamClose`, `onMarkRead`, and `onEventDelivered` hooks. Notification hooks are fire-and-forget: a throwing plugin never breaks a request.
+  - **Ephemeral events** - a new transport primitive for fire-and-forget live signals that are never stored and never replayed on reconnect. Their SSE frames carry no `id:` field, so `Last-Event-ID` message gap-fill is unaffected.
+  - **Plugin seam** - `chatpack({ plugins: [...] })` accepts `ChatpackPlugin` objects with `handleRequest` (extra routes), `onStreamOpen`/`onStreamClose`, `onMarkRead`, and `onEventDelivered` hooks. Notification hooks are fire-and-forget: a throwing plugin never breaks a request.
   - **`@chatpack/core/plugins`** subpath export with three first-party plugins:
-    - `typing()` — `POST /conversations/:id/typing`, publishes `typing.started`/`typing.stopped` to the other participant.
-    - `presence()` — the SSE connection is the heartbeat; publishes `presence.online`/`presence.offline` to conversation partners (multi-tab safe, configurable offline grace period) and serves `GET /presence?userIds=…` restricted to users the caller shares a conversation with.
-    - `receipts()` — ephemeral `receipt.delivered` (to the sender, when a recipient's live stream receives the message) and `receipt.read` (to the other participant, on mark-read). Durable `lastReadMessageId` is unchanged.
+    - `typing()` - `POST /conversations/:id/typing`, publishes `typing.started`/`typing.stopped` to the other participant.
+    - `presence()` - the SSE connection is the heartbeat; publishes `presence.online`/`presence.offline` to conversation partners (multi-tab safe, configurable offline grace period) and serves `GET /presence?userIds=…` restricted to users the caller shares a conversation with.
+    - `receipts()` - ephemeral `receipt.delivered` (to the sender, when a recipient's live stream receives the message) and `receipt.read` (to the other participant, on mark-read). Durable `lastReadMessageId` is unchanged.
 
   Breaking (custom `Transport` authors only): `Transport.publish`/`subscribe` now carry `TransportEvent = ChatEvent | EphemeralEvent` instead of `ChatEvent`. Discriminate with the new `isEphemeralEvent()` guard. Transports that just fan events out keep working unchanged.
 
@@ -57,8 +57,8 @@
 
 ### Patch Changes
 
-- 2e9b12a: Docs: document the custom storage adapter contract precisely — adapter-defined
-  cursor encodings, the real-`Date`-instances rule, and adapter-generated ids —
+- 2e9b12a: Docs: document the custom storage adapter contract precisely - adapter-defined
+  cursor encodings, the real-`Date`-instances rule, and adapter-generated ids -
   in the StorageAdapter TSDoc and README, and point adapter authors at the
   reference schema (`migrationSql`/`chatpackSchema`) and the new root `llms.txt`
   agent guide (invariants, reference SQL, skeleton, pitfalls, and a "verify your
@@ -69,7 +69,7 @@
 
 ### Patch Changes
 
-- a354af8: Docs-only release — third round of README improvements from external
+- a354af8: Docs-only release - third round of README improvements from external
   integration feedback:
 
   - Concrete cookie-based `auth` example replacing the `getSessionUser`
@@ -79,7 +79,7 @@
     custom event names) and include `onerror` handling for fatal vs
     retryable failures.
   - New note: `otherUserId` is not validated to exist (Chatpack has no users
-    table) — validate recipient ids yourself.
+    table) - validate recipient ids yourself.
   - New note: timestamps are `Date` server-side but ISO strings over HTTP.
   - `StorageAdapter` contract summarized as a method table in the core README.
 
@@ -89,7 +89,7 @@
 
 ### Patch Changes
 
-- fa60bc7: Docs-only release — second round of README improvements from external
+- fa60bc7: Docs-only release - second round of README improvements from external
   integration feedback:
 
   - Documented allowed `role` values (`"user" | "assistant" | "system"`,
@@ -97,7 +97,7 @@
   - Message ordering (newest first) is now stated in the REST response column
     and as an explicit note, not just the query column.
   - New deployment warning: the default in-process transport and
-    `memoryAdapter` require one long-lived process — on serverless/edge
+    `memoryAdapter` require one long-lived process - on serverless/edge
     (Workers, Lambda) use a database adapter and poll instead of `/stream`.
   - New browser-auth note: `EventSource` cannot send custom headers, so SSE
     auth must be cookie-based.
@@ -110,7 +110,7 @@
 
 ### Patch Changes
 
-- 6133227: Docs-only release — README improvements from external integration feedback:
+- 6133227: Docs-only release - README improvements from external integration feedback:
 
   - Install snippets now show npm/pnpm/bun variants and note that both
     `@chatpack/core` and a storage adapter are required.
@@ -140,19 +140,19 @@
 
 ### Minor Changes
 
-- Initial public release — the complete Chatpack v0 MVP.
+- Initial public release - the complete Chatpack v0 MVP.
 
-  - **`@chatpack/core`** — the chat engine: 1:1 conversations (find-or-create by
+  - **`@chatpack/core`** - the chat engine: 1:1 conversations (find-or-create by
     pair key), text messages (send / list / edit / soft-delete), participant-only
     permissions with override hooks, durable read-state, a Web-standard HTTP
     handler (`chat.handler()`) exposing the whole REST API plus a `GET /stream`
     SSE endpoint with `Last-Event-ID` reconnect gap-fill, the `StorageAdapter`
     and `Transport` contracts, and anonymous opt-out telemetry
     (`telemetry: false` or `CHATPACK_TELEMETRY=0`).
-  - **`@chatpack/adapter-memory`** — in-memory reference `StorageAdapter` for
+  - **`@chatpack/adapter-memory`** - in-memory reference `StorageAdapter` for
     demos and tests.
-  - **`@chatpack/adapter-drizzle`** — production Drizzle/Postgres adapter with
+  - **`@chatpack/adapter-drizzle`** - production Drizzle/Postgres adapter with
     atomic per-conversation `seq` assignment and race-safe conversation
     creation; tested against real Postgres (PGlite).
-  - **`@chatpack/next`** — one-line Next.js App Router mounting via
+  - **`@chatpack/next`** - one-line Next.js App Router mounting via
     `toNextRouteHandlers(chat)`.

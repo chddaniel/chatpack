@@ -1,4 +1,4 @@
-# ADR 0004 — Telemetry counters land in M1; the flusher lands in M5
+# ADR 0004 - Telemetry counters land in M1; the flusher lands in M5
 
 - Status: accepted
 - Date: 2026-07-22
@@ -6,7 +6,7 @@
 ## Context
 
 Chatpack ships anonymous, opt-out telemetry for social proof (MVP §12,
-ARCHITECTURE "Telemetry"). The docs are explicit: _"Design the hook now —
+ARCHITECTURE "Telemetry"). The docs are explicit: _"Design the hook now -
 even if the collector ships late in v0, core should expose a place to
 increment counters so we do not retrofit later."_ Retrofitting telemetry into
 an already-published API is painful and trust-sensitive.
@@ -15,7 +15,7 @@ an already-published API is painful and trust-sensitive.
 
 Split telemetry across two milestones:
 
-- **M1 (now):** `TelemetryCounters` (`packages/core/src/telemetry.ts`) —
+- **M1 (now):** `TelemetryCounters` (`packages/core/src/telemetry.ts`) -
   in-process aggregate counters (`messagesSent`, `conversationsCreated`)
   incremented by the engine after successful domain actions. Exposed as
   `chat.telemetry`. Opt-out resolved at instance creation:
