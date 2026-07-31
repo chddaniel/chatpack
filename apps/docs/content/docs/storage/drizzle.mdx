@@ -137,12 +137,17 @@ trick works for your own tests:
 ```ts
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
-import { drizzleAdapter, migrationSql } from "@chatpack/adapter-drizzle";
+import { drizzleAdapter, migrationSql, type DrizzlePgDatabase } from "@chatpack/adapter-drizzle";
 
 const pglite = new PGlite();
 await pglite.exec(migrationSql);
-const chat = chatpack({ storage: drizzleAdapter(drizzle(pglite)) });
+const db = drizzle(pglite) as unknown as DrizzlePgDatabase;
+const chat = chatpack({ storage: drizzleAdapter(db) });
 ```
+
+(The cast bridges a type mismatch between the `drizzle-orm/pglite` driver's
+return type and the adapter's driver-agnostic `DrizzlePgDatabase` - it's what
+the adapter's own test suite does.)
 
 ## No connection string?
 

@@ -91,7 +91,8 @@ presence({ offlineDelayMs: 5000 }); // the default
 ```
 
 Snapshots via `GET /presence?userIds=a,b` (max 50 ids) only reveal users the
-caller shares a conversation with:
+caller shares a conversation with (plus the caller themselves); ids the
+caller may not see are silently omitted from the response:
 
 ```json
 { "presence": { "bob": { "online": true, "lastSeenAt": "…" } } }
