@@ -89,6 +89,38 @@ describe("M2 Definition of Done - find-or-create, send, list over HTTP with auth
   });
 });
 
+describe("unreadCount in conversation envelopes", () => {
+  it("is present on POST /conversations, GET /conversations, GET /conversations/:id", async () => {
+    const handler = createHttpChat();
+
+    const createRes = await send(handler, "POST", "/conversations", "alice", {
+      otherUserId: "bob",
+    });
+    const { conversation } = (await createRes.json()) as {
+      conversation: { id: string; unreadCount: number };
+    };
+    expect(conversation.unreadCount).toBe(0);
+
+    await send(handler, "POST", `/conversations/${conversation.id}/messages`, "alice", {
+      body: "one",
+    });
+    await send(handler, "POST", `/conversations/${conversation.id}/messages`, "alice", {
+      body: "two",
+    });
+
+    // bob sees 2 unread in the list envelope...
+    const listRes = await get(handler, "/conversations", "bob");
+    const list = (await listRes.json()) as { conversations: { unreadCount: number }[] };
+    expect(list.conversations[0]!.unreadCount).toBe(2);
+
+    // ...and in the single-conversation envelope; alice (sender) sees 0.
+    const bobGet = await get(handler, `/conversations/${conversation.id}`, "bob");
+    expect(((await bobGet.json()) as { conversation: { unreadCount: number } }).conversation.unreadCount).toBe(2);
+    const aliceGet = await get(handler, `/conversations/${conversation.id}`, "alice");
+    expect(((await aliceGet.json()) as { conversation: { unreadCount: number } }).conversation.unreadCount).toBe(0);
+  });
+});
+
 describe("auth enforcement", () => {
   it("returns 401 without an authenticated user", async () => {
     const handler = createHttpChat();

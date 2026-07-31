@@ -85,8 +85,13 @@ lives at [`examples/messenger`](../../examples/messenger).
 | `api.listMessages`            | Paginate history, newest-first                      |
 | `api.editMessage`             | Edit your own message                               |
 | `api.deleteMessage`           | Soft-delete your own message                        |
-| `api.markRead`                | Update durable read-state (`last_read`)             |
+| `api.markRead`                | Update durable read-state (`last_read`); monotonic - marking an older message is a silent no-op |
 | `api.listMessagesAfter`       | Messages after a `seq` (SSE reconnect gap-fill)     |
+
+Conversation-returning methods (`getOrCreateConversation`,
+`listConversations`, `getConversation`) return the conversation plus the
+calling user's **`unreadCount`** - messages newer than their read-state,
+excluding their own (soft-deleted messages count; they render as tombstones).
 
 ### Which API do I call?
 
@@ -199,6 +204,9 @@ so don't reuse HTTP-response types for `chat.api.*` calls or vice versa:
 | PATCH  | `/messages/:id`               | `{ body }`                             | `{ message }`                             |
 | DELETE | `/messages/:id`               | -                                      | `{ message }` (soft-deleted)              |
 | GET    | `/stream`                     | SSE; auto `Last-Event-ID` on reconnect | `text/event-stream`                       |
+
+Every conversation object in a response carries the **viewer's**
+`unreadCount` - messages newer than their read-state, excluding their own.
 
 Opt-in plugins from `@chatpack/core/plugins` add routes of their own
 (consulted after core routes miss, before the 404):
@@ -424,6 +432,7 @@ deliberately small:
 | `listMessagesAfterSeq`          | Messages with `seq > afterSeq`, **oldest first** (SSE gap-fill)          |
 | `updateMessage`                 | Edit body / set `editedAt` / set `deletedAt` in place                    |
 | `updateLastRead`                | Set a participant's `lastReadMessageId`                                  |
+| `countUnread`                   | Batched per-conversation unread counts for one viewer                    |
 
 Contract rules that the type signatures alone don't tell you:
 
@@ -447,6 +456,10 @@ Contract rules that the type signatures alone don't tell you:
   and permission hooks before calling you. On hosted databases this also
   means the adapter runs server-side with privileged credentials, and the
   Chatpack tables must not be readable by browser/anon clients.
+- **`countUnread` is exact and batched**: per conversation, count messages
+  with `seq` greater than the seq of the viewer's `lastReadMessageId`
+  (`null` = 0) and `senderId !== userId`. Tombstones count. One query per
+  page, not one per conversation.
 
 The [in-memory adapter](../adapter-memory) is the reference implementation,
 and the [Drizzle/Postgres adapter](../adapter-drizzle) shows the contract on

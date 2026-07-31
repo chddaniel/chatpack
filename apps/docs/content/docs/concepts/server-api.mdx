@@ -24,7 +24,7 @@ enforces the same permissions.
 | `api.listMessages`            | Paginate history, newest-first                      |
 | `api.editMessage`             | Edit your own message                               |
 | `api.deleteMessage`           | Soft-delete your own message                        |
-| `api.markRead`                | Update durable read-state (`lastReadMessageId`)     |
+| `api.markRead`                | Update durable read-state (`lastReadMessageId`); monotonic - marking an older message is a silent no-op |
 | `api.listMessagesAfter`       | Messages after a `seq` (SSE reconnect gap-fill)     |
 
 ## Which API do I call?
@@ -81,6 +81,12 @@ The HTTP layer wraps responses in envelopes (`{ conversation }`,
 `{ message }`, `{ messages, nextCursor }`) - that envelope is HTTP-only and
 intentional (room to add sibling fields without breaking clients). **Don't
 reuse HTTP-response types for `chat.api.*` calls or vice versa.**
+
+Conversation-returning methods (`getOrCreateConversation`,
+`listConversations`, `getConversation`) return `ConversationWithUnread` -
+the conversation plus the calling user's `unreadCount` (messages newer than
+their read-state, excluding their own). See
+[Conversations & messages](/docs/concepts/conversations-messages#read-state-and-unread-counts).
 
 Timestamps are real `Date` instances on the server, ISO strings over HTTP.
 

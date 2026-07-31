@@ -108,8 +108,10 @@ Instant ✓/✓✓ pings while both sides are online:
 
 Ticks are **at-least-once** - dedupe by `payload.messageId`. The durable truth
 is still `lastReadMessageId` on the participant
-([mark-read](/docs/concepts/conversations-messages#read-state)); use the ticks
-for instant UI, the durable field for state that survives reloads.
+([mark-read](/docs/concepts/conversations-messages#read-state-and-unread-counts));
+use the ticks for instant UI, the durable field for state that survives
+reloads. `unreadCount` on conversation objects derives from the durable
+field too - never from receipt ticks.
 
 ## Single-node caveat
 

@@ -12,7 +12,13 @@ import { createPluginRuntime } from "./plugin";
 import type { StorageAdapter } from "./storage";
 import { inProcessTransport, type ChatEvent, type Transport } from "./transport";
 import { TelemetryCounters, resolveTelemetryEnabled, startTelemetryFlusher } from "./telemetry";
-import type { Conversation, Message, Metadata, MessageRole } from "./types";
+import type {
+  Conversation,
+  ConversationWithUnread,
+  Message,
+  Metadata,
+  MessageRole,
+} from "./types";
 
 /** Default page size for list endpoints. */
 const DEFAULT_LIMIT = 50;
@@ -47,7 +53,7 @@ export interface ListConversationsApiInput {
 
 /** Result of {@link ChatpackApi.listConversations}. */
 export interface ListConversationsApiResult {
-  conversations: Conversation[];
+  conversations: ConversationWithUnread[];
   nextCursor: string | null;
 }
 
@@ -124,7 +130,7 @@ export interface ChatpackApi {
    * Find or create the direct conversation between `userId` and
    * `otherUserId`. Idempotent per user pair.
    */
-  getOrCreateConversation(input: GetOrCreateConversationInput): Promise<Conversation>;
+  getOrCreateConversation(input: GetOrCreateConversationInput): Promise<ConversationWithUnread>;
 
   /** List the conversations `userId` participates in, most-recently-active first. */
   listConversations(input: ListConversationsApiInput): Promise<ListConversationsApiResult>;
@@ -134,7 +140,7 @@ export interface ChatpackApi {
    * `CONVERSATION_NOT_FOUND` for unknown ids - unlike
    * `StorageAdapter.getConversation`, it never resolves to `null`.
    */
-  getConversation(input: GetConversationInput): Promise<Conversation>;
+  getConversation(input: GetConversationInput): Promise<ConversationWithUnread>;
 
   /** Send a text message. Requires write permission. */
   sendMessage(input: SendMessageInput): Promise<Message>;
@@ -148,7 +154,11 @@ export interface ChatpackApi {
   /** Soft-delete a message. Only the original sender may delete. */
   deleteMessage(input: DeleteMessageInput): Promise<Message>;
 
-  /** Update the caller's durable read-state in a conversation. */
+  /**
+   * Update the caller's durable read-state in a conversation. Monotonic:
+   * marking a message older than the current read-state is a silent no-op
+   * (tolerates out-of-order client replays; never regresses unread counts).
+   */
   markRead(input: MarkReadInput): Promise<void>;
 
   /**
@@ -271,6 +281,31 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
     }
   }
 
+  /**
+   * Decorate conversations with the viewer's `unreadCount` - one batched
+   * `countUnread` call per page. Missing keys mean 0 (adapters may omit
+   * conversations with nothing unread).
+   */
+  async function withUnread(
+    userId: string,
+    conversations: Conversation[],
+  ): Promise<ConversationWithUnread[]> {
+    if (conversations.length === 0) return [];
+    const counts = await storage.countUnread({
+      userId,
+      conversationIds: conversations.map((c) => c.id),
+    });
+    return conversations.map((c) => ({ ...c, unreadCount: counts[c.id] ?? 0 }));
+  }
+
+  async function withUnreadOne(
+    userId: string,
+    conversation: Conversation,
+  ): Promise<ConversationWithUnread> {
+    const [decorated] = await withUnread(userId, [conversation]);
+    return decorated as ConversationWithUnread;
+  }
+
   /** Publish a live event. Durable-first: storage write has already succeeded. */
   function publish(type: ChatEvent["type"], conversation: Conversation, message: Message): void {
     transport.publish({
@@ -304,7 +339,7 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
       });
 
       if (created) telemetry.increment("conversationsCreated");
-      return conversation;
+      return withUnreadOne(input.userId, conversation);
     },
 
     async listConversations(input) {
@@ -314,14 +349,14 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
         limit: normalizeLimit(input.limit),
         cursor: input.cursor,
       });
-      return { conversations, nextCursor };
+      return { conversations: await withUnread(input.userId, conversations), nextCursor };
     },
 
     async getConversation(input) {
       requireNonEmptyId(input.userId, "userId");
       const conversation = await requireConversation(input.conversationId);
       await requireRead(input.userId, conversation);
-      return conversation;
+      return withUnreadOne(input.userId, conversation);
     },
 
     async sendMessage(input) {
@@ -432,6 +467,15 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
           "MESSAGE_NOT_FOUND",
           `Message "${input.messageId}" was not found in conversation "${conversation.id}".`,
         );
+      }
+
+      // Monotonic: never move read-state backwards. A stale markRead (e.g. an
+      // out-of-order replay after reconnect) is silently ignored so unread
+      // counts can only shrink from reading, never grow.
+      const participant = conversation.participants.find((p) => p.userId === input.userId);
+      if (participant?.lastReadMessageId) {
+        const current = await storage.getMessage(participant.lastReadMessageId);
+        if (current && message.seq <= current.seq) return;
       }
 
       await storage.updateLastRead({

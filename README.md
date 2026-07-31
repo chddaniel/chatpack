@@ -238,10 +238,15 @@ curl -X POST /api/chat/conversations \
     "participants": [
       { "conversationId": "conv_1", "userId": "alice", "joinedAt": "…", "lastReadMessageId": null },
       { "conversationId": "conv_1", "userId": "bob", "joinedAt": "…", "lastReadMessageId": null }
-    ]
+    ],
+    "unreadCount": 0
   }
 }
 ```
+
+Every conversation object carries the **viewer's `unreadCount`** (messages
+newer than their read-state, excluding their own) - the badge number comes
+from the API, no client-side counting.
 
 Send a message - note the field is **`body`**:
 
@@ -478,6 +483,7 @@ Want to write your own plugin? The seam is public - see `ChatpackPlugin` in
 | Drizzle/Postgres adapter                | ✅ Done (M4)      |
 | Launch polish + npm release             | ✅ Done (M5)      |
 | Typing / presence / read-tick plugins   | ✅ Done (v0.next) |
+| Unread counts (`unreadCount`)           | ✅ Done (v0.next) |
 
 Deliberately **not** in scope yet: groups, file uploads, push notifications,
 React UI. See [docs/MVP.md](./docs/MVP.md) for the full scope and reasoning.

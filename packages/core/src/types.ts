@@ -49,6 +49,16 @@ export interface Conversation {
 }
 
 /**
+ * A conversation as returned by the API: the storage shape plus the viewer's
+ * `unreadCount` (messages newer than their read-state, excluding their own).
+ *
+ * `Conversation` itself stays viewer-independent - adapters and permission
+ * hooks never see this field; core computes it per request via
+ * `StorageAdapter.countUnread`.
+ */
+export type ConversationWithUnread = Conversation & { unreadCount: number };
+
+/**
  * A user's membership in a conversation, including their durable read-state.
  */
 export interface Participant {

@@ -26,6 +26,11 @@ Three entities, all stored through the adapter:
     },
     metadata: { description: "Arbitrary JSON object for your app. Default {}.", type: "Metadata" },
     participants: { description: "Always exactly 2 in v0.", type: "Participant[]" },
+    unreadCount: {
+      description:
+        "Viewer-relative, computed per request - present on every conversation the API returns (not stored).",
+      type: "number",
+    },
   }}
 />
 
@@ -127,7 +132,7 @@ it directly.
   transcript.
 </Callout>
 
-## Read-state
+## Read-state and unread counts
 
 Durable read-state is one field per participant: `lastReadMessageId`, updated
 via `chat.api.markRead` or `POST /conversations/:id/read`:
@@ -136,9 +141,25 @@ via `chat.api.markRead` or `POST /conversations/:id/read`:
 await chat.api.markRead({ userId: "bob", conversationId, messageId: "msg_42" });
 ```
 
+markRead is **monotonic**: marking a message older than the current
+read-state is a silent no-op, so out-of-order replays after a reconnect can
+never move the read line backwards.
+
 This is the source of truth for unread badges and ✓✓ indicators. The
 [`receipts()` plugin](/docs/realtime/plugins#receipts) adds instant, ephemeral
 ticks on top - but `lastReadMessageId` is what survives restarts.
+
+**`unreadCount`** is computed from this field on every conversation object
+the API returns: the number of messages with `seq` newer than the viewer's
+`lastReadMessageId` (`null` = everything), **excluding the viewer's own
+messages** - sending doesn't mark your own message read, but it's never
+"unread" for you either. Soft-deleted messages count (they render as
+tombstones in lists); so do `assistant`/`system` roles. It's viewer-relative
+and never stored - the same conversation shows a different count to each
+participant.
+
+For a live badge without re-fetching: increment locally on `message.created`
+events where `senderId !== me`, reset when you call markRead.
 
 ## Edit & soft delete
 

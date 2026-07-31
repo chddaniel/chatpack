@@ -45,6 +45,9 @@ const stubStorage = {
     throw new Error("not needed");
   },
   async updateLastRead() {},
+  async countUnread(input) {
+    return Object.fromEntries(input.conversationIds.map((id) => [id, 0]));
+  },
 } satisfies StorageAdapter;
 
 describe("toNextRouteHandlers", () => {

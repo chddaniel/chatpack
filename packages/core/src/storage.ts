@@ -120,6 +120,14 @@ export interface ListMessagesAfterSeqInput {
   limit: number;
 }
 
+/** Input for {@link StorageAdapter.countUnread}. */
+export interface CountUnreadInput {
+  /** The viewer whose unread counts are being computed. */
+  userId: string;
+  /** Conversations to compute counts for (typically one page of a list). */
+  conversationIds: string[];
+}
+
 /** Input for {@link StorageAdapter.updateLastRead}. */
 export interface UpdateLastReadInput {
   conversationId: string;
@@ -178,7 +186,24 @@ export interface StorageAdapter {
 
   /**
    * Set a participant's `lastReadMessageId`. Core has already validated that
-   * the message belongs to the conversation and the user is a participant.
+   * the message belongs to the conversation and the user is a participant,
+   * and that the new message is not older than the current read-state.
    */
   updateLastRead(input: UpdateLastReadInput): Promise<void>;
+
+  /**
+   * Count unread messages per conversation for one viewer, batched.
+   *
+   * For each id in `conversationIds`, count messages where `seq` is strictly
+   * greater than the `seq` of the viewer's `lastReadMessageId` (treat `null`
+   * read-state as seq 0) AND `senderId !== userId` (a viewer's own messages
+   * are never unread). Soft-deleted messages keep their `seq` and DO count -
+   * they render as tombstones in lists, so the badge matches what the client
+   * shows. All roles count.
+   *
+   * Return a map of conversationId → count. Ids the viewer does not
+   * participate in (or that don't exist) may be omitted or returned as 0 -
+   * core treats missing keys as 0.
+   */
+  countUnread(input: CountUnreadInput): Promise<Record<string, number>>;
 }

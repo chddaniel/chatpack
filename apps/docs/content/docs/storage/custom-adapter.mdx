@@ -20,7 +20,7 @@ AI-builder clouds.
 ## The contract
 
 Implement the `StorageAdapter` interface exported from `@chatpack/core` and
-pass it as `chatpack({ storage: yourAdapter() })`. Nine async methods:
+pass it as `chatpack({ storage: yourAdapter() })`. Ten async methods:
 
 | Method                          | Contract                                                                    |
 | ------------------------------- | --------------------------------------------------------------------------- |
@@ -33,6 +33,7 @@ pass it as `chatpack({ storage: yourAdapter() })`. Nine async methods:
 | `listMessagesAfterSeq`          | Messages with `seq > afterSeq`, **oldest first** (SSE/polling gap-fill)     |
 | `updateMessage`                 | Patch body / `editedAt` / `deletedAt` in place; throw if id unknown         |
 | `updateLastRead`                | Set a participant's `lastReadMessageId`                                     |
+| `countUnread`                   | Batched per-conversation unread counts for one viewer (invariant 10)        |
 
 Exact TypeScript signatures and per-method TSDoc ship in the package's
 `.d.ts` (`@chatpack/core`, `storage.ts` module).
@@ -93,6 +94,16 @@ does atomicity. Everything else is implementation detail.
    unconditionally (core has already validated the message).
 9. **`metadata` is an arbitrary JSON object.** Store and return it losslessly
    (default `{}`).
+10. **`countUnread` is exact and batched.** For each requested conversation,
+    count messages with `seq` strictly greater than the seq of the viewer's
+    `lastReadMessageId` (`null` read-state = 0, i.e. everything) AND
+    `senderId !== userId` (a viewer's own messages are never unread).
+    Soft-deleted messages keep their `seq` and DO count; all roles count.
+    Return `{ [conversationId]: count }`; ids the viewer doesn't participate
+    in may be omitted or 0 (core treats missing as 0). One call covers a
+    whole page of conversations - do it in one query, not one per id.
+    Note `lastReadMessageId` is a message **id**, not a seq: resolve it at
+    query time (SQL: LEFT JOIN the message row + `COALESCE(read.seq, 0)`).
 
 ## Reference schema (Postgres)
 
@@ -162,6 +173,24 @@ How the reference implementation satisfies the two hard invariants:
 NOTHING`, then re-select by `pair_key`; zero inserted rows means a
   concurrent call won and both converge on the same row.
 
+- **Batched unread counts** - one `GROUP BY` query per page; a LEFT JOIN
+  resolves `last_read_message_id` to its `seq` (invariant 10). The unique
+  index on `(conversation_id, seq)` makes each count an index range scan:
+
+  ```sql
+  SELECT m.conversation_id, count(*)
+  FROM chatpack_messages m
+  JOIN chatpack_conversation_participants p
+    ON p.conversation_id = m.conversation_id AND p.user_id = $userId
+  LEFT JOIN chatpack_messages r ON r.id = p.last_read_message_id
+  WHERE m.conversation_id = ANY($conversationIds)
+    AND m.sender_id <> $userId
+    AND m.seq > COALESCE(r.seq, 0)
+  GROUP BY m.conversation_id;
+  ```
+
+  Conversations absent from the result have zero unread.
+
 ### Non-SQL platforms (Convex, Firestore, ...)
 
 Ignore the SQL; keep the three-collection shape and satisfy the invariants
@@ -216,6 +245,12 @@ export function myAdapter(client: MyDbClient): StorageAdapter {
     async updateLastRead({ conversationId, userId, messageId }) {
       // Set that participant's lastReadMessageId.
     },
+    async countUnread({ userId, conversationIds }) {
+      // For each conversation: count messages with seq > the seq of this
+      // user's lastReadMessageId (null -> 0) AND senderId !== userId.
+      // Tombstones count. One batched query, not one per id (invariant 10).
+      // return { [conversationId]: count };
+    },
   };
 }
 ```
@@ -237,6 +272,8 @@ Each of these has bitten a real integration:
   credentials).
 - Adding a foreign key to the app's users table (Chatpack never owns users).
 - Enforcing "is sender a participant?" in the adapter (core already did).
+- Counting the viewer's own messages as unread in `countUnread` (they never
+  are), or issuing one count query per conversation (N+1; batch the page).
 
 ## Verify your adapter
 
@@ -268,9 +305,15 @@ the adapter.
    `MESSAGE_DELETED`.
 8. **Read-state.** `markRead` then re-fetch the conversation - that
    participant's `lastReadMessageId` is updated and survives a restart.
-9. **Types at the boundary.** `createdAt instanceof Date` is `true` on
-   returned conversations and messages (catches ISO-string leakage).
-10. **Privilege check (hosted DBs).** With the browser/anon credentials, a
+   Bonus: markRead with an OLDER message afterwards is a no-op (core
+   enforces monotonicity; your adapter just stores what it's given).
+9. **Unread counts.** B sends 3 messages; `getConversation` as A shows
+   `unreadCount: 3`, as B shows `0` (own messages never count). A marks the
+   2nd read - A now sees `1`. Delete the 3rd as B - A still sees `1`
+   (tombstones count).
+10. **Types at the boundary.** `createdAt instanceof Date` is `true` on
+    returned conversations and messages (catches ISO-string leakage).
+11. **Privilege check (hosted DBs).** With the browser/anon credentials, a
     direct read of `chatpack_messages` returns nothing/denied.
 
 ## Real-time plugins and custom adapters

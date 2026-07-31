@@ -37,7 +37,14 @@ export type {
 } from "./config";
 
 // Domain types
-export type { Conversation, Participant, Message, MessageRole, Metadata } from "./types";
+export type {
+  Conversation,
+  ConversationWithUnread,
+  Participant,
+  Message,
+  MessageRole,
+  Metadata,
+} from "./types";
 
 // Storage adapter contract (for adapter authors)
 export type {
@@ -52,6 +59,7 @@ export type {
   ListMessagesAfterSeqInput,
   UpdateMessageInput,
   UpdateLastReadInput,
+  CountUnreadInput,
 } from "./storage";
 
 // HTTP handler (M2) + SSE (M3)

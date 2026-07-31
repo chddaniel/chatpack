@@ -432,6 +432,186 @@ describe("durable read-state", () => {
       }),
     ).rejects.toMatchObject({ code: "FORBIDDEN_READ" });
   });
+
+  it("ignores a markRead older than the current read-state (monotonic)", async () => {
+    const chat = createChat();
+    const conversation = await chat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "bob",
+    });
+
+    const m1 = await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "one",
+    });
+    const m2 = await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "two",
+    });
+
+    await chat.api.markRead({ userId: "bob", conversationId: conversation.id, messageId: m2.id });
+    // Stale replay (e.g. out-of-order after reconnect): silently ignored.
+    await chat.api.markRead({ userId: "bob", conversationId: conversation.id, messageId: m1.id });
+
+    const fresh = await chat.api.getConversation({
+      userId: "bob",
+      conversationId: conversation.id,
+    });
+    expect(fresh.participants.find((p) => p.userId === "bob")!.lastReadMessageId).toBe(m2.id);
+    expect(fresh.unreadCount).toBe(0);
+  });
+});
+
+describe("unread counts", () => {
+  it("is 0 for both participants in a fresh conversation", async () => {
+    const chat = createChat();
+    const conversation = await chat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "bob",
+    });
+    expect(conversation.unreadCount).toBe(0);
+
+    const bobView = await chat.api.getConversation({
+      userId: "bob",
+      conversationId: conversation.id,
+    });
+    expect(bobView.unreadCount).toBe(0);
+  });
+
+  it("counts the partner's messages, never the viewer's own", async () => {
+    const chat = createChat();
+    const conversation = await chat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "bob",
+    });
+
+    for (const body of ["one", "two", "three"]) {
+      await chat.api.sendMessage({ userId: "alice", conversationId: conversation.id, body });
+    }
+
+    const bobView = await chat.api.getConversation({
+      userId: "bob",
+      conversationId: conversation.id,
+    });
+    const aliceView = await chat.api.getConversation({
+      userId: "alice",
+      conversationId: conversation.id,
+    });
+    expect(bobView.unreadCount).toBe(3); // null read-state: everything counts
+    expect(aliceView.unreadCount).toBe(0); // own messages are never unread
+  });
+
+  it("markRead shrinks the count; mid-history leaves the remainder", async () => {
+    const chat = createChat();
+    const conversation = await chat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "bob",
+    });
+
+    const sent = [];
+    for (const body of ["one", "two", "three"]) {
+      sent.push(
+        await chat.api.sendMessage({ userId: "alice", conversationId: conversation.id, body }),
+      );
+    }
+
+    await chat.api.markRead({
+      userId: "bob",
+      conversationId: conversation.id,
+      messageId: sent[1]!.id,
+    });
+    let bobView = await chat.api.getConversation({
+      userId: "bob",
+      conversationId: conversation.id,
+    });
+    expect(bobView.unreadCount).toBe(1);
+
+    await chat.api.markRead({
+      userId: "bob",
+      conversationId: conversation.id,
+      messageId: sent[2]!.id,
+    });
+    bobView = await chat.api.getConversation({ userId: "bob", conversationId: conversation.id });
+    expect(bobView.unreadCount).toBe(0);
+  });
+
+  it("deleted messages still count (tombstones render in lists)", async () => {
+    const chat = createChat();
+    const conversation = await chat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "bob",
+    });
+
+    const message = await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "oops",
+    });
+    await chat.api.deleteMessage({ userId: "alice", messageId: message.id });
+
+    const bobView = await chat.api.getConversation({
+      userId: "bob",
+      conversationId: conversation.id,
+    });
+    expect(bobView.unreadCount).toBe(1);
+  });
+
+  it("assistant-role messages count", async () => {
+    const chat = createChat();
+    const conversation = await chat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "ai-bot",
+    });
+
+    await chat.api.sendMessage({
+      userId: "ai-bot",
+      conversationId: conversation.id,
+      body: "beep boop",
+      role: "assistant",
+    });
+
+    const aliceView = await chat.api.getConversation({
+      userId: "alice",
+      conversationId: conversation.id,
+    });
+    expect(aliceView.unreadCount).toBe(1);
+  });
+
+  it("every page of listConversations carries per-conversation counts", async () => {
+    const chat = createChat();
+    const withBob = await chat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "bob",
+    });
+    const withCarol = await chat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "carol",
+    });
+    const withDave = await chat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "dave",
+    });
+
+    await chat.api.sendMessage({ userId: "carol", conversationId: withCarol.id, body: "c1" });
+    await chat.api.sendMessage({ userId: "carol", conversationId: withCarol.id, body: "c2" });
+    await chat.api.sendMessage({ userId: "bob", conversationId: withBob.id, body: "b1" });
+
+    const page1 = await chat.api.listConversations({ userId: "alice", limit: 2 });
+    const page2 = await chat.api.listConversations({
+      userId: "alice",
+      limit: 2,
+      cursor: page1.nextCursor!,
+    });
+
+    const byId = new Map(
+      [...page1.conversations, ...page2.conversations].map((c) => [c.id, c.unreadCount]),
+    );
+    expect(byId.get(withBob.id)).toBe(1);
+    expect(byId.get(withCarol.id)).toBe(2);
+    expect(byId.get(withDave.id)).toBe(0);
+  });
 });
 
 describe("telemetry counters (MVP §12)", () => {

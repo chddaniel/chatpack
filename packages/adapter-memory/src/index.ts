@@ -14,6 +14,7 @@
 import type {
   AddMessageInput,
   Conversation,
+  CountUnreadInput,
   GetOrCreateDirectConversationInput,
   GetOrCreateDirectConversationResult,
   ListConversationsInput,
@@ -216,6 +217,32 @@ export function memoryAdapter(): StorageAdapter {
         );
       }
       participant.lastReadMessageId = input.messageId;
+    },
+
+    async countUnread(input: CountUnreadInput): Promise<Record<string, number>> {
+      const counts: Record<string, number> = {};
+      for (const conversationId of input.conversationIds) {
+        const record = conversations.get(conversationId);
+        const participant = record?.participants.get(input.userId);
+        if (!record || !participant) {
+          counts[conversationId] = 0;
+          continue;
+        }
+
+        // null read-state reads as seq 0: everything is unread.
+        const readSeq = participant.lastReadMessageId
+          ? (messages.get(participant.lastReadMessageId)?.seq ?? 0)
+          : 0;
+
+        let count = 0;
+        for (const id of messageIdsByConversation.get(conversationId) ?? []) {
+          const message = messages.get(id);
+          // Tombstones count (they render in lists); own messages never do.
+          if (message && message.seq > readSeq && message.senderId !== input.userId) count++;
+        }
+        counts[conversationId] = count;
+      }
+      return counts;
     },
   };
 }

@@ -39,6 +39,10 @@ These trip up hand-written and generated clients alike:
   intentional (room to add sibling fields without breaking clients);
   server-side `chat.api.*` returns bare objects instead. Don't share types
   between the two.
+- **Every conversation object carries the viewer's `unreadCount`** (create,
+  list, get): messages newer than their read-state, excluding the viewer's
+  own. Soft-deleted messages count - they render as tombstones. Read the
+  badge from here instead of counting client-side.
 - **Message lists are newest-first**; reverse for a chronological transcript.
   Paginate by passing `nextCursor` back as `?cursor=`; `nextCursor: null`
   means no more results.
@@ -97,10 +101,39 @@ curl -X POST /api/chat/conversations \
     "participants": [
       { "conversationId": "conv_1", "userId": "alice", "joinedAt": "…", "lastReadMessageId": null },
       { "conversationId": "conv_1", "userId": "bob", "joinedAt": "…", "lastReadMessageId": null }
-    ]
+    ],
+    "unreadCount": 0
   }
 }
 ```
+
+List conversations (as `bob`, with two unread messages from `alice`):
+
+```sh
+curl '/api/chat/conversations?limit=50'
+```
+
+```json
+{
+  "conversations": [
+    {
+      "id": "conv_1",
+      "pairKey": "alice:bob",
+      "createdAt": "2026-07-22T19:47:47.945Z",
+      "metadata": {},
+      "participants": [
+        { "conversationId": "conv_1", "userId": "alice", "joinedAt": "…", "lastReadMessageId": null },
+        { "conversationId": "conv_1", "userId": "bob", "joinedAt": "…", "lastReadMessageId": null }
+      ],
+      "unreadCount": 2
+    }
+  ],
+  "nextCursor": null
+}
+```
+
+`unreadCount` is viewer-relative: the same conversation fetched as `alice`
+(the sender) shows `0`.
 
 ## Errors
 

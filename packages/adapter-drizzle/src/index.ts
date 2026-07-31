@@ -29,12 +29,13 @@
  * @module
  */
 
-import { and, asc, desc, eq, gt, lt, or, sql } from "drizzle-orm";
-import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
+import { and, asc, desc, eq, gt, lt, ne, or, sql } from "drizzle-orm";
+import { alias, type PgDatabase, type PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 import type {
   AddMessageInput,
   Conversation,
+  CountUnreadInput,
   GetOrCreateDirectConversationInput,
   GetOrCreateDirectConversationResult,
   ListConversationsInput,
@@ -361,6 +362,44 @@ export function drizzleAdapter(db: DrizzlePgDatabase): StorageAdapter {
           `drizzleAdapter: user "${input.userId}" is not a participant of "${input.conversationId}".`,
         );
       }
+    },
+
+    async countUnread(input: CountUnreadInput): Promise<Record<string, number>> {
+      const counts: Record<string, number> = {};
+      for (const id of input.conversationIds) counts[id] = 0;
+      if (input.conversationIds.length === 0) return counts;
+
+      // One batched query per page. The participant join scopes each count to
+      // the viewer's read-state; the self-join resolves lastReadMessageId to
+      // its seq (COALESCE 0 when read-state is null). The unique
+      // (conversation_id, seq) index makes each range count an index scan.
+      const readMsg = alias(messages, "read_msg");
+      const rows = await db
+        .select({
+          conversationId: messages.conversationId,
+          count: sql`count(*)`.mapWith(Number),
+        })
+        .from(messages)
+        .innerJoin(
+          conversationParticipants,
+          and(
+            eq(conversationParticipants.conversationId, messages.conversationId),
+            eq(conversationParticipants.userId, input.userId),
+          ),
+        )
+        .leftJoin(readMsg, eq(readMsg.id, conversationParticipants.lastReadMessageId))
+        .where(
+          and(
+            or(...input.conversationIds.map((id) => eq(messages.conversationId, id))),
+            // A viewer's own messages are never unread; tombstones count.
+            ne(messages.senderId, input.userId),
+            sql`${messages.seq} > coalesce(${readMsg.seq}, 0)`,
+          ),
+        )
+        .groupBy(messages.conversationId);
+
+      for (const row of rows) counts[row.conversationId] = row.count;
+      return counts;
     },
   };
 }

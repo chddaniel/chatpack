@@ -175,6 +175,9 @@ Client semantics that trip up generated code:
   `{ messages, nextCursor }` - unwrap them. (`chat.api.*` returns bare objects.)
 - Message lists are **newest-first**; reverse for a transcript; paginate with
   `nextCursor` → `?cursor=`.
+- Every conversation object carries the viewer's **`unreadCount`** (messages
+  newer than their read-state, excluding their own) - read the badge from
+  there, don't count client-side.
 - Plugin events on the same stream: `typing.started/.stopped`,
   `presence.online/.offline`, `receipt.delivered/.read` - ephemeral, never
   replayed. Throttle typing POSTs to ~1 per 3s; expire indicators after ~5s.
@@ -222,9 +225,10 @@ AND the Network tab must show it on `/api/chat/*` requests.
 ## Custom storage adapter (Supabase JS / Convex / Firestore / other)
 
 Do NOT improvise: read **Part 2 of `llms.txt`** and follow it exactly - it
-contains the 9-method `StorageAdapter` contract, the invariants (atomic
+contains the 10-method `StorageAdapter` contract, the invariants (atomic
 `pairKey` creation, atomic per-conversation `seq`, `Date` instances not ISO
-strings, soft-delete as tombstone, newest-first vs oldest-first ordering), the
-reference Postgres schema, a skeleton, and a 10-point verification checklist.
+strings, soft-delete as tombstone, newest-first vs oldest-first ordering,
+batched exact unread counts), the reference Postgres schema, a skeleton, and
+an 11-point verification checklist.
 The adapter must run server-side with privileged credentials; `chatpack_*`
 tables must never be readable by browser/anon clients.

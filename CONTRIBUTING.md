@@ -103,6 +103,9 @@ Rules of thumb:
   (drivers and HTTP database clients often return strings; convert at the
   adapter boundary).
 - The adapter generates conversation and message ids (any unique string).
+- `countUnread` is exact and batched: per conversation, messages with `seq`
+  greater than the viewer's read seq (`null` = 0), excluding the viewer's
+  own messages; tombstones count. One query per page, never one per id.
 
 ## Code style
 
