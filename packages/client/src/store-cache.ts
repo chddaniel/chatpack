@@ -126,8 +126,10 @@ export function createChatpackCache(): ChatpackCache {
           ...current.conversationsById,
           [conversationId]: {
             ...(current.conversationsById[conversationId] ?? emptyQuery<ClientConversation>()),
-            isPending: current.conversationsById[conversationId]?.data === null,
-            isRefetching: current.conversationsById[conversationId]?.data !== null,
+            // `?.data` is undefined (not null) when this id has never loaded,
+            // so compare loosely: a missing entry is still a first load.
+            isPending: current.conversationsById[conversationId]?.data == null,
+            isRefetching: current.conversationsById[conversationId]?.data != null,
             error: null,
           },
         },
@@ -157,8 +159,10 @@ export function createChatpackCache(): ChatpackCache {
           ...current.messagesByConversation,
           [conversationId]: {
             ...(current.messagesByConversation[conversationId] ?? emptyQuery<ClientMessagePage>()),
-            isPending: current.messagesByConversation[conversationId]?.data === null,
-            isRefetching: current.messagesByConversation[conversationId]?.data !== null,
+            // Same loose comparison as setConversationLoading: undefined entry
+            // means first load.
+            isPending: current.messagesByConversation[conversationId]?.data == null,
+            isRefetching: current.messagesByConversation[conversationId]?.data != null,
             error: null,
           },
         },
