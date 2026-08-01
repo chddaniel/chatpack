@@ -30,6 +30,34 @@ The only package every integration needs.
 | `presence(options?)` | Online/offline - SSE connection is the heartbeat; `offlineDelayMs` default 5000            |
 | `receipts()`         | Delivered/read ticks - hooks into send + mark-read                                         |
 
+## `@chatpack/client`
+
+The framework-agnostic browser client for the public REST and SSE contract.
+Authentication remains owned by the application.
+
+```ts
+import { createChatClient } from "@chatpack/client";
+import { typingClient, presenceClient, receiptsClient } from "@chatpack/client/plugins";
+
+export const chatClient = createChatClient({
+  credentials: "include",
+  plugins: [typingClient(), presenceClient(), receiptsClient()],
+});
+
+const result = await chatClient.conversations.list();
+```
+
+`@chatpack/client/react` adds `useConversations`, `useConversation`,
+`useMessages`, `useRealtimeStatus`, and first-party plugin hooks. It uses
+`useSyncExternalStore` and has no state-library dependency.
+
+| Export                       | What it is                                           |
+| ---------------------------- | ---------------------------------------------------- |
+| `createChatClient(options?)` | One per-application client instance                  |
+| `conversations` / `messages` | Typed REST namespaces with `{ data, error }` results |
+| `realtime`                   | One lazy EventSource with durable deduplication      |
+| `@chatpack/client/plugins`   | Typing, presence, and receipts client adapters       |
+
 ## `@chatpack/adapter-memory`
 
 In-memory storage - zero-setup demos and fast, deterministic tests. The

@@ -17,8 +17,37 @@ Packages (all on npm):
 | `@chatpack/adapter-memory` | In-memory storage - demos/tests, single process only   |
 | `@chatpack/adapter-drizzle`| Postgres storage via Drizzle - production              |
 | `@chatpack/next`           | Next.js App Router mount helper (`toNextRouteHandlers`)|
+| `@chatpack/client`         | Framework-agnostic REST + SSE client                  |
 
 # Part 1 - Integrating Chatpack
+
+## First-party client
+
+For browser applications, install `@chatpack/client`. For React, import the
+wrapper from `@chatpack/client/react`; for optional realtime counterparts,
+import `typingClient`, `presenceClient`, and `receiptsClient` from
+`@chatpack/client/plugins`:
+
+```ts
+import { createChatClient } from "@chatpack/client/react";
+import { typingClient, presenceClient, receiptsClient } from "@chatpack/client/plugins";
+
+export const chatClient = createChatClient({
+  baseURL: "http://localhost:3000",
+  credentials: "include",
+  plugins: [typingClient(), presenceClient(), receiptsClient()],
+});
+
+const result = await chatClient.messages.send({ conversationId, body: "hello" });
+if (result.error !== null) console.error(result.error.code);
+```
+
+Client methods return `{ data, error }`; expected HTTP and network failures do
+not throw. The client never owns authentication, reads cookies, manages
+sessions, or places bearer tokens in the SSE URL. Native `EventSource` uses
+browser cookies and handles `Last-Event-ID` reconnects. One client instance
+owns one lazy stream and a small in-memory cache. The React adapter uses
+`useSyncExternalStore` and has no state-library dependency.
 
 ## Hard rules (violating any of these is the #1 cause of broken integrations)
 

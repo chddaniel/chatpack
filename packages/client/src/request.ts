@@ -1,0 +1,179 @@
+import type { ChatpackFetch, ChatpackHeaders, ChatpackRequestContext } from "./config";
+import {
+  createClientError,
+  failure,
+  type ChatClientResult,
+  type ChatpackClientErrorCode,
+  success,
+} from "./errors";
+
+export interface ClientRequestInit {
+  method?: string;
+  query?: Record<string, string | number | undefined>;
+  body?: unknown;
+  headers?: HeadersInit;
+  signal?: AbortSignal;
+}
+
+export interface ChatpackRequester {
+  request<T>(path: string, init?: ClientRequestInit): Promise<ChatClientResult<T>>;
+}
+
+function normalizedPath(path: string): string {
+  return path.startsWith("/") ? path : "/" + path;
+}
+
+export function normalizeBasePath(basePath = "/api/chat"): string {
+  const trimmed = basePath.trim();
+  if (trimmed === "" || trimmed === "/") return "";
+  return "/" + trimmed.replace(/^\/+|\/+$/g, "");
+}
+
+export function buildURL(baseURL: string | undefined, basePath: string, path = ""): string {
+  const prefix = (baseURL?.replace(/\/+$/g, "") ?? "") + basePath;
+  const result = prefix + normalizedPath(path);
+  return result === "/" ? result : result.replace(/([^:]\/)\/+/g, "$1");
+}
+
+function errorCodeForStatus(status: number): ChatpackClientErrorCode {
+  if (status === 401) return "UNAUTHENTICATED";
+  if (status === 404) return "NOT_FOUND";
+  if (status >= 500) return "INTERNAL_ERROR";
+  return "HTTP_ERROR";
+}
+
+const clientErrorCodes: Record<string, ChatpackClientErrorCode> = {
+  FORBIDDEN_READ: "FORBIDDEN_READ",
+  FORBIDDEN_WRITE: "FORBIDDEN_WRITE",
+  CONVERSATION_NOT_FOUND: "CONVERSATION_NOT_FOUND",
+  MESSAGE_NOT_FOUND: "MESSAGE_NOT_FOUND",
+  NOT_MESSAGE_SENDER: "NOT_MESSAGE_SENDER",
+  MESSAGE_DELETED: "MESSAGE_DELETED",
+  INVALID_INPUT: "INVALID_INPUT",
+  UNAUTHENTICATED: "UNAUTHENTICATED",
+  NOT_FOUND: "NOT_FOUND",
+  INTERNAL_ERROR: "INTERNAL_ERROR",
+  HTTP_ERROR: "HTTP_ERROR",
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function readErrorPayload(value: unknown): { code?: string; message?: string } {
+  if (!isRecord(value) || !isRecord(value.error)) return {};
+  const code = typeof value.error.code === "string" ? value.error.code : undefined;
+  const message = typeof value.error.message === "string" ? value.error.message : undefined;
+  return {
+    ...(code === undefined ? {} : { code }),
+    ...(message === undefined ? {} : { message }),
+  };
+}
+
+async function parseBody(response: Response): Promise<{ value: unknown; valid: boolean }> {
+  const text = await response.text();
+  if (text.trim() === "") return { value: undefined, valid: true };
+  try {
+    return { value: JSON.parse(text) as unknown, valid: true };
+  } catch {
+    return { value: undefined, valid: false };
+  }
+}
+
+export function createRequester(options: {
+  baseURL?: string;
+  basePath: string;
+  credentials: RequestCredentials;
+  headers?: ChatpackHeaders;
+  fetch?: ChatpackFetch;
+}): ChatpackRequester {
+  const fetchImpl = options.fetch ?? globalThis.fetch?.bind(globalThis);
+
+  return {
+    async request<T>(path: string, init: ClientRequestInit = {}) {
+      const method = (init.method ?? "GET").toUpperCase();
+      const url = buildURL(options.baseURL, options.basePath, path);
+      const context: ChatpackRequestContext = { url, method };
+      const headers = new Headers(
+        typeof options.headers === "function" ? await options.headers(context) : options.headers,
+      );
+      if (init.headers !== undefined) {
+        new Headers(init.headers).forEach((value, key) => headers.set(key, value));
+      }
+
+      const requestURL = new URL(
+        url,
+        typeof window === "undefined" ? "http://chatpack.invalid" : window.location.origin,
+      );
+      for (const [key, value] of Object.entries(init.query ?? {})) {
+        if (value !== undefined) requestURL.searchParams.set(key, String(value));
+      }
+
+      const hasBody = init.body !== undefined;
+      if (hasBody && !headers.has("content-type")) headers.set("content-type", "application/json");
+      if (fetchImpl === undefined) {
+        return failure<T>(
+          createClientError("NETWORK_ERROR", "No fetch implementation is available.", null),
+        );
+      }
+
+      let response: Response;
+      try {
+        response = await fetchImpl(requestURL.toString(), {
+          method,
+          headers,
+          credentials: options.credentials,
+          ...(hasBody ? { body: JSON.stringify(init.body) } : {}),
+          ...(init.signal === undefined ? {} : { signal: init.signal }),
+        });
+      } catch (error) {
+        return failure<T>(
+          createClientError("NETWORK_ERROR", "Chatpack request failed.", null, error),
+        );
+      }
+
+      const body = await parseBody(response);
+      if (!response.ok) {
+        const payload = readErrorPayload(body.value);
+        const code = payload.code ?? errorCodeForStatus(response.status);
+        const knownCode = clientErrorCodes[code] ?? "HTTP_ERROR";
+        return failure<T>(
+          createClientError(
+            knownCode,
+            payload.message ?? "Chatpack request failed with status " + response.status + ".",
+            response.status,
+          ),
+        );
+      }
+
+      if (!body.valid) {
+        return failure<T>(
+          createClientError("INVALID_RESPONSE", "Chatpack returned invalid JSON.", response.status),
+        );
+      }
+      if (body.value === undefined && response.status !== 204) {
+        return failure<T>(
+          createClientError(
+            "INVALID_RESPONSE",
+            "Chatpack returned an empty response.",
+            response.status,
+          ),
+        );
+      }
+      return success(body.value as T);
+    },
+  };
+}
+
+export function unwrapResult<T>(
+  result: ChatClientResult<unknown>,
+  key: string,
+): ChatClientResult<T> {
+  if (result.error !== null) return result;
+  if (!isRecord(result.data) || !(key in result.data)) {
+    return failure<T>(
+      createClientError("INVALID_RESPONSE", 'Chatpack response is missing "' + key + '".', null),
+    );
+  }
+  return success(result.data[key] as T);
+}

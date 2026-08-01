@@ -1,0 +1,82 @@
+{
+  "name": "@chatpack/client",
+  "version": "0.1.0",
+  "description": "Framework-agnostic Chatpack client with optional React hooks",
+  "license": "MIT",
+  "homepage": "https://github.com/chddaniel/chatpack#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chddaniel/chatpack.git",
+    "directory": "packages/client"
+  },
+  "bugs": "https://github.com/chddaniel/chatpack/issues",
+  "keywords": [
+    "chat",
+    "chatpack",
+    "client",
+    "realtime",
+    "sse",
+    "react"
+  ],
+  "sideEffects": false,
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./react": {
+      "types": "./dist/react/index.d.ts",
+      "import": "./dist/react/index.js",
+      "require": "./dist/react/index.cjs"
+    },
+    "./plugins": {
+      "types": "./dist/plugins/index.d.ts",
+      "import": "./dist/plugins/index.js",
+      "require": "./dist/plugins/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "llms.txt"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "prepack": "node -e \"require('fs').copyFileSync('../../llms.txt','llms.txt')\""
+  },
+  "dependencies": {
+    "@chatpack/core": "workspace:^"
+  },
+  "peerDependencies": {
+    "react": ">=18"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@chatpack/adapter-memory": "workspace:^",
+    "@types/react": "^19.2.13",
+    "@types/react-test-renderer": "^19.1.0",
+    "react": "^19.2.8",
+    "react-test-renderer": "^19.2.8",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2",
+    "vitest": "^3.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

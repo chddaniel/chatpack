@@ -48,6 +48,30 @@ bun add @chatpack/core @chatpack/adapter-memory
 </Step>
 <Step>
 
+## Add the client (optional)
+
+For a browser or React frontend, add the first-party client:
+
+```sh
+npm install @chatpack/client react
+```
+
+```ts
+import { createChatClient } from "@chatpack/client/react";
+
+export const chatClient = createChatClient({
+  // Omit baseURL when the frontend and handler share an origin.
+  credentials: "include",
+});
+```
+
+The client uses the server's existing cookie session. It does not implement
+login, logout, user lookup, or token handling. See the [client guide](/docs/client)
+for REST, realtime, React, and plugin usage.
+
+</Step>
+<Step>
+
 ## Create your chat server
 
 ```ts title="lib/chat.ts"

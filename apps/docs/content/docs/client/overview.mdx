@@ -1,0 +1,42 @@
+---
+title: Chatpack client
+description: One typed client for Chatpack REST, SSE, cache, and plugins.
+---
+
+Install the framework-agnostic client:
+
+```sh
+pnpm add @chatpack/client
+```
+
+Create one instance. The default path is `/api/chat`; `baseURL` is only needed
+when the API is on another origin.
+
+```ts
+import { createChatClient } from "@chatpack/client";
+
+export const chatClient = createChatClient({
+  baseURL: "http://localhost:3000",
+  credentials: "include",
+});
+
+const result = await chatClient.conversations.create({ otherUserId: "bob" });
+if (result.error === null) {
+  await chatClient.messages.send({ conversationId: result.data.id, body: "Hello" });
+}
+```
+
+Methods return a discriminated `{ data, error }` result. Expected HTTP failures
+do not throw. Network failures use `NETWORK_ERROR`; server error codes remain
+available, such as `UNAUTHENTICATED`, `FORBIDDEN_WRITE`, and
+`MESSAGE_DELETED`.
+
+The client never owns authentication. Same-origin cookies work by default;
+cross-origin cookie sessions need `credentials: "include"`. Native
+`EventSource` cannot send custom headers, so bearer tokens are not placed in
+the stream URL.
+
+The client keeps a small per-instance cache. REST results and durable SSE
+events update that cache. A single lazy realtime connection covers all
+conversations. Ephemeral plugin events are dispatched but never persisted in
+message history.
