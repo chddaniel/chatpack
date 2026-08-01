@@ -18,7 +18,7 @@ Design questions this ADR settles:
 1. What exactly counts as "unread"?
 2. Does core or the adapter compute it (ADR 0001 boundary)?
 3. Does read-state need a schema change (`last_read_seq`)?
-4. What stops the count from going *up* without new messages?
+4. What stops the count from going _up_ without new messages?
 
 ## Decision
 
@@ -84,7 +84,7 @@ client behavior, not a fault.
   and the verification checklist all gained the new method.
 - `unreadCount` is exact, viewer-relative, and always present on API
   conversation objects - HTTP responses gained the field with no new route.
-- No SSE/plugin surface changed. Ephemeral read *receipts* (ADR 0008) remain
+- No SSE/plugin surface changed. Ephemeral read _receipts_ (ADR 0008) remain
   unrelated: `unreadCount` derives from the durable field and survives
   restarts and serverless deploys.
 - Clients wanting a live badge without re-fetching can increment locally on

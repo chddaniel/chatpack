@@ -115,9 +115,14 @@ describe("unreadCount in conversation envelopes", () => {
 
     // ...and in the single-conversation envelope; alice (sender) sees 0.
     const bobGet = await get(handler, `/conversations/${conversation.id}`, "bob");
-    expect(((await bobGet.json()) as { conversation: { unreadCount: number } }).conversation.unreadCount).toBe(2);
+    expect(
+      ((await bobGet.json()) as { conversation: { unreadCount: number } }).conversation.unreadCount,
+    ).toBe(2);
     const aliceGet = await get(handler, `/conversations/${conversation.id}`, "alice");
-    expect(((await aliceGet.json()) as { conversation: { unreadCount: number } }).conversation.unreadCount).toBe(0);
+    expect(
+      ((await aliceGet.json()) as { conversation: { unreadCount: number } }).conversation
+        .unreadCount,
+    ).toBe(0);
   });
 });
 

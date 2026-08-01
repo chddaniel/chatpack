@@ -12,13 +12,7 @@ import { createPluginRuntime } from "./plugin";
 import type { StorageAdapter } from "./storage";
 import { inProcessTransport, type ChatEvent, type Transport } from "./transport";
 import { TelemetryCounters, resolveTelemetryEnabled, startTelemetryFlusher } from "./telemetry";
-import type {
-  Conversation,
-  ConversationWithUnread,
-  Message,
-  Metadata,
-  MessageRole,
-} from "./types";
+import type { Conversation, ConversationWithUnread, Message, Metadata, MessageRole } from "./types";
 
 /** Default page size for list endpoints. */
 const DEFAULT_LIMIT = 50;
