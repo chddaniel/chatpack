@@ -1,3 +1,4 @@
+/** Per-client cache contracts for REST results and durable stream updates. */
 import type { ChatClientResult, ChatpackClientError } from "./errors";
 import type { DurableChatEvent, ChatpackEvent } from "./realtime";
 import { createStore, type ReadonlyStore, type Store } from "./store";
@@ -8,6 +9,7 @@ import type {
   ClientMessagePage,
 } from "./wire";
 
+/** Loading and result state for one cached query. */
 export interface QueryState<T> {
   data: T | null;
   error: ChatpackClientError | null;
@@ -15,6 +17,7 @@ export interface QueryState<T> {
   isRefetching: boolean;
 }
 
+/** Snapshot held by the Chatpack client cache. */
 export interface ChatpackCacheSnapshot {
   conversations: QueryState<ClientConversationPage>;
   conversationsById: Record<string, QueryState<ClientConversation>>;
@@ -25,6 +28,7 @@ function emptyQuery<T>(): QueryState<T> {
   return { data: null, error: null, isPending: true, isRefetching: false };
 }
 
+/** Observable cache used by REST actions and React hooks. */
 export interface ChatpackCache extends ReadonlyStore<ChatpackCacheSnapshot> {
   setConversationsLoading(): void;
   setConversations(result: ChatClientResult<ClientConversationPage>, append: boolean): void;
@@ -69,6 +73,7 @@ function applyDurableEvent(
   };
 }
 
+/** Creates an empty isolated Chatpack cache. */
 export function createChatpackCache(): ChatpackCache {
   const store: Store<ChatpackCacheSnapshot> = createStore({
     conversations: emptyQuery<ClientConversationPage>(),

@@ -1,27 +1,34 @@
+/** First-party client plugin for ephemeral typing indicators. */
 import type { ChatClientPlugin } from "../plugin";
 import type { ChatClientResult } from "../errors";
 import type { ClientOkResponse } from "../wire";
 
+/** Sender and timestamp for the current typing indicator. */
 export interface TypingIndicator {
   senderId: string;
   at: string;
 }
 
+/** Typing indicators keyed by conversation id. */
 export type TypingSnapshot = Record<string, TypingIndicator | undefined>;
 
+/** Input shared by the typing start and stop actions. */
 export interface TypingInput {
   conversationId: string;
 }
 
+/** Actions exposed by the typing client plugin. */
 export interface TypingActions {
   start(input: TypingInput): Promise<ChatClientResult<ClientOkResponse>>;
   stop(input: TypingInput): Promise<ChatClientResult<ClientOkResponse>>;
 }
 
+/** Configuration for typing indicator expiration. */
 export interface TypingOptions {
   expireAfterMs?: number;
 }
 
+/** Creates the first-party typing client plugin. */
 export function typingClient(
   options: TypingOptions = {},
 ): ChatClientPlugin<"typing", TypingActions, TypingSnapshot> {

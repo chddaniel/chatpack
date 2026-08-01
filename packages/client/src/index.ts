@@ -1,3 +1,4 @@
+/** Framework-agnostic Chatpack client public exports. */
 export { createChatClient } from "./client";
 export type {
   ChatClient,
