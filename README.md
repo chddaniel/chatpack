@@ -11,21 +11,25 @@ real-time delivery - without rebuilding it from scratch.
 [![CI](https://github.com/chddaniel/chatpack/actions/workflows/ci.yml/badge.svg)](https://github.com/chddaniel/chatpack/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 
-**[Documentation](./apps/docs)** - quickstart, concepts, real-time, storage
-adapters, framework guides, and the full REST reference. Run it locally with
-`pnpm --filter @chatpack/docs dev`.
+**[Documentation → docs.chatpack.dev](https://docs.chatpack.dev)** -
+quickstart, concepts, real-time, storage adapters, framework guides, and the
+full REST reference. (Source in [`apps/docs`](./apps/docs); run locally with
+`pnpm --filter @chatpack/docs dev`.)
 
 </div>
 
 ---
 
-> **Status: `0.2.x` - v0 MVP + real-time plugins, live on npm.** The v0 MVP
-> (core engine, HTTP handler, real-time SSE, Postgres adapter) plus the opt-in
-> real-time plugins - **`typing()`, `presence()`, and `receipts()`, all shipping
-> today inside `@chatpack/core` under the `@chatpack/core/plugins` subpath** (see
+> **Status: `0.3.x` - v0 MVP + real-time plugins + unread counts + browser
+> client, live on npm.** The v0 MVP (core engine, HTTP handler, real-time SSE,
+> Postgres adapter) plus the opt-in real-time plugins - **`typing()`,
+> `presence()`, and `receipts()`, all shipping today inside `@chatpack/core`
+> under the `@chatpack/core/plugins` subpath** (see
 > [Real-time plugins](#real-time-plugins-typing-presence-read-ticks)) - are
-> published and installable now. The API is young - expect minor breaking
-> changes before `1.0`. Follow along or [contribute](./CONTRIBUTING.md).
+> published and installable now, along with the first-party
+> [`@chatpack/client`](./packages/client). The API is young - expect minor
+> breaking changes before `1.0`. Follow along or
+> [contribute](./CONTRIBUTING.md).
 
 ## Why
 
@@ -484,9 +488,11 @@ Want to write your own plugin? The seam is public - see `ChatpackPlugin` in
 | Launch polish + npm release             | ✅ Done (M5)      |
 | Typing / presence / read-tick plugins   | ✅ Done (v0.next) |
 | Unread counts (`unreadCount`)           | ✅ Done (v0.next) |
+| Browser client + React hooks            | ✅ Done (v0.next) |
 
 Deliberately **not** in scope yet: groups, file uploads, push notifications,
-React UI. See [docs/MVP.md](./docs/MVP.md) for the full scope and reasoning.
+UI components. See [docs/MVP.md](./docs/MVP.md) for the full scope and
+reasoning.
 
 ## Packages
 
@@ -496,6 +502,7 @@ React UI. See [docs/MVP.md](./docs/MVP.md) for the full scope and reasoning.
 | [`@chatpack/adapter-drizzle`](./packages/adapter-drizzle) | Drizzle/Postgres storage (production)           |
 | [`@chatpack/adapter-memory`](./packages/adapter-memory)   | In-memory storage (demos, tests)                |
 | [`@chatpack/next`](./packages/next)                       | Next.js App Router integration                  |
+| [`@chatpack/client`](./packages/client)                   | Browser REST + SSE client, optional React hooks |
 
 ## Examples
 
