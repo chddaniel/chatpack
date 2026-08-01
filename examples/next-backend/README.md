@@ -1,12 +1,15 @@
 # example-next-backend
 
-The Chatpack quickstart as a runnable Next.js App Router app: **two files** -
+The Chatpack quickstart as a runnable Next.js App Router app: the catch-all
+route mounts the backend and `/chat` uses the first-party React client.
+The original
+**two files** -
 `lib/chat.ts` (create the instance) and
 `app/api/chat/[...chatpack]/route.ts` (mount it) - give you the whole REST +
 SSE chat backend.
 
-> Auth here trusts an `x-user-id` header. **Demo only.** In a real app your
-> `auth` hook verifies a session or JWT.
+> Browser auth uses a `demo_user` cookie; curl may use the `x-user-id` fallback.
+> **Demo only.** In a real app your `auth` hook verifies a session or JWT.
 
 ## Run
 
@@ -14,6 +17,10 @@ SSE chat backend.
 pnpm install
 pnpm --filter example-next-backend dev
 ```
+
+Open <http://localhost:3000/chat>, choose a demo identity, and use the client
+UI. It creates conversations, lists messages, sends messages, and receives
+live updates through the Chatpack SSE stream.
 
 Then exercise it exactly like the [node-server example](../node-server) - same
 API, same curl walkthrough, same SSE stream, just served by Next.js:

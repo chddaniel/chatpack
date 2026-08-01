@@ -1,0 +1,44 @@
+---
+title: React integration
+description: React hooks backed by Chatpack's small external store.
+---
+
+Install React with the client:
+
+```sh
+pnpm add @chatpack/client react
+```
+
+```tsx
+"use client";
+
+import { createChatClient } from "@chatpack/client/react";
+
+export const chatClient = createChatClient();
+
+export function Messages({ conversationId }: { conversationId: string }) {
+  const result = chatClient.useMessages({ conversationId, limit: 50 });
+  if (result.isPending) return <p>Loading…</p>;
+  if (result.error !== null) return <p>{result.error.message}</p>;
+  return (
+    <>
+      <ul>
+        {result.data?.messages.map((message) => (
+          <li key={message.id}>{message.body}</li>
+        ))}
+      </ul>
+      {result.data?.nextCursor !== null && (
+        <button onClick={() => void result.loadMore()}>Older</button>
+      )}
+    </>
+  );
+}
+```
+
+Available hooks are `useConversations`, `useConversation`, `useMessages`, and
+`useRealtimeStatus`. `useTyping`, `usePresence`, and `useReceipts` read the
+matching client plugin state. Hooks use React's `useSyncExternalStore`, so
+React 18 and React 19 share the same cache and stream behavior.
+
+SSR does not open an SSE connection. The connection starts after a browser
+subscriber or realtime-status hook mounts.

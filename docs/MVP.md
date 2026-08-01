@@ -71,7 +71,8 @@ WhatsApp-style extras feel related to 1:1 because consumer apps bundle them. Cha
 **Still deferred to a later release:**
 
 - **Group conversations** (N members, roles, invites)
-- **React client + hooks** (`@chatpack/react`)
+- ~~React client + hooks~~ - shipped as `@chatpack/client` and
+  `@chatpack/client/react` in the client milestone.
 
 > **Packaging note (ADR 0008):** the original sketch named these
 > `@chatpack/plugin-typing` etc. as separate npm packages. They shipped instead

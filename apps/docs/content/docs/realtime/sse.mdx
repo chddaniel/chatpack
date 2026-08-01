@@ -9,6 +9,11 @@ conversations only** - participation is re-checked server-side per event.
 
 No WebSocket server, no Socket.IO, no reconnect code to write.
 
+The optional `@chatpack/client` package owns this `EventSource`, reconnects
+through the browser's native `Last-Event-ID` behavior, and deduplicates durable
+messages in its per-client cache. It does not poll or put bearer tokens in the
+stream URL.
+
 ## Connect
 
 ```ts

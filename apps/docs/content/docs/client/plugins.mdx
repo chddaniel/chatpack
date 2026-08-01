@@ -1,0 +1,24 @@
+---
+title: Client plugins
+description: Typed client counterparts for Chatpack realtime plugins.
+---
+
+```ts
+import { createChatClient } from "@chatpack/client/react";
+import { typingClient, presenceClient, receiptsClient } from "@chatpack/client/plugins";
+
+export const chatClient = createChatClient({
+  plugins: [typingClient(), presenceClient(), receiptsClient()],
+});
+
+await chatClient.typing.start({ conversationId: "c1" });
+const presence = await chatClient.presence.get({ userIds: ["alice", "bob"] });
+```
+
+Each plugin has a stable namespace, typed actions, per-client state, and
+cleanup. In React, `useTyping`, `usePresence`, and `useReceipts` select that
+state. Plugins cannot replace core methods or use hidden global state.
+
+Custom plugins may add typed actions and event names through explicit
+TypeScript declarations. Automatic discovery of server plugin routes and
+generated clients is intentionally deferred.

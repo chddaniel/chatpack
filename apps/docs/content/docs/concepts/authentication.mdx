@@ -54,6 +54,11 @@ cookies by default; pass `{ withCredentials: true }` for cross-origin).
 
 Bearer-token headers work for the REST routes but not for `/stream`.
 
+With `@chatpack/client`, same-origin requests use `credentials: "same-origin"`
+by default. Set `credentials: "include"` for a cookie session on another
+origin. Custom REST headers can carry a bearer token, but the client never
+copies that token into the SSE URL.
+
 ## Hybrid auth (bearer tokens + SSE)
 
 If your app authenticates REST calls with an `Authorization` header (Supabase,

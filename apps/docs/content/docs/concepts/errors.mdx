@@ -63,6 +63,16 @@ try {
 
 ## In the browser
 
+`@chatpack/client` unwraps successful envelopes and returns expected HTTP,
+malformed-response, and network failures as `{ data: null, error }`; branch on
+`error.code` instead of catching expected API failures.
+
+```ts
+const result = await chatClient.messages.send({ conversationId, body });
+if (result.error?.code === "UNAUTHENTICATED") redirectToLogin();
+if (result.error?.code === "FORBIDDEN_WRITE") showReadOnlyNotice();
+```
+
 Branch on `error.code`, not on the message text (messages may change; codes
 are stable):
 

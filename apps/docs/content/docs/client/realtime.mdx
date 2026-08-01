@@ -1,0 +1,26 @@
+---
+title: Client realtime
+description: Durable message reconciliation and ephemeral event subscriptions.
+---
+
+```ts
+const unsubscribe = chatClient.realtime.subscribe((event) => {
+  if (event.type === "message.created") console.log(event.message.body);
+});
+
+chatClient.realtime.connect();
+unsubscribe();
+```
+
+`realtime` owns one lazy `EventSource`. Native browser reconnect behavior sends
+`Last-Event-ID`; the client does not implement a second cursor protocol.
+Durable messages are reconciled by id and sequence and remain newest-first.
+`message.created`, `message.updated`, and `message.deleted` update the cache.
+
+Ephemeral events such as typing and presence are delivered to subscribers and
+plugins, but are never inserted into message history. Stream status is
+`idle`, `connecting`, `open`, or `closed`, with a typed network error when a
+connection fails.
+
+There is no polling fallback, WebSocket transport, token-in-query behavior, or
+persistent browser storage in the first client release.

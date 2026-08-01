@@ -22,6 +22,18 @@ have: fire-and-forget signals that are never stored and never replayed on
 reconnect. Miss a typing ping and it's gone - that's correct; durable state
 like `lastReadMessageId` stays in core.
 
+React applications can install matching client plugins without changing the
+server plugin contract:
+
+```ts
+import { createChatClient } from "@chatpack/client/react";
+import { typingClient, presenceClient, receiptsClient } from "@chatpack/client/plugins";
+
+export const chatClient = createChatClient({
+  plugins: [typingClient(), presenceClient(), receiptsClient()],
+});
+```
+
 ## What each plugin adds
 
 | Plugin       | Routes                           | Events published                      | To whom                                            |

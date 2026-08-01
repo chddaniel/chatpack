@@ -54,13 +54,13 @@ Every HTTP request follows the same path:
 
 ## What lives where
 
-| Layer            | Owns                                                   | Never does                                   |
-| ---------------- | ------------------------------------------------------ | -------------------------------------------- |
-| Your app         | Users, sessions, frontend, LLM calls                   | -                                            |
-| `chat.handler()` | HTTP parsing, auth hook, JSON envelopes, SSE           | Domain rules                                 |
-| `chat.api.*`     | Validation, permissions, pair keys, telemetry counters | Persistence mechanics                        |
-| `StorageAdapter` | Uniqueness on `pairKey`, `seq` assignment, pagination, unread counts | Permission checks              |
-| `Transport`      | Live event fan-out                                     | Storage (durable events replay from storage) |
+| Layer            | Owns                                                                 | Never does                                   |
+| ---------------- | -------------------------------------------------------------------- | -------------------------------------------- |
+| Your app         | Users, sessions, frontend, LLM calls                                 | -                                            |
+| `chat.handler()` | HTTP parsing, auth hook, JSON envelopes, SSE                         | Domain rules                                 |
+| `chat.api.*`     | Validation, permissions, pair keys, telemetry counters               | Persistence mechanics                        |
+| `StorageAdapter` | Uniqueness on `pairKey`, `seq` assignment, pagination, unread counts | Permission checks                            |
+| `Transport`      | Live event fan-out                                                   | Storage (durable events replay from storage) |
 
 ## One instance, everywhere
 

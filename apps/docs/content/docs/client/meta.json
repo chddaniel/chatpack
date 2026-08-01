@@ -1,0 +1,5 @@
+{
+  "title": "Client",
+  "icon": "Code",
+  "pages": ["overview", "react", "realtime", "plugins"]
+}

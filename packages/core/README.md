@@ -76,17 +76,17 @@ lives at [`examples/messenger`](../../examples/messenger).
 
 ## API surface
 
-| Method                        | What it does                                        |
-| ----------------------------- | --------------------------------------------------- |
-| `api.getOrCreateConversation` | Find or create the 1:1 conversation for a user pair |
-| `api.listConversations`       | List a user's conversations, most recent first      |
-| `api.getConversation`         | Fetch one conversation (read-permission checked)    |
-| `api.sendMessage`             | Send a text message (write-permission checked)      |
-| `api.listMessages`            | Paginate history, newest-first                      |
-| `api.editMessage`             | Edit your own message                               |
-| `api.deleteMessage`           | Soft-delete your own message                        |
+| Method                        | What it does                                                                                    |
+| ----------------------------- | ----------------------------------------------------------------------------------------------- |
+| `api.getOrCreateConversation` | Find or create the 1:1 conversation for a user pair                                             |
+| `api.listConversations`       | List a user's conversations, most recent first                                                  |
+| `api.getConversation`         | Fetch one conversation (read-permission checked)                                                |
+| `api.sendMessage`             | Send a text message (write-permission checked)                                                  |
+| `api.listMessages`            | Paginate history, newest-first                                                                  |
+| `api.editMessage`             | Edit your own message                                                                           |
+| `api.deleteMessage`           | Soft-delete your own message                                                                    |
 | `api.markRead`                | Update durable read-state (`last_read`); monotonic - marking an older message is a silent no-op |
-| `api.listMessagesAfter`       | Messages after a `seq` (SSE reconnect gap-fill)     |
+| `api.listMessagesAfter`       | Messages after a `seq` (SSE reconnect gap-fill)                                                 |
 
 Conversation-returning methods (`getOrCreateConversation`,
 `listConversations`, `getConversation`) return the conversation plus the

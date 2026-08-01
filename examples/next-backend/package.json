@@ -13,6 +13,7 @@
   },
   "dependencies": {
     "@chatpack/adapter-memory": "workspace:*",
+    "@chatpack/client": "workspace:*",
     "@chatpack/core": "workspace:*",
     "@chatpack/next": "workspace:*",
     "next": "^16.2.11",
