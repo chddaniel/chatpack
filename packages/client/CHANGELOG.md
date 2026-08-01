@@ -1,6 +1,8 @@
-# Changelog
+# @chatpack/client
 
 ## 0.1.0
 
-- Added the framework-agnostic Chatpack client.
-- Added React hooks and first-party typing, presence, and receipts adapters.
+### Minor Changes
+
+- c47d3f4: Add the first-party framework-agnostic Chatpack client, React hooks, and client
+  adapters for typing, presence, and receipts.
