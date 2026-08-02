@@ -574,6 +574,7 @@ reasoning.
 | [`@chatpack/adapter-memory`](./packages/adapter-memory)   | In-memory storage (demos, tests)                 |
 | [`@chatpack/next`](./packages/next)                       | Next.js App Router integration                   |
 | [`@chatpack/client`](./packages/client)                   | Typed REST, SSE, React hooks, and client plugins |
+| [`@chatpack/cli`](./packages/cli)                         | Safe project setup CLI (`chatpack init`)         |
 
 ## Examples
 
