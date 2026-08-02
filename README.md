@@ -27,9 +27,9 @@ full REST reference. (Source in [`apps/docs`](./apps/docs); run locally with
 > under the `@chatpack/core/plugins` subpath** (see
 > [Real-time plugins](#real-time-plugins-typing-presence-read-ticks)) - are
 > published and installable now, along with the first-party
-> [`@chatpack/client`](./packages/client). The API is young - expect minor
-> breaking changes before `1.0`. Follow along or
-> [contribute](./CONTRIBUTING.md).
+> [`@chatpack/client`](./packages/client), which provides the matching typed
+> REST, SSE, and React client. The API is young - expect minor breaking
+> changes before `1.0`. Follow along or [contribute](./CONTRIBUTING.md).
 
 ## Why
 
@@ -112,7 +112,7 @@ export const chat = chatpack({
 >
 > **Prefer cookie-based sessions** over `Authorization` headers: the browser
 > sends cookies automatically on every request - including the SSE stream in
-> step 5, where custom headers are impossible.
+> step 6, where custom headers are impossible.
 >
 > The hook receives a raw Web-standard `Request` - there is no
 > `request.cookies` helper. Parse the `cookie` header yourself:
@@ -298,7 +298,74 @@ for domain errors:
 The full endpoint reference (all 9 routes, request/response shapes, error
 codes) lives in [`@chatpack/core`'s README](./packages/core#rest-api).
 
-### 5. Go live in the browser
+### 5. Use the first-party client (optional)
+
+The server setup above remains the same. Add the client when you want typed
+REST methods, one managed SSE connection, a small shared cache, and React
+hooks:
+
+```sh
+npm install @chatpack/client react
+```
+
+Create one shared client instance in its own module:
+
+```ts
+// lib/chat-client.ts
+import { createChatClient } from "@chatpack/client/react";
+import { typingClient, presenceClient, receiptsClient } from "@chatpack/client/plugins";
+
+export const chatClient = createChatClient({
+  // Omit baseURL when the client and handler share an origin.
+  baseURL: "http://localhost:3000",
+  credentials: "include",
+  plugins: [typingClient(), presenceClient(), receiptsClient()],
+});
+```
+
+Then read with hooks and write with actions - every action returns
+`{ data, error }` instead of throwing:
+
+```tsx
+// components/messages.tsx
+"use client";
+
+import { chatClient } from "../lib/chat-client";
+
+export function Messages({ conversationId }: { conversationId: string }) {
+  const result = chatClient.useMessages({ conversationId, limit: 50 });
+
+  async function send() {
+    const sent = await chatClient.messages.send({
+      conversationId,
+      body: "hey bob!",
+    });
+    if (sent.error) console.error(sent.error.message);
+  }
+
+  return (
+    <>
+      <ul>
+        {result.data?.messages.map((message) => (
+          <li key={message.id}>{message.body}</li>
+        ))}
+      </ul>
+      <button onClick={send}>Send</button>
+    </>
+  );
+}
+```
+
+The client uses the authenticated identity resolved by the server's `auth`
+hook. It does not implement login, sessions, or user lookup. Same-origin
+cookies work by default; use `credentials: "include"` for cross-origin cookie
+sessions. Native `EventSource` cannot send custom headers, so cookie auth is
+also required for browser realtime unless you provide a custom EventSource.
+
+See [`@chatpack/client`](./packages/client) for the framework-agnostic API,
+React hooks, and client plugin usage.
+
+### 6. Go live in the browser
 
 ```ts
 const events = new EventSource("/api/chat/stream");
@@ -340,7 +407,7 @@ Two things to know before going live:
   messages until a distributed transport ships. Details in
   [`@chatpack/core`'s README](./packages/core#real-time-sse).
 
-### 6. Or call it straight from server code
+### 7. Or call it straight from server code
 
 ```ts
 // find-or-create a 1:1 conversation between two users
@@ -366,7 +433,7 @@ const { messages } = await chat.api.listMessages({
 That's it. Only the two participants can read or write - enforced by default,
 customizable via the `permissions` hooks.
 
-### 7. Bonus: chat with an AI assistant
+### 8. Bonus: chat with an AI assistant
 
 To Chatpack, an AI assistant is **just another participant** - pick a
 synthetic user id (any string you'll never issue to a real user, e.g.
@@ -496,14 +563,14 @@ reasoning.
 
 ## Packages
 
-| Package                                                   | Description                                     |
-| --------------------------------------------------------- | ----------------------------------------------- |
-| [`@chatpack/core`](./packages/core)                       | The chat engine: domain logic, permissions, API |
-| [`@chatpack/adapter-drizzle`](./packages/adapter-drizzle) | Drizzle/Postgres storage (production)           |
-| [`@chatpack/adapter-memory`](./packages/adapter-memory)   | In-memory storage (demos, tests)                |
-| [`@chatpack/next`](./packages/next)                       | Next.js App Router integration                  |
-| [`@chatpack/client`](./packages/client)                   | Browser REST + SSE client, optional React hooks |
-| [`@chatpack/cli`](./packages/cli)                         | Safe project setup CLI (`chatpack init`)        |
+| Package                                                   | Description                                      |
+| --------------------------------------------------------- | ------------------------------------------------ |
+| [`@chatpack/core`](./packages/core)                       | The chat engine: domain logic, permissions, API  |
+| [`@chatpack/adapter-drizzle`](./packages/adapter-drizzle) | Drizzle/Postgres storage (production)            |
+| [`@chatpack/adapter-memory`](./packages/adapter-memory)   | In-memory storage (demos, tests)                 |
+| [`@chatpack/next`](./packages/next)                       | Next.js App Router integration                   |
+| [`@chatpack/client`](./packages/client)                   | Typed REST, SSE, React hooks, and client plugins |
+| [`@chatpack/cli`](./packages/cli)                         | Safe project setup CLI (`chatpack init`)         |
 
 ## Examples
 

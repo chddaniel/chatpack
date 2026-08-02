@@ -1,3 +1,5 @@
+/** REST request construction, response parsing, and error mapping. */
+
 import type { ChatpackFetch, ChatpackHeaders, ChatpackRequestContext } from "./config";
 import {
   createClientError,
@@ -7,6 +9,7 @@ import {
   success,
 } from "./errors";
 
+/** Client-specific request options layered over the Fetch API. */
 export interface ClientRequestInit {
   method?: string;
   query?: Record<string, string | number | undefined>;
@@ -15,6 +18,7 @@ export interface ClientRequestInit {
   signal?: AbortSignal;
 }
 
+/** Internal request interface shared with client plugins. */
 export interface ChatpackRequester {
   request<T>(path: string, init?: ClientRequestInit): Promise<ChatClientResult<T>>;
 }
@@ -23,12 +27,14 @@ function normalizedPath(path: string): string {
   return path.startsWith("/") ? path : "/" + path;
 }
 
+/** Normalize a Chatpack route prefix while preserving the empty-root option. */
 export function normalizeBasePath(basePath = "/api/chat"): string {
   const trimmed = basePath.trim();
   if (trimmed === "" || trimmed === "/") return "";
   return "/" + trimmed.replace(/^\/+|\/+$/g, "");
 }
 
+/** Build a request URL from an origin, route prefix, and resource path. */
 export function buildURL(baseURL: string | undefined, basePath: string, path = ""): string {
   const prefix = (baseURL?.replace(/\/+$/g, "") ?? "") + basePath;
   const result = prefix + normalizedPath(path);
@@ -80,6 +86,7 @@ async function parseBody(response: Response): Promise<{ value: unknown; valid: b
   }
 }
 
+/** Create the configured JSON requester used by the client and plugins. */
 export function createRequester(options: {
   baseURL?: string;
   basePath: string;
@@ -165,6 +172,7 @@ export function createRequester(options: {
   };
 }
 
+/** Unwrap a named success envelope such as `{ conversation }` or `{ message }`. */
 export function unwrapResult<T>(
   result: ChatClientResult<unknown>,
   key: string,

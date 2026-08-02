@@ -1,14 +1,17 @@
+/** EventSource-backed realtime transport and event contracts. */
 import type { ChatpackEventSource, EventSourceFactory } from "./config";
 import { createClientError, type ChatpackClientError } from "./errors";
 import { createStore, type ReadonlyStore, type Store } from "./store";
 import type { ClientMessage } from "./wire";
 
+/** Durable message event delivered by the Chatpack stream. */
 export interface DurableChatEvent {
   type: "message.created" | "message.updated" | "message.deleted";
   conversationId: string;
   message: ClientMessage;
 }
 
+/** Ephemeral plugin event delivered by the Chatpack stream. */
 export interface EphemeralChatEvent {
   type: string;
   ephemeral: true;
@@ -18,14 +21,18 @@ export interface EphemeralChatEvent {
   at: string;
 }
 
+/** Union of durable core events and ephemeral plugin events. */
 export type ChatpackEvent = DurableChatEvent | EphemeralChatEvent;
+/** Lifecycle states for the realtime stream. */
 export type ChatRealtimeStatus = "idle" | "connecting" | "open" | "closed";
 
+/** Observable realtime connection state. */
 export interface ChatRealtimeSnapshot {
   status: ChatRealtimeStatus;
   error: ChatpackClientError | null;
 }
 
+/** Controls one lazy EventSource connection owned by a client. */
 export interface ChatRealtime extends ReadonlyStore<ChatRealtimeSnapshot> {
   connect(): void;
   disconnect(): void;
@@ -104,6 +111,7 @@ function streamStatus(source: ChatpackEventSource): ChatRealtimeStatus {
   return "connecting";
 }
 
+/** Creates a realtime controller for a Chatpack stream URL. */
 export function createRealtime(options: {
   url: string;
   credentials: RequestCredentials;
