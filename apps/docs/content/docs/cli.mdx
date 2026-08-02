@@ -1,0 +1,76 @@
+---
+title: Chatpack CLI
+description: Safely initialize Chatpack in an existing project.
+icon: Terminal
+---
+
+## Start
+
+Run the interactive setup from your application directory:
+
+```sh
+npx @chatpack/cli init
+```
+
+The CLI detects the package manager, framework, source root, language, import
+aliases, existing Chatpack setup, database hints, and authentication hints.
+It shows a change plan before installing packages or writing files.
+
+## Automation
+
+Pass important decisions explicitly:
+
+```sh
+npx @chatpack/cli init \
+  --framework next \
+  --adapter memory \
+  --package-manager pnpm \
+  --yes
+```
+
+Drizzle setup needs a confirmed database module and export:
+
+```sh
+npx @chatpack/cli init \
+  --framework next \
+  --adapter drizzle \
+  --db-path src/lib/db.ts \
+  --db-export db \
+  --package-manager pnpm \
+  --yes
+```
+
+Use `--dry-run` to inspect the plan without changing the project.
+
+## Authentication
+
+Chatpack does not own authentication. Supply a resolver that accepts a
+Web-standard `Request` and returns a user with an `id`, or `null`:
+
+```sh
+npx @chatpack/cli init \
+  --auth-path src/lib/auth.ts \
+  --auth-export getSessionUser
+```
+
+Without a confirmed resolver, the CLI generates a visible placeholder that
+returns `null`. Replace it before using the API.
+
+## Storage and migrations
+
+Memory storage is useful for demos and tests. It loses data when the process
+exits and is not suitable for serverless production.
+
+Drizzle setup generates the Chatpack schema export. The CLI does not connect to
+the database or run migrations. Use the application's normal Drizzle flow.
+
+## Supported frameworks
+
+- Next.js App Router: generated catch-all route.
+- Hono: generated Web-standard handler and wildcard mount.
+- Express: generated streaming Node/Web bridge.
+- Other Web-standard servers: handler module plus manual mount instructions.
+
+Existing files are never silently overwritten. If an application entrypoint is
+ambiguous, the CLI generates a focused integration module and prints the exact
+mount snippet instead of editing the entrypoint.

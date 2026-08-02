@@ -36,3 +36,4 @@ test_project/
 .claude/
 /CLAUDE.md
 docs/STATUS.md
+.npmrc

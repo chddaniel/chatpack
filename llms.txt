@@ -18,6 +18,25 @@ Packages (all on npm):
 | `@chatpack/adapter-drizzle`| Postgres storage via Drizzle - production              |
 | `@chatpack/next`           | Next.js App Router mount helper (`toNextRouteHandlers`)|
 | `@chatpack/client`         | Framework-agnostic REST + SSE client (+ React hooks)   |
+| `@chatpack/cli`            | Safe project setup CLI (`chatpack init`)              |
+
+## Chatpack CLI
+
+Run `npx @chatpack/cli init` to inspect a project and generate a Chatpack
+server instance plus framework integration. The v1 CLI supports Next.js App
+Router, Hono, and Express. It asks before changing files, supports `--dry-run`,
+and never runs database migrations or guesses authentication provider APIs.
+
+Non-interactive setup must provide important decisions:
+
+```sh
+npx @chatpack/cli init --framework next --adapter memory --package-manager pnpm --yes
+```
+
+The generated server must keep one `chatpack()` instance, use an official
+adapter, and connect an application-owned auth resolver returning `{ id }` or
+`null`. A missing resolver is generated as a visible placeholder returning
+`null`, so it must be replaced before use.
 
 # Part 1 - Integrating Chatpack
 
