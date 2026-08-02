@@ -16,14 +16,15 @@ Errors are JSON with the shape:
 
 Statuses are mapped from the code:
 
-| Status | Code(s)                                                    | When                                             |
-| ------ | ---------------------------------------------------------- | ------------------------------------------------ |
-| 401    | `UNAUTHENTICATED`                                          | `auth` returned `null` (or a non-`ChatpackUser`) |
-| 400    | `INVALID_INPUT`                                            | bad body/query params                            |
-| 403    | `FORBIDDEN_READ`, `FORBIDDEN_WRITE`, `NOT_MESSAGE_SENDER`  | not allowed                                      |
-| 404    | `CONVERSATION_NOT_FOUND`, `MESSAGE_NOT_FOUND`, `NOT_FOUND` | missing resource/route                           |
-| 409    | `MESSAGE_DELETED`                                          | editing a deleted message                        |
-| 500    | `INTERNAL_ERROR`                                           | unexpected server error (opaque)                 |
+| Status | Code(s)                                                    | When                                                                           |
+| ------ | ---------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| 401    | `UNAUTHENTICATED`                                          | `auth` returned `null` (or a non-`ChatpackUser`)                               |
+| 400    | `INVALID_INPUT`                                            | bad body/query params                                                          |
+| 403    | `FORBIDDEN_READ`, `FORBIDDEN_WRITE`, `NOT_MESSAGE_SENDER`  | not allowed                                                                    |
+| 404    | `CONVERSATION_NOT_FOUND`, `MESSAGE_NOT_FOUND`, `NOT_FOUND` | missing resource/route                                                         |
+| 409    | `MESSAGE_DELETED`                                          | editing a deleted message                                                      |
+| 422    | `MESSAGE_REJECTED`                                         | a [`beforeMessageSend` hook](/docs/concepts/message-hooks) refused the message |
+| 500    | `INTERNAL_ERROR`                                           | unexpected server error (opaque)                                               |
 
 <Callout type="info">
   The `401` body's `message` says *why* auth failed - bad hook return shape vs. missing cookie vs.

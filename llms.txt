@@ -296,7 +296,8 @@ Semantics that trip up generated clients:
 - Errors: `{ "error": { "code", "message" } }` - 401 `UNAUTHENTICATED`
   (the message says *why*: bad hook return shape vs. missing cookie vs.
   unparsed cookie), 400 `INVALID_INPUT`, 403 `FORBIDDEN_*`, 404 `*_NOT_FOUND`,
-  409 `MESSAGE_DELETED`, 500 `INTERNAL_ERROR` (opaque).
+  409 `MESSAGE_DELETED`, 422 `MESSAGE_REJECTED` (a `beforeMessageSend` hook
+  refused the message), 500 `INTERNAL_ERROR` (opaque).
 - **Auth runs before routing** - an unauthenticated request to a wrong path
   still 401s. Fix auth first; then a lingering 404 `NOT_FOUND` means your
   mount path/basePath is wrong.
@@ -377,6 +378,35 @@ synthetic user id:
 
 Token streaming is your concern; Chatpack stores whole messages (send the
 final text, or edit a placeholder as chunks arrive).
+
+## Message hooks (content rules and side-effects)
+
+Optional `hooks` on `chatpack()` - both run for **sends and edits**
+(`ctx.action` is `"send" | "edit"`), after auth and permission checks:
+
+```ts
+chatpack({
+  storage, auth,
+  hooks: {
+    // BEFORE persistence - block (throw) or rewrite (return { body/metadata }):
+    beforeMessageSend: ({ body }) => {
+      if (body.length > 2000) throw new Error("Max 2000 characters."); // → 422 MESSAGE_REJECTED
+      return { body: censor(body) };  // persisted + broadcast rewritten
+    },                                // return nothing → unchanged
+    // AFTER persistence + broadcast - side-effects only (queue an AI reply,
+    // analytics). Cannot block or change the message; a throw is logged
+    // server-side, never fails the request.
+    afterMessageSend: async ({ message, conversation }) => { ... },
+  },
+})
+```
+
+- A rejected message is never stored and never broadcast; the sender gets
+  `422 MESSAGE_REJECTED` with the thrown error's message. Throw a
+  `ChatpackError` to use a different code.
+- `beforeMessageSend` returning `{ metadata }` applies on sends only.
+- Hooks are in-process functions, not webhooks - no retries or delivery
+  guarantees. Keep heavy work in your own queue.
 
 # Part 2 - Writing a custom storage adapter
 

@@ -34,6 +34,10 @@ export type {
   AuthHook,
   PermissionContext,
   PermissionHooks,
+  MessageHooks,
+  BeforeMessageSendContext,
+  BeforeMessageSendResult,
+  AfterMessageSendContext,
 } from "./config";
 
 // Domain types

@@ -20,7 +20,7 @@ enforces the same permissions.
 | `api.getOrCreateConversation` | Find or create the 1:1 conversation for a user pair                                                     |
 | `api.listConversations`       | List a user's conversations, most recent first                                                          |
 | `api.getConversation`         | Fetch one conversation (read-permission checked)                                                        |
-| `api.sendMessage`             | Send a text message (write-permission checked)                                                          |
+| `api.sendMessage`             | Send a text message (write-permission checked; [message hooks](/docs/concepts/message-hooks) apply)     |
 | `api.listMessages`            | Paginate history, newest-first                                                                          |
 | `api.editMessage`             | Edit your own message                                                                                   |
 | `api.deleteMessage`           | Soft-delete your own message                                                                            |

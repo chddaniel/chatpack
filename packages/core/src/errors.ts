@@ -22,6 +22,8 @@ export type ChatpackErrorCode =
   | "NOT_MESSAGE_SENDER"
   /** The message was soft-deleted and can no longer be edited. */
   | "MESSAGE_DELETED"
+  /** A `beforeMessageSend` hook rejected the message (`docs/decisions/0011`). */
+  | "MESSAGE_REJECTED"
   /** Invalid input (empty body, self-conversation, bad limit, ...). */
   | "INVALID_INPUT";
 

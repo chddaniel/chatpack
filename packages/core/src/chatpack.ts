@@ -5,7 +5,13 @@
  * @module
  */
 
-import type { ChatpackOptions, ChatpackUser, PermissionContext } from "./config";
+import type {
+  AfterMessageSendContext,
+  BeforeMessageSendContext,
+  ChatpackOptions,
+  ChatpackUser,
+  PermissionContext,
+} from "./config";
 import { ChatpackError } from "./errors";
 import { createHandler, type ChatpackHandler, type HandlerOptions } from "./handler";
 import { createPluginRuntime } from "./plugin";
@@ -310,6 +316,55 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
     });
   }
 
+  /**
+   * Run `beforeMessageSend` (`docs/decisions/0011`) and resolve the body and
+   * metadata to persist. A throwing hook aborts the write: `ChatpackError`s
+   * pass through untouched, anything else becomes `MESSAGE_REJECTED` so
+   * hooks can `throw new Error("Max 2000 characters.")` without importing
+   * Chatpack types.
+   */
+  async function runBeforeMessageSend(
+    ctx: BeforeMessageSendContext,
+  ): Promise<{ body: string; metadata: Metadata }> {
+    const hook = options.hooks?.beforeMessageSend;
+    if (!hook) return { body: ctx.body, metadata: ctx.metadata };
+
+    let result;
+    try {
+      result = await hook(ctx);
+    } catch (err) {
+      if (err instanceof ChatpackError) throw err;
+      throw new ChatpackError(
+        "MESSAGE_REJECTED",
+        err instanceof Error && err.message ? err.message : "Message rejected.",
+      );
+    }
+
+    const body = result?.body ?? ctx.body;
+    if (typeof body !== "string" || body.trim() === "") {
+      throw new ChatpackError(
+        "INVALID_INPUT",
+        "beforeMessageSend returned an empty body - throw to reject a message instead.",
+      );
+    }
+    return { body, metadata: result?.metadata ?? ctx.metadata };
+  }
+
+  /**
+   * Run `afterMessageSend` once the message is persisted and broadcast.
+   * Awaited so callers know the hook ran, but never allowed to fail the
+   * request - the message already durably exists (MVP §9).
+   */
+  async function runAfterMessageSend(ctx: AfterMessageSendContext): Promise<void> {
+    const hook = options.hooks?.afterMessageSend;
+    if (!hook) return;
+    try {
+      await hook(ctx);
+    } catch (err) {
+      console.error("chatpack: afterMessageSend hook failed", err);
+    }
+  }
+
   // Assigned right below `api` - the two reference each other, but plugin
   // hooks only run inside api calls, which can't happen before chatpack()
   // returns.
@@ -362,17 +417,35 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
       const conversation = await requireConversation(input.conversationId);
       await requireWrite(input.userId, conversation);
 
+      const hookConversation = {
+        ...conversation,
+        participantIds: conversation.participants.map((p) => p.userId),
+      };
+      const accepted = await runBeforeMessageSend({
+        user: { id: input.userId },
+        conversation: hookConversation,
+        body: input.body,
+        metadata: input.metadata ?? {},
+        role: input.role ?? "user",
+        action: "send",
+      });
+
       const message = await storage.addMessage({
         conversationId: conversation.id,
         senderId: input.userId,
-        body: input.body,
+        body: accepted.body,
         role: input.role ?? "user",
-        metadata: input.metadata ?? {},
+        metadata: accepted.metadata,
       });
 
       telemetry.increment("messagesSent");
       // Durable-first (MVP §9): the message exists before anyone is told.
       publish("message.created", conversation, message);
+      await runAfterMessageSend({
+        message,
+        conversation: hookConversation,
+        action: "send",
+      });
       return message;
     },
 
@@ -409,12 +482,32 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
       const conversation = await requireConversation(existing.conversationId);
       await requireWrite(input.userId, conversation);
 
+      // Content rules apply to edits too - otherwise a blocked word could be
+      // sent clean and edited in afterwards (docs/decisions/0011).
+      const hookConversation = {
+        ...conversation,
+        participantIds: conversation.participants.map((p) => p.userId),
+      };
+      const accepted = await runBeforeMessageSend({
+        user: { id: input.userId },
+        conversation: hookConversation,
+        body: input.body,
+        metadata: existing.metadata,
+        role: existing.role,
+        action: "edit",
+      });
+
       const updated = await storage.updateMessage({
         messageId: existing.id,
-        body: input.body,
+        body: accepted.body,
         editedAt: new Date(),
       });
       publish("message.updated", conversation, updated);
+      await runAfterMessageSend({
+        message: updated,
+        conversation: hookConversation,
+        action: "edit",
+      });
       return updated;
     },
 

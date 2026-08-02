@@ -4,7 +4,7 @@
  * @module
  */
 
-import type { Conversation } from "./types";
+import type { Conversation, Message, MessageRole, Metadata } from "./types";
 import type { ChatpackPlugin } from "./plugin";
 import type { StorageAdapter } from "./storage";
 import type { Transport } from "./transport";
@@ -55,6 +55,86 @@ export interface PermissionHooks {
   canWrite?: (ctx: PermissionContext) => Promise<boolean> | boolean;
 }
 
+/**
+ * Context passed to {@link MessageHooks.beforeMessageSend}. `body` is the
+ * text as the sender submitted it (after Chatpack's own non-empty check).
+ */
+export interface BeforeMessageSendContext {
+  /** The sender (id always present). */
+  user: ChatpackUser;
+  /** The conversation being written to. */
+  conversation: Conversation & {
+    /** Convenience: the two participant user ids. */
+    participantIds: string[];
+  };
+  /** The submitted message text. */
+  body: string;
+  /** The submitted metadata (`{}` when omitted). */
+  metadata: Metadata;
+  /** `"user"` unless the caller passed the AI escape hatch role. */
+  role: MessageRole;
+  /**
+   * `"send"` for new messages, `"edit"` when an existing message's body is
+   * being rewritten - the same rules usually apply to both.
+   */
+  action: "send" | "edit";
+}
+
+/**
+ * What {@link MessageHooks.beforeMessageSend} may return to rewrite the
+ * message before it is persisted. Return `undefined`/`void` to accept the
+ * message unchanged.
+ */
+export interface BeforeMessageSendResult {
+  /** Replacement text (e.g. after profanity filtering). Must be non-empty. */
+  body?: string;
+  /** Replacement metadata. Ignored for edits (edits only change the body). */
+  metadata?: Metadata;
+}
+
+/** Context passed to {@link MessageHooks.afterMessageSend}. */
+export interface AfterMessageSendContext {
+  /** The message exactly as persisted (post-rewrite, with id and seq). */
+  message: Message;
+  /** The conversation it landed in. */
+  conversation: Conversation & {
+    /** Convenience: the two participant user ids. */
+    participantIds: string[];
+  };
+  /** `"send"` for new messages, `"edit"` for body rewrites. */
+  action: "send" | "edit";
+}
+
+/**
+ * Message lifecycle hooks (`docs/decisions/0011`). Both run for `sendMessage`
+ * **and** `editMessage` (so content rules can't be dodged by editing);
+ * `ctx.action` tells them apart.
+ */
+export interface MessageHooks {
+  /**
+   * Runs after auth and permission checks pass, **before the message is
+   * persisted**. Three outcomes:
+   *
+   * - return nothing - accept the message unchanged
+   * - return `{ body }` / `{ metadata }` - persist the rewritten version
+   * - throw (a `ChatpackError` with code `MESSAGE_REJECTED`, or anything
+   *   else) - nothing is stored, nothing is broadcast, and the sender gets
+   *   a 422 with the thrown message
+   */
+  beforeMessageSend?: (
+    ctx: BeforeMessageSendContext,
+  ) => Promise<BeforeMessageSendResult | void> | BeforeMessageSendResult | void;
+  /**
+   * Runs **after the message is persisted and broadcast** (durable-first,
+   * MVP §9) - a notification, not a gate: it cannot block or change the
+   * message. Use it for side-effects: queue an AI reply, analytics, ...
+   * The API call awaits it (so `sendMessage` resolving means the hook ran),
+   * but a throwing hook is logged server-side and never fails the request -
+   * the message already exists. Keep heavy work in a queue.
+   */
+  afterMessageSend?: (ctx: AfterMessageSendContext) => Promise<void> | void;
+}
+
 /** Options accepted by the `chatpack()` factory. */
 export interface ChatpackOptions {
   /** Durable storage - e.g. `memoryAdapter()` or (from M4) `drizzleAdapter(db)`. */
@@ -66,6 +146,11 @@ export interface ChatpackOptions {
   auth?: AuthHook;
   /** Permission overrides. Default: only the two participants can read/write. */
   permissions?: PermissionHooks;
+  /**
+   * Message lifecycle hooks (`docs/decisions/0011`): block or rewrite
+   * messages before they persist, react after they do. Default: none.
+   */
+  hooks?: MessageHooks;
   /**
    * Live event fan-out (MVP §6). Default: a single-node in-process transport,
    * which is correct for one server process. A Redis/pub-sub transport can be

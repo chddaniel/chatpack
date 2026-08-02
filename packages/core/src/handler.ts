@@ -76,6 +76,7 @@ const STATUS_BY_CODE: Record<ChatpackErrorCode, number> = {
   CONVERSATION_NOT_FOUND: 404,
   MESSAGE_NOT_FOUND: 404,
   MESSAGE_DELETED: 409,
+  MESSAGE_REJECTED: 422,
 };
 
 function json(status: number, payload: unknown): Response {

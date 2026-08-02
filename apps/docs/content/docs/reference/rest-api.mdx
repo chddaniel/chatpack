@@ -155,6 +155,7 @@ JSON with a stable machine-readable code and a mapped HTTP status:
 | 403    | `FORBIDDEN_READ`, `FORBIDDEN_WRITE`, `NOT_MESSAGE_SENDER`  | not allowed                                      |
 | 404    | `CONVERSATION_NOT_FOUND`, `MESSAGE_NOT_FOUND`, `NOT_FOUND` | missing resource/route                           |
 | 409    | `MESSAGE_DELETED`                                          | editing a deleted message                        |
+| 422    | `MESSAGE_REJECTED`                                         | a `beforeMessageSend` hook refused the message   |
 | 500    | `INTERNAL_ERROR`                                           | unexpected server error (opaque)                 |
 
 More on branching by code in [Error handling](/docs/concepts/errors).

@@ -88,6 +88,7 @@ const chat = chatpack({
   storage: memoryAdapter(), // required - the only required option
   auth: async (req) => resolveUser(req), // required for HTTP; api.* takes explicit ids
   permissions: { canRead, canWrite }, // default: participants only
+  hooks: { beforeMessageSend, afterMessageSend }, // default: none
   plugins: [typing(), presence(), receipts()], // default: none
   transport: inProcessTransport(), // default: in-process, single node
   telemetry: true, // default: true (opt-out)
@@ -110,6 +111,11 @@ const chat = chatpack({
     permissions: {
       description: "canRead / canWrite overrides. Default: only the two participants.",
       type: "PermissionHooks",
+    },
+    hooks: {
+      description:
+        "Message lifecycle hooks: beforeMessageSend (block/rewrite) and afterMessageSend (side-effects).",
+      type: "MessageHooks",
     },
     transport: {
       description: "Live event fan-out. Default: single-node in-process transport.",
@@ -143,3 +149,6 @@ Non-obvious decisions are recorded as short ADRs in
 | 0006 | SSE `Last-Event-ID` gap-fill from storage                 |
 | 0007 | Postgres adapter: atomic `seq` via `UPDATE … RETURNING`   |
 | 0008 | Ephemeral events + plugins live in core                   |
+| 0009 | Unread counts computed from read-state at query time      |
+| 0010 | First-party client package (`@chatpack/client`)           |
+| 0011 | Message hooks: in-process before/after, not webhooks      |

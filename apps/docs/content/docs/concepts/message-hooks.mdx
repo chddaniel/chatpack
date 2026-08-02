@@ -1,0 +1,78 @@
+---
+title: Message hooks
+description: Block or rewrite messages before they persist, react after they do.
+---
+
+Permissions answer "may this user write here?" - they never see message
+_content_. Message hooks are where content rules live: length caps, profanity
+filters, spam checks, and post-send side-effects like triggering an AI reply.
+
+Both hooks are optional, run **after** auth and permission checks, and fire
+for **sends and edits** (so a filter can't be dodged by editing a message
+afterwards) - `ctx.action` is `"send"` or `"edit"`.
+
+```ts
+import { chatpack } from "@chatpack/core";
+
+const chat = chatpack({
+  storage,
+  auth,
+  hooks: {
+    // Runs BEFORE the message is persisted.
+    beforeMessageSend: ({ user, conversation, body, action }) => {
+      if (body.length > 2000) {
+        throw new Error("Max 2000 characters."); // → 422 MESSAGE_REJECTED
+      }
+      return { body: censorProfanity(body) }; // persist the rewrite
+      // ...or return nothing to accept the message unchanged.
+    },
+
+    // Runs AFTER the message is persisted and broadcast.
+    afterMessageSend: async ({ message, conversation, action }) => {
+      if (conversation.participantIds.includes("ai:assistant")) {
+        await queueAssistantReply(message);
+      }
+    },
+  },
+});
+```
+
+## `beforeMessageSend` - the gate
+
+Receives the sender, the conversation (with `participantIds`), the submitted
+`body`, `metadata`, `role`, and `action`. Three outcomes:
+
+| You...                             | Chatpack does...                                                           |
+| ---------------------------------- | -------------------------------------------------------------------------- |
+| return nothing                     | persists the message unchanged                                             |
+| return `{ body }` / `{ metadata }` | persists (and broadcasts) the rewritten version                            |
+| throw                              | stores nothing, broadcasts nothing; the sender gets `422 MESSAGE_REJECTED` |
+
+A plain `throw new Error("reason")` becomes `MESSAGE_REJECTED` with your
+message in the response body - no Chatpack imports needed. Throw a
+[`ChatpackError`](/docs/concepts/errors) to pick a different code instead.
+
+Two guard rails:
+
+- Rewriting to an **empty body** is an `INVALID_INPUT` error, not a silent
+  drop - rejecting must be explicit.
+- On **edits**, only a returned `body` applies; `metadata` rewrites are
+  ignored (edits never change metadata).
+
+## `afterMessageSend` - the notification
+
+Receives the message **exactly as persisted** (rewritten body, assigned `id`
+and `seq`) plus the conversation and `action`. It runs after the storage
+write _and_ the live broadcast - durable-first - so it **cannot block or
+change** the message. It also cannot fail the request: if it throws, the
+error is logged server-side and the sender still gets their success response,
+because the message already durably exists.
+
+Use it for side-effects: queue the [AI assistant reply](/docs/ai/ai-assistant),
+notify your analytics, kick off moderation review.
+
+<Callout type="warn">
+  Hooks are **in-process functions, not webhooks** - there are no retries or delivery guarantees,
+  and both hooks add latency to every send. Keep them fast; put heavy or must-not-be-lost work into
+  your own job queue and return. (Scope rationale: ADR 0011.)
+</Callout>

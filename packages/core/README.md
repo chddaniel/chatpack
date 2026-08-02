@@ -266,7 +266,42 @@ code:
 | 403    | `FORBIDDEN_READ`, `FORBIDDEN_WRITE`, `NOT_MESSAGE_SENDER`  | not allowed                                      |
 | 404    | `CONVERSATION_NOT_FOUND`, `MESSAGE_NOT_FOUND`, `NOT_FOUND` | missing resource/route                           |
 | 409    | `MESSAGE_DELETED`                                          | editing a deleted message                        |
+| 422    | `MESSAGE_REJECTED`                                         | a `beforeMessageSend` hook refused the message   |
 | 500    | `INTERNAL_ERROR`                                           | unexpected server error (opaque)                 |
+
+## Message hooks
+
+Content rules and side-effects, via the optional `hooks` option - both run
+for **sends and edits** (`ctx.action` tells them apart), after auth and
+permission checks:
+
+```ts
+const chat = chatpack({
+  storage,
+  auth,
+  hooks: {
+    // BEFORE persistence: throw to reject (422 MESSAGE_REJECTED), return
+    // { body }/{ metadata } to rewrite, or return nothing to accept.
+    beforeMessageSend: ({ body }) => {
+      if (body.length > 2000) throw new Error("Max 2000 characters.");
+      return { body: censorProfanity(body) };
+    },
+    // AFTER persistence + broadcast: side-effects only (queue an AI reply,
+    // analytics). Cannot block or change the message; a throw is logged
+    // server-side and never fails the request.
+    afterMessageSend: async ({ message, conversation }) => {
+      if (conversation.participantIds.includes("ai:assistant")) {
+        await queueAssistantReply(message);
+      }
+    },
+  },
+});
+```
+
+A rejected message is never stored and never broadcast. Rewriting to an
+empty body is `INVALID_INPUT` (rejecting must be explicit). Hooks are
+in-process functions, not webhooks - no retries, no delivery guarantees;
+keep heavy work in your own queue (design: `docs/decisions/0011`).
 
 ## Real-time (SSE)
 

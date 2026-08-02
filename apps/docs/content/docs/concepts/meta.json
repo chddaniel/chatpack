@@ -6,6 +6,7 @@
     "architecture",
     "authentication",
     "permissions",
+    "message-hooks",
     "conversations-messages",
     "server-api",
     "errors",

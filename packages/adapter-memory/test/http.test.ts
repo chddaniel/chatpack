@@ -369,4 +369,48 @@ describe("remaining routes", () => {
     );
     expect(res.status).toBe(200);
   });
+
+  it("a beforeMessageSend rejection maps to 422 MESSAGE_REJECTED", async () => {
+    const chat = chatpack({
+      storage: memoryAdapter(),
+      telemetry: false,
+      auth: (request) => {
+        const userId = request.headers.get("x-user-id");
+        return userId ? { id: userId } : null;
+      },
+      hooks: {
+        beforeMessageSend: ({ body }) => {
+          if (body.length > 5) throw new Error("Max 5 characters.");
+        },
+      },
+    });
+    const handler = chat.handler();
+
+    const createRes = await send(handler, "POST", "/conversations", "alice", {
+      otherUserId: "bob",
+    });
+    const { conversation } = (await createRes.json()) as { conversation: { id: string } };
+
+    const rejected = await send(
+      handler,
+      "POST",
+      `/conversations/${conversation.id}/messages`,
+      "alice",
+      { body: "way too long" },
+    );
+    expect(rejected.status).toBe(422);
+    expect(await rejected.json()).toEqual({
+      error: { code: "MESSAGE_REJECTED", message: "Max 5 characters." },
+    });
+
+    // A short message still goes through the same handler untouched.
+    const accepted = await send(
+      handler,
+      "POST",
+      `/conversations/${conversation.id}/messages`,
+      "alice",
+      { body: "hi" },
+    );
+    expect(accepted.status).toBe(201);
+  });
 });

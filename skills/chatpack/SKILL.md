@@ -105,6 +105,13 @@ Optional `permissions: { canRead, canWrite }` hooks receive
 `{ user, conversation }` (with `conversation.participantIds`); default is
 participants-only, which is usually right.
 
+Optional `hooks: { beforeMessageSend, afterMessageSend }` for content rules
+and side-effects - both run on sends AND edits. `beforeMessageSend` can
+throw to reject (sender gets 422 `MESSAGE_REJECTED`) or return
+`{ body }`/`{ metadata }` to rewrite before persisting; `afterMessageSend`
+runs post-persistence (queue AI replies here - it can't block or fail the
+request). In-process functions, not webhooks.
+
 ## Step 3 - Mount the catch-all route (pick your framework)
 
 **Next.js App Router** - the file MUST be a catch-all:

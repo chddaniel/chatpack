@@ -431,7 +431,11 @@ const { messages } = await chat.api.listMessages({
 ```
 
 That's it. Only the two participants can read or write - enforced by default,
-customizable via the `permissions` hooks.
+customizable via the `permissions` hooks. Need content rules (length caps,
+profanity filters) or post-send side-effects? Add
+`hooks: { beforeMessageSend, afterMessageSend }` - block or rewrite a message
+before it persists, react after it does (see [`@chatpack/core`'s
+README](./packages/core#message-hooks)).
 
 ### 8. Bonus: chat with an AI assistant
 
