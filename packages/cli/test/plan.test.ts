@@ -124,6 +124,20 @@ describe("project planning", () => {
     expect(entrypoint?.conflict).toBeUndefined();
   });
 
+  it("warns when the Express bridge must precede body parsers", async () => {
+    const root = await project(
+      { dependencies: { express: "latest" } },
+      {
+        "src/index.ts":
+          'import express from "express";\nconst app = express();\nexport default app;\n',
+      },
+    );
+    const plan = await makePlan(inspectProject(root), baseArgs(root, "express"));
+    expect(plan.warnings).toContain(
+      "Mount the Express bridge before body parsers and catch-all middleware so it can read the raw request body.",
+    );
+  });
+
   it("reports an existing generated file as a conflict", async () => {
     const root = await project(
       { dependencies: { next: "latest" } },

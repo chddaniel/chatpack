@@ -27,13 +27,17 @@ import type {
   SetupPlan,
 } from "./types";
 
-function importPath(from: string, target: string): string {
+function importPath(from: string, target: string, useRuntimeExtension = true): string {
   const normalized = relative(dirname(from), target).replaceAll("\\", "/");
   const hasRuntimeExtension = /\.(?:c?js|mjs|jsx)$/.test(normalized);
   const extensionless = hasRuntimeExtension
     ? normalized
     : normalized.replace(/\.[cm]?[jt]sx?$/, "");
-  const value = hasRuntimeExtension ? normalized : `${extensionless}.js`;
+  const value = hasRuntimeExtension
+    ? normalized
+    : useRuntimeExtension
+      ? `${extensionless}.js`
+      : extensionless;
   return value.startsWith(".") ? value : `./${value}`;
 }
 
@@ -112,11 +116,12 @@ async function chooseAuth(
   inspection: ProjectInspection,
   args: CliArgs,
   serverFile: string,
+  useRuntimeExtension: boolean,
 ): Promise<SetupAnswers["auth"]> {
   if (args.authPath && args.authExport) {
     const target = requireModulePath(inspection.packageRoot, args.authPath, "Auth");
     return {
-      path: importPath(serverFile, target),
+      path: importPath(serverFile, target, useRuntimeExtension),
       exportName: args.authExport,
       idProperty: requireAuthProperty(args.authIdProperty ?? "id"),
     };
@@ -136,7 +141,7 @@ async function chooseAuth(
     const idProperty = requireAuthProperty(await prompt("User id property", "id"));
     const target = requireModulePath(inspection.packageRoot, path, "Auth");
     return {
-      path: importPath(serverFile, target),
+      path: importPath(serverFile, target, useRuntimeExtension),
       exportName,
       idProperty,
     };
@@ -149,12 +154,13 @@ async function chooseDatabase(
   args: CliArgs,
   serverFile: string,
   adapter: Adapter,
+  useRuntimeExtension: boolean,
 ): Promise<SetupAnswers["database"]> {
   if (adapter === "memory") return undefined;
   if (args.dbPath && args.dbExport) {
     const target = requireModulePath(inspection.packageRoot, args.dbPath, "Database");
     return {
-      path: importPath(serverFile, target),
+      path: importPath(serverFile, target, useRuntimeExtension),
       exportName: args.dbExport,
     };
   }
@@ -168,7 +174,7 @@ async function chooseDatabase(
   const exportName = await prompt("Drizzle database export", candidate?.exportName ?? "db");
   const target = requireModulePath(inspection.packageRoot, path, "Database");
   return {
-    path: importPath(serverFile, target),
+    path: importPath(serverFile, target, useRuntimeExtension),
     exportName,
   };
 }
@@ -204,7 +210,7 @@ function planFrameworkActions(
         actions.push(
           actionForFile(
             route,
-            renderNextRoute(route, configPath, language),
+            renderNextRoute(route, configPath),
             "Create the Next.js catch-all Chatpack route.",
           ),
         );
@@ -262,8 +268,12 @@ function planFrameworkActions(
         );
       const entrypoint =
         inspection.serverEntrypoints.length === 1 ? inspection.serverEntrypoints[0] : undefined;
-      if (entrypoint) actions.push(mountAction(entrypoint, integration, "express"));
-      else
+      if (entrypoint) {
+        actions.push(mountAction(entrypoint, integration, "express"));
+        warnings.push(
+          "Mount the Express bridge before body parsers and catch-all middleware so it can read the raw request body.",
+        );
+      } else
         warnings.push(
           "Mount chatpackExpress on /api/chat in your Express entrypoint; no unique entrypoint was detected.",
         );
@@ -287,8 +297,15 @@ export async function makePlan(inspection: ProjectInspection, args: CliArgs): Pr
   const manager = await chooseManager(inspection, args);
   const language = inspection.language;
   const provisionalServerFile = serverPath(inspection.sourceRoot, language);
-  const auth = await chooseAuth(inspection, args, provisionalServerFile);
-  const database = await chooseDatabase(inspection, args, provisionalServerFile, adapter);
+  const useRuntimeExtension = framework !== "next";
+  const auth = await chooseAuth(inspection, args, provisionalServerFile, useRuntimeExtension);
+  const database = await chooseDatabase(
+    inspection,
+    args,
+    provisionalServerFile,
+    adapter,
+    useRuntimeExtension,
+  );
   const client = await chooseClient(args);
   const answers: SetupAnswers = {
     framework,
@@ -359,7 +376,7 @@ export async function makePlan(inspection: ProjectInspection, args: CliArgs): Pr
   if (client) {
     const path = clientPath(inspection.sourceRoot, language);
     actions.push(
-      actionForFile(path, renderClient(language), "Create the optional Chatpack client setup."),
+      actionForFile(path, renderClient(framework), "Create the optional Chatpack client setup."),
     );
   }
   return { inspection, answers, actions, warnings, errors };

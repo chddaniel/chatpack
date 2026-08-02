@@ -6,13 +6,17 @@ function ext(language: Language): string {
   return language === "typescript" ? ".ts" : ".js";
 }
 
-function importPath(from: string, target: string): string {
+function importPath(from: string, target: string, useRuntimeExtension = true): string {
   const normalized = relative(dirname(from), target).replaceAll("\\", "/");
   const hasRuntimeExtension = /\.(?:c?js|mjs|jsx)$/.test(normalized);
   const extensionless = hasRuntimeExtension
     ? normalized
     : normalized.replace(/\.[cm]?[jt]sx?$/, "");
-  const value = hasRuntimeExtension ? normalized : `${extensionless}.js`;
+  const value = hasRuntimeExtension
+    ? normalized
+    : useRuntimeExtension
+      ? `${extensionless}.js`
+      : extensionless;
   return value.startsWith(".") ? value : `./${value}`;
 }
 
@@ -84,12 +88,9 @@ export function nextRoutePath(sourceRoot: string, language: Language): string {
   return resolve(sourceRoot, "app", "api", "chat", "[...chatpack]", `route${ext(language)}`);
 }
 
-export function renderNextRoute(routePath: string, serverFile: string, language: Language): string {
-  const path = importPath(routePath, serverFile);
-  const helper =
-    language === "typescript"
-      ? 'import { toNextRouteHandlers } from "@chatpack/next";'
-      : 'import { toNextRouteHandlers } from "@chatpack/next";';
+export function renderNextRoute(routePath: string, serverFile: string): string {
+  const path = importPath(routePath, serverFile, false);
+  const helper = 'import { toNextRouteHandlers } from "@chatpack/next";';
   return `${helper}
 import { chat } from "${path}";
 
@@ -165,8 +166,8 @@ export function clientPath(sourceRoot: string, language: Language): string {
   return resolve(sourceRoot, "lib", `chatpack.client${ext(language)}`);
 }
 
-export function renderClient(language: Language): string {
-  const directive = language === "typescript" ? '"use client";\n\n' : '"use client";\n\n';
+export function renderClient(framework: "next" | "hono" | "express" | "web"): string {
+  const directive = framework === "next" ? '"use client";\n\n' : "";
   return `${directive}import { createChatClient } from "@chatpack/client";
 
 export const chatClient = createChatClient({

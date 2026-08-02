@@ -14,14 +14,14 @@ export function validatePlan(plan: SetupPlan): string[] {
     }
     if (!action.path || action.content === undefined) continue;
     try {
-      const source = parseSource(action.path, action.content);
+      parseSource(action.path, action.content);
       const diagnostics =
         ts.transpileModule(action.content, {
           fileName: action.path,
           compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext },
           reportDiagnostics: true,
         }).diagnostics ?? [];
-      if (!source || diagnostics.length > 0)
+      if (diagnostics.length > 0)
         errors.push(`${action.path}: generated source contains syntax errors.`);
     } catch (error) {
       errors.push(`${action.path}: generated source could not be parsed (${String(error)}).`);

@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   renderExpressIntegration,
   renderHonoIntegration,
+  renderClient,
   renderNextRoute,
   renderServer,
 } from "../src/generate";
@@ -22,12 +23,11 @@ describe("generated setup", () => {
     const route = renderNextRoute(
       "/tmp/src/app/api/chat/[...chatpack]/route.ts",
       "/tmp/src/lib/chatpack.server.ts",
-      "typescript",
     );
     expect(server).toContain("globalThis");
     expect(server).toContain("memoryAdapter()");
     expect(route).toContain("GET, POST, PATCH, DELETE");
-    expect(route).toContain('from "../../../../lib/chatpack.server.js"');
+    expect(route).toContain('from "../../../../lib/chatpack.server"');
     expect(route).not.toContain("chatpack.server.ts");
     expect(() => parseSource("chatpack.server.ts", server)).not.toThrow();
     expect(() => parseSource("route.ts", route)).not.toThrow();
@@ -53,6 +53,11 @@ describe("generated setup", () => {
     const express = renderExpressIntegration("/tmp/src/lib/chatpack.server.js", "javascript");
     expect(hono).toContain('from "./chatpack.server.js"');
     expect(express).toContain('from "./chatpack.server.js"');
+  });
+
+  it("only marks Next.js client modules for the client runtime", () => {
+    expect(renderClient("next")).toContain('"use client";');
+    expect(renderClient("hono")).not.toContain('"use client";');
   });
 
   it("does not emit TypeScript auth syntax in JavaScript", () => {
