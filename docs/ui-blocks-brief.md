@@ -33,7 +33,7 @@ Blocks to build, in priority order:
   auth cookies, SSE, and deduplication.
 - **Chatpack has NO users table.** User ids are opaque strings (`"alice"`,
   `"user_abc123"`). Blocks must take a `renderUser?: (userId: string) =>
-  ReactNode` prop (or similar) for names/avatars - never assume a user
+ReactNode` prop (or similar) for names/avatars - never assume a user
   object with `name`/`avatar` exists.
 - **1:1 conversations only.** Exactly two participants, always. No group
   chat UI, no member lists.
@@ -71,15 +71,15 @@ export const chatClient = createChatClient({
 
 Hooks (on the client instance created via `@chatpack/client/react`):
 
-| Hook                                             | Returns                                                        |
-| ------------------------------------------------ | -------------------------------------------------------------- |
-| `chatClient.useConversations()`                  | `{ data: { conversations, nextCursor }, error, isPending, isRefetching, refetch }` |
-| `chatClient.useConversation({ conversationId })` | same shape, single conversation                                |
-| `chatClient.useMessages({ conversationId, limit? })` | same shape + `loadMore()` for older pages                  |
-| `chatClient.useRealtimeStatus()`                 | `{ status: "idle"\|"connecting"\|"open"\|"closed", error }`    |
-| `chatClient.useTyping({ conversationId })`       | `{ senderId, at } \| null`                                     |
-| `chatClient.usePresence({ userIds? })`           | `Record<userId, { online, lastSeenAt }>`                       |
-| `chatClient.useReceipts({ conversationId })`     | `{ deliveredSeq?, readMessageId? } \| null`                    |
+| Hook                                                 | Returns                                                                            |
+| ---------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| `chatClient.useConversations()`                      | `{ data: { conversations, nextCursor }, error, isPending, isRefetching, refetch }` |
+| `chatClient.useConversation({ conversationId })`     | same shape, single conversation                                                    |
+| `chatClient.useMessages({ conversationId, limit? })` | same shape + `loadMore()` for older pages                                          |
+| `chatClient.useRealtimeStatus()`                     | `{ status: "idle"\|"connecting"\|"open"\|"closed", error }`                        |
+| `chatClient.useTyping({ conversationId })`           | `{ senderId, at } \| null`                                                         |
+| `chatClient.usePresence({ userIds? })`               | `Record<userId, { online, lastSeenAt }>`                                           |
+| `chatClient.useReceipts({ conversationId })`         | `{ deliveredSeq?, readMessageId? } \| null`                                        |
 
 Actions (all return `{ data, error }` - they never throw for API failures;
 always branch on `result.error`):
@@ -131,9 +131,13 @@ Data shapes (nothing else exists on these objects):
    conversation. Workaround inside the conversation-list block: subscribe
    and refetch -
    ```ts
-   useEffect(() => chatClient.realtime.subscribe((e) => {
-     if (e.type === "message.created") void conversations.refetch();
-   }), []);
+   useEffect(
+     () =>
+       chatClient.realtime.subscribe((e) => {
+         if (e.type === "message.created") void conversations.refetch();
+       }),
+     [],
+   );
    ```
    (`subscribe` returns its own unsubscribe function - returning it from
    `useEffect` handles cleanup.)
