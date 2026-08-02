@@ -112,7 +112,7 @@ export const chat = chatpack({
 >
 > **Prefer cookie-based sessions** over `Authorization` headers: the browser
 > sends cookies automatically on every request - including the SSE stream in
-> step 5, where custom headers are impossible.
+> step 6, where custom headers are impossible.
 >
 > The hook receives a raw Web-standard `Request` - there is no
 > `request.cookies` helper. Parse the `cookie` header yourself:
@@ -308,9 +308,10 @@ hooks:
 npm install @chatpack/client react
 ```
 
-```tsx
-"use client";
+Create one shared client instance in its own module:
 
+```ts
+// lib/chat-client.ts
 import { createChatClient } from "@chatpack/client/react";
 import { typingClient, presenceClient, receiptsClient } from "@chatpack/client/plugins";
 
@@ -320,23 +321,37 @@ export const chatClient = createChatClient({
   credentials: "include",
   plugins: [typingClient(), presenceClient(), receiptsClient()],
 });
+```
 
-const conversation = await chatClient.conversations.create({ otherUserId: "bob" });
-if (conversation.error === null) {
-  await chatClient.messages.send({
-    conversationId: conversation.data.id,
-    body: "hey bob!",
-  });
-}
+Then read with hooks and write with actions - every action returns
+`{ data, error }` instead of throwing:
+
+```tsx
+// components/messages.tsx
+"use client";
+
+import { chatClient } from "../lib/chat-client";
 
 export function Messages({ conversationId }: { conversationId: string }) {
   const result = chatClient.useMessages({ conversationId, limit: 50 });
+
+  async function send() {
+    const sent = await chatClient.messages.send({
+      conversationId,
+      body: "hey bob!",
+    });
+    if (sent.error) console.error(sent.error.message);
+  }
+
   return (
-    <ul>
-      {result.data?.messages.map((message) => (
-        <li key={message.id}>{message.body}</li>
-      ))}
-    </ul>
+    <>
+      <ul>
+        {result.data?.messages.map((message) => (
+          <li key={message.id}>{message.body}</li>
+        ))}
+      </ul>
+      <button onClick={send}>Send</button>
+    </>
   );
 }
 ```
