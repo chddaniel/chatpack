@@ -1,16 +1,20 @@
+/** First-party client plugin for delivered and read receipt events. */
 import type { ChatClientPlugin } from "../plugin";
 
+/** Receipt state for one conversation. */
 export interface ReceiptState {
   deliveredSeq?: number;
   readMessageId?: string;
 }
 
+/** Receipt state keyed by conversation id. */
 export type ReceiptSnapshot = Record<string, ReceiptState>;
 
 function numberValue(value: unknown): value is number {
   return typeof value === "number" && Number.isFinite(value);
 }
 
+/** Creates the first-party receipts client plugin. */
 export function receiptsClient(): ChatClientPlugin<
   "receipts",
   Record<never, never>,

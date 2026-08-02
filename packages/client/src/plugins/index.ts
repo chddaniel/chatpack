@@ -1,3 +1,4 @@
+/** First-party Chatpack client plugin factories and contracts. */
 export { typingClient } from "./typing";
 export type {
   TypingActions,

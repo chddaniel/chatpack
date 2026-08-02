@@ -15,7 +15,8 @@ chatpack/
 │   ├── core/              # @chatpack/core - the chat engine + HTTP handler
 │   ├── adapter-drizzle/   # @chatpack/adapter-drizzle - Drizzle/Postgres storage
 │   ├── adapter-memory/    # @chatpack/adapter-memory - in-memory storage
-│   └── next/              # @chatpack/next - Next.js App Router integration
+│   ├── next/              # @chatpack/next - Next.js App Router integration
+│   └── client/            # @chatpack/client - REST, SSE, React, and plugins
 ├── examples/
 │   ├── next-backend/      # The quickstart as a runnable Next.js app
 │   └── node-server/       # Curl-able demo server (plain Node)

@@ -1,9 +1,12 @@
+/** First-party client plugin for presence snapshots and events. */
 import type { ChatClientPlugin } from "../plugin";
 import type { ChatClientResult } from "../errors";
 import type { ClientPresence, ClientPresenceResponse } from "../wire";
 
+/** Presence values keyed by user id. */
 export type PresenceSnapshot = Record<string, ClientPresence>;
 
+/** Actions exposed by the presence client plugin. */
 export interface PresenceActions {
   get(input: { userIds: string[] }): Promise<ChatClientResult<ClientPresenceResponse>>;
 }
@@ -25,6 +28,7 @@ function readPresencePayload(value: Record<string, unknown>): ClientPresence | n
   return isPresence(presence) ? presence : null;
 }
 
+/** Creates the first-party presence client plugin. */
 export function presenceClient(): ChatClientPlugin<"presence", PresenceActions, PresenceSnapshot> {
   return {
     id: "presence",

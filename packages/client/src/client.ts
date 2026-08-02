@@ -1,3 +1,4 @@
+/** Composes the framework-agnostic Chatpack client and its resource actions. */
 import type { Metadata, MessageRole } from "@chatpack/core";
 import type { ChatClientOptions } from "./config";
 import type { ChatClientResult } from "./errors";
@@ -24,31 +25,37 @@ import type {
   ClientMessagePage,
 } from "./wire";
 
+/** Input for creating a conversation with another user. */
 export interface ConversationCreateInput {
   otherUserId: string;
   metadata?: Metadata;
 }
 
+/** Optional pagination input for listing conversations. */
 export interface ConversationListInput {
   limit?: number;
   cursor?: string;
 }
 
+/** Input for loading one conversation. */
 export interface ConversationGetInput {
   conversationId: string;
 }
 
+/** Input for marking a message as read. */
 export interface MarkReadInput {
   conversationId: string;
   messageId: string;
 }
 
+/** Pagination input for listing messages in a conversation. */
 export interface MessageListInput {
   conversationId: string;
   limit?: number;
   cursor?: string;
 }
 
+/** Input for sending a message. */
 export interface MessageSendInput {
   conversationId: string;
   body: string;
@@ -56,20 +63,24 @@ export interface MessageSendInput {
   metadata?: Metadata;
 }
 
+/** Input for editing a message. */
 export interface MessageEditInput {
   messageId: string;
   body: string;
 }
 
+/** Input for deleting a message. */
 export interface MessageDeleteInput {
   messageId: string;
 }
 
+/** Per-request headers and cancellation options. */
 export interface ChatClientRequestOptions {
   headers?: HeadersInit;
   signal?: AbortSignal;
 }
 
+/** Typed actions for the conversations resource. */
 export interface ConversationActions {
   create(
     input: ConversationCreateInput,
@@ -89,6 +100,7 @@ export interface ConversationActions {
   ): Promise<ChatClientResult<{ ok: true }>>;
 }
 
+/** Typed actions for the messages resource. */
 export interface MessageActions {
   list(
     input: MessageListInput,
@@ -108,6 +120,7 @@ export interface MessageActions {
   ): Promise<ChatClientResult<ClientMessage>>;
 }
 
+/** Public framework-agnostic Chatpack client surface. */
 export interface ChatClient {
   conversations: ConversationActions;
   messages: MessageActions;
@@ -117,6 +130,7 @@ export interface ChatClient {
   dispose(): void;
 }
 
+/** Chatpack client surface with the actions and state contributed by plugins. */
 export type ChatClientWithPlugins<Plugins extends readonly ChatClientPlugin[]> = ChatClient &
   PluginSurfaces<Plugins>;
 
@@ -131,6 +145,7 @@ function requestOptions(
       };
 }
 
+/** Creates an isolated Chatpack client instance. */
 export function createChatClient<
   Plugins extends readonly ChatClientPlugin[] = readonly ChatClientPlugin[],
 >(options: ChatClientOptions<Plugins> = {}): ChatClientWithPlugins<Plugins> {

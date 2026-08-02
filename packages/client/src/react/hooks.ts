@@ -1,3 +1,4 @@
+/** React hooks that bind Chatpack cache and realtime state to a client. */
 import { useCallback, useEffect, useMemo } from "react";
 import type {
   ChatClient,
@@ -15,6 +16,7 @@ import type { ReceiptSnapshot } from "../plugins/receipts";
 import type { TypingIndicator, TypingSnapshot } from "../plugins/typing";
 import { useExternalStore, useOptionalExternalStore } from "./store";
 
+/** Common result shape returned by Chatpack data hooks. */
 export interface ChatClientHookResult<T> {
   data: T | null;
   error: ChatpackClientError | null;
@@ -23,6 +25,7 @@ export interface ChatClientHookResult<T> {
   refetch(): Promise<ChatClientResult<T>>;
 }
 
+/** Result shape for message history, including cursor pagination. */
 export interface MessagesHookResult extends ChatClientHookResult<ClientMessagePage> {
   loadMore(): Promise<ChatClientResult<ClientMessagePage>>;
 }
@@ -70,6 +73,7 @@ function useQuery<T>(
   };
 }
 
+/** Loads and subscribes to the authenticated user's conversations. */
 export function useConversations(
   client: ChatClient,
   input: ConversationListInput = {},
@@ -92,6 +96,7 @@ export function useConversations(
   return useQuery(query, refetch, emptyConversationPage);
 }
 
+/** Loads and subscribes to one conversation. */
 export function useConversation(
   client: ChatClient,
   input: { conversationId: string },
@@ -113,6 +118,7 @@ export function useConversation(
   return useQuery(query, refetch, null);
 }
 
+/** Loads and subscribes to one conversation's message history. */
 export function useMessages(client: ChatClient, input: MessageListInput): MessagesHookResult {
   const requestInput = useMemo(
     () => ({
@@ -150,6 +156,7 @@ export function useMessages(client: ChatClient, input: MessageListInput): Messag
   return { ...useQuery(query, refetch, emptyMessagePage), loadMore };
 }
 
+/** Subscribes to realtime connection status and starts the stream. */
 export function useRealtimeStatus(client: ChatClient): ChatRealtimeSnapshot {
   const snapshot = useExternalStore({
     getSnapshot: client.realtime.getSnapshot,
@@ -159,6 +166,7 @@ export function useRealtimeStatus(client: ChatClient): ChatRealtimeSnapshot {
   return snapshot;
 }
 
+/** Reads the current typing indicator for one conversation. */
 export function useTyping(
   client: ChatClient,
   input: { conversationId: string },
@@ -169,6 +177,7 @@ export function useTyping(
   return value[input.conversationId] ?? null;
 }
 
+/** Reads presence state, optionally limited to selected user ids. */
 export function usePresence(
   client: ChatClient,
   input: { userIds?: readonly string[] } = {},
@@ -187,6 +196,7 @@ export function usePresence(
   }, [input.userIds, snapshot]);
 }
 
+/** Reads receipt state, optionally limited to one conversation. */
 export function useReceipts(
   client: ChatClient,
   input: { conversationId?: string } = {},
@@ -198,6 +208,7 @@ export function useReceipts(
   return snapshot[input.conversationId] ?? null;
 }
 
+/** Chatpack client surface with React hooks attached. */
 export type ReactChatClient<Plugins extends readonly ChatClientPlugin[]> = ChatClient & {
   useConversations(input?: ConversationListInput): ChatClientHookResult<ClientConversationPage>;
   useConversation(input: { conversationId: string }): ChatClientHookResult<ClientConversation>;
@@ -210,6 +221,7 @@ export type ReactChatClient<Plugins extends readonly ChatClientPlugin[]> = ChatC
   }): ReceiptSnapshot | ReceiptSnapshot[string] | null;
 } & ChatClientWithPlugins<Plugins>;
 
+/** Attaches Chatpack React hooks to an existing client instance. */
 export function createReactChatClient<Plugins extends readonly ChatClientPlugin[]>(
   client: ChatClientWithPlugins<Plugins>,
 ): ReactChatClient<Plugins> {
