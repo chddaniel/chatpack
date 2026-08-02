@@ -6,6 +6,10 @@ import { createChatClient } from "@chatpack/client/react";
 const chatClient = createChatClient();
 
 function signInAs(userId: string): void {
+  // SameSite=Lax works because this page is same-origin with the handler and
+  // served over plain-http localhost (where `Secure` cookies fail in some
+  // browsers). Inside a cross-site iframe preview (Lovable, v0, ...) use the
+  // iframe-proof recipe from llms.txt: SameSite=None; Secure; Partitioned.
   document.cookie = `demo_user=${encodeURIComponent(userId)}; Path=/; Max-Age=86400; SameSite=Lax`;
   window.location.reload();
 }
