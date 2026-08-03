@@ -15,7 +15,8 @@ unsubscribe();
 `realtime` owns one lazy `EventSource`. Native browser reconnect behavior sends
 `Last-Event-ID`; the client does not implement a second cursor protocol.
 Durable messages are reconciled by id and sequence and remain newest-first.
-`message.created`, `message.updated`, and `message.deleted` update the cache.
+`message.created`, `message.updated`, `message.deleted`, `reaction.added`, and
+`reaction.removed` all update the cache.
 
 ## The conversations list stays live too
 
@@ -36,6 +37,33 @@ only a strictly higher `seq` than anything already cached bumps a count.
 `conversations.markRead` clears `unreadCount` locally when the marked message is
 the newest one the client knows about, mirroring the server's monotonic
 read-state.
+
+## Reaction events
+
+`reaction.added` and `reaction.removed` replace one cached message's
+`reactions` and touch nothing else: no reorder, no unread bump, no change to the
+seq baseline that decides whether a later message counts as new. The event
+carries the message's complete reaction set, so applying it twice is harmless,
+and the cache merges only that field — a stale `body` or `replyTo` in the
+payload can never clobber what it already holds. A reaction on a message
+outside the loaded page is dropped rather than spliced into a paginated list.
+
+Reactions are **not** gap-filled on reconnect: they have no `seq`, so the
+`Last-Event-ID` protocol can't replay them (see
+[Real-time with SSE](/docs/realtime/sse#reaction-events-are-a-third-category)).
+A reaction applied while the client was disconnected appears on the next
+refetch of that thread.
+
+```ts
+chatClient.realtime.subscribe((event) => {
+  if (event.type === "reaction.added") console.log(event.actorId, event.emoji);
+});
+```
+
+`isReactionChatEvent(event)` is exported for narrowing — each `ChatpackEvent`
+member has a _union_ of literal `type` values, which TypeScript can't use to
+eliminate a member, so an inline `event.type === "reaction.added"` check does
+not narrow the way you'd expect.
 
 Pass `userId` when creating the client so the viewer's own messages are never
 counted as unread. It is a cache hint, never authentication — the server's auth

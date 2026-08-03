@@ -15,7 +15,20 @@ const BASE = "http://test.local/api/chat";
 interface SseEvent {
   id: string | null;
   event: string | null;
-  data: { type: string; conversationId: string; message: { id: string; body: string } };
+  data: {
+    type: string;
+    conversationId: string;
+    message: {
+      id: string;
+      body: string;
+      seq: number;
+      replyTo: { id: string; excerpt: string } | null;
+      reactions: { emoji: string; count: number; userIds: string[] }[];
+    };
+    // Present on reaction frames only.
+    actorId?: string;
+    emoji?: string;
+  };
 }
 
 /** A tiny SSE client over the handler's ReadableStream response. */
@@ -252,6 +265,108 @@ describe("event kinds", () => {
     ]);
     expect(events[1]!.data.message.body).toBe("hello");
     expect(events[2]!.data.message.body).toBe("");
+  });
+
+  it("reaction frames carry the actor, the key, and no id: line (ADR 0013)", async () => {
+    const { chat, handler } = createHttpChat();
+    const conversation = await chat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "bob",
+    });
+
+    const alice = await connect(handler, "alice");
+    const message = await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "react to me",
+    });
+    await chat.api.addReaction({ userId: "bob", messageId: message.id, emoji: "👍" });
+    await chat.api.removeReaction({ userId: "bob", messageId: message.id, emoji: "👍" });
+
+    const events = await alice.waitForEvents(3);
+    expect(events.map((e) => e.event)).toEqual([
+      "message.created",
+      "reaction.added",
+      "reaction.removed",
+    ]);
+
+    const [, added, removed] = events;
+    // No `id:` line: EventSource must never adopt a reaction as Last-Event-ID,
+    // or the next reconnect would gap-fill from the wrong place.
+    expect(added!.id).toBeNull();
+    expect(removed!.id).toBeNull();
+    expect(added!.data.actorId).toBe("bob");
+    expect(added!.data.emoji).toBe("👍");
+    // The frame carries the complete post-change set, not a delta.
+    expect(added!.data.message.reactions).toEqual([{ emoji: "👍", count: 1, userIds: ["bob"] }]);
+    expect(removed!.data.message.reactions).toEqual([]);
+  });
+
+  it("a reaction leaves the gap-fill baseline on the last real message", async () => {
+    const { chat, handler } = createHttpChat();
+    const conversation = await chat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "bob",
+    });
+
+    const bob = await connect(handler, "bob");
+    const m1 = await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "m1",
+    });
+    const [first] = await bob.waitForEvents(1);
+    const lastSeenId = first!.id!;
+    expect(lastSeenId).toBe(`${conversation.id}:${m1.seq}`);
+
+    // A reaction arrives, then bob drops. Because the reaction frame had no
+    // `id:`, his Last-Event-ID is still m1's - so m2 replays and nothing else.
+    await chat.api.addReaction({ userId: "alice", messageId: m1.id, emoji: "👍" });
+    await bob.waitForEvents(2);
+    await bob.close();
+
+    await chat.api.sendMessage({ userId: "alice", conversationId: conversation.id, body: "m2" });
+
+    const bobAgain = await connect(handler, "bob", "", { "last-event-id": lastSeenId });
+    const replayed = await bobAgain.waitForEvents(1);
+    expect(replayed.map((e) => e.data.message.body)).toEqual(["m2"]);
+    expect(replayed[0]!.event).toBe("message.created");
+  });
+
+  it("gap-filled frames carry replyTo and reactions, like live ones", async () => {
+    const { chat, handler } = createHttpChat();
+    const conversation = await chat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "bob",
+    });
+
+    const bob = await connect(handler, "bob");
+    const parent = await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "the original",
+    });
+    const [first] = await bob.waitForEvents(1);
+    await bob.close();
+
+    // Sent while bob is offline: a reply that also picks up a reaction.
+    const reply = await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "quoting",
+      replyToMessageId: parent.id,
+    });
+    await chat.api.addReaction({ userId: "alice", messageId: reply.id, emoji: "🎉" });
+
+    const bobAgain = await connect(handler, "bob", "", { "last-event-id": first!.id! });
+    const [replayed] = await bobAgain.waitForEvents(1);
+    expect(replayed!.data.message.replyTo).toMatchObject({
+      id: parent.id,
+      excerpt: "the original",
+    });
+    expect(replayed!.data.message.reactions).toEqual([
+      { emoji: "🎉", count: 1, userIds: ["alice"] },
+    ]);
   });
 
   it("event ids are conversationId:seq for deterministic reconciliation", async () => {

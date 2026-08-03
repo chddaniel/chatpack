@@ -63,8 +63,11 @@ close, since this package did not open them).
 
 ## What you get, and what you don't
 
-**Multi-node:** messages (`message.created` / `updated` / `deleted`), typing
-indicators, and read receipts. All of them travel on the transport.
+**Multi-node:** messages (`message.created` / `updated` / `deleted`), reactions
+(`reaction.added` / `reaction.removed`), typing indicators, and read receipts.
+All of them travel on the transport - `TransportEvent` has three members
+(`ChatEvent`, `ReactionEvent`, `EphemeralEvent`) and this package relays all
+three, reviving the `Date` fields on the message each event carries.
 
 **Still per-node: `presence()`.** It counts live SSE connections in an
 in-process `Map`, so each node only knows its own. `GET /presence` answers for
@@ -88,6 +91,10 @@ point `Last-Event-ID` gap-fill replays what they missed from storage.
 
 Redis pub/sub is at-most-once (no replay buffer), which is why durable events
 remain replayable from storage and ephemeral ones are defined as droppable.
+Reaction events sit in between: they're stored, but they have no `seq`, so
+`Last-Event-ID` can't replay them either - a reaction missed during an outage
+shows up on the next refetch of that thread
+([ADR 0013](../../docs/decisions/0013-reactions-and-replies.md)).
 
 ## Notes
 

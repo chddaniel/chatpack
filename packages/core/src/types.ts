@@ -105,6 +105,91 @@ export interface Message {
    * an empty body so clients can render a tombstone; `null` if not deleted.
    */
   deletedAt: Date | null;
+  /**
+   * The message this one quote-replies to, or `null` for a normal message
+   * (`docs/decisions/0013`). Always in the same conversation, always one hop -
+   * a reply to a reply is still flat, and v0 has no threads. Immutable: edits
+   * only ever change the body.
+   */
+  replyToMessageId: string | null;
   /** Developer-defined metadata (escape hatch). */
   metadata: Metadata;
 }
+
+/**
+ * One user's reaction to one message (`docs/decisions/0013`).
+ *
+ * Durable, but not a message: reactions have no `seq`, never light the unread
+ * badge, and never reorder the conversation list.
+ */
+export interface Reaction {
+  /** The message being reacted to. */
+  messageId: string;
+  /** The reacting user's id. */
+  userId: string;
+  /**
+   * The reaction key: any non-empty string up to 32 characters, trimmed.
+   * Usually an emoji, but `":shipit:"` or a custom emoji id are equally
+   * valid - Chatpack stays unopinionated (ADR 0013 §3).
+   */
+  emoji: string;
+  /** When the reaction was added. */
+  createdAt: Date;
+}
+
+/**
+ * Reactions of one kind on one message, aggregated by core for the API.
+ *
+ * Viewer-independent: v0 is 1:1, so `userIds` holds at most two entries and a
+ * client can tell "did I react?" without a viewer-relative field.
+ */
+export interface ReactionSummary {
+  /** The reaction key. */
+  emoji: string;
+  /** How many users reacted with it. 1 or 2 in v0. */
+  count: number;
+  /** Who reacted, earliest first. */
+  userIds: string[];
+}
+
+/**
+ * A read-only preview of a quote-replied message, resolved per request by
+ * core - never stored (`docs/decisions/0013`).
+ *
+ * Hydrating rather than denormalizing means the preview cannot go stale when
+ * the parent is edited, and a client can render the quote bar even when the
+ * parent is far outside the loaded page.
+ */
+export interface MessageReference {
+  /** The parent message's id. */
+  id: string;
+  /** Who sent the parent. */
+  senderId: string;
+  /**
+   * The first 140 characters of the parent body, suffixed with `"…"` when
+   * truncated. Empty string when the parent is a tombstone.
+   */
+  excerpt: string;
+  /** `true` when the parent has been soft-deleted. */
+  deleted: boolean;
+}
+
+/**
+ * A message as returned by the API: the storage shape plus the two
+ * per-request decorations from ADR 0013.
+ *
+ * `Message` itself stays the storage shape - adapters and permission hooks
+ * never see these fields; core computes them via
+ * `StorageAdapter.getMessagesByIds` and
+ * `StorageAdapter.listReactionsByMessageIds`, batched one call per page.
+ */
+export type MessageWithDetails = Message & {
+  /**
+   * Preview of the quoted parent, or `null` when this is not a reply (or the
+   * parent row no longer exists at all - soft-deleted parents still resolve,
+   * with `deleted: true`).
+   */
+  replyTo: MessageReference | null;
+  /** All reactions on this message, grouped by emoji. Empty when there are none. */
+  reactions: ReactionSummary[];
+};

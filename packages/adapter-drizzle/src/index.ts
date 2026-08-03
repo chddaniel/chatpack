@@ -46,17 +46,20 @@ import type {
   Message,
   MessageRole,
   Metadata,
+  Reaction,
+  ReactionInput,
   StorageAdapter,
   UpdateLastReadInput,
   UpdateMessageInput,
 } from "@chatpack/core";
 
-import { conversationParticipants, conversations, messages } from "./schema";
+import { conversationParticipants, conversations, messageReactions, messages } from "./schema";
 
 export {
   chatpackSchema,
   conversationParticipants,
   conversations,
+  messageReactions,
   messages,
   migrationSql,
   migrationStatements,
@@ -71,6 +74,7 @@ export type DrizzlePgDatabase = PgDatabase<PgQueryResultHKT, Record<string, unkn
 type ConversationRow = typeof conversations.$inferSelect;
 type ParticipantRow = typeof conversationParticipants.$inferSelect;
 type MessageRow = typeof messages.$inferSelect;
+type ReactionRow = typeof messageReactions.$inferSelect;
 
 function generateId(prefix: string): string {
   // 128 bits of randomness via the Web Crypto API (available in Node 19+,
@@ -89,7 +93,17 @@ function toMessage(row: MessageRow): Message {
     createdAt: row.createdAt,
     editedAt: row.editedAt,
     deletedAt: row.deletedAt,
+    replyToMessageId: row.replyToMessageId,
     metadata: (row.metadata ?? {}) as Metadata,
+  };
+}
+
+function toReaction(row: ReactionRow): Reaction {
+  return {
+    messageId: row.messageId,
+    userId: row.userId,
+    emoji: row.emoji,
+    createdAt: row.createdAt,
   };
 }
 
@@ -133,6 +147,16 @@ export function drizzleAdapter(db: DrizzlePgDatabase): StorageAdapter {
       byConversation.set(row.conversationId, list);
     }
     return byConversation;
+  }
+
+  /** Every reaction on one message, earliest-first - the post-write snapshot. */
+  async function reactionsFor(messageId: string): Promise<Reaction[]> {
+    const rows = await db
+      .select()
+      .from(messageReactions)
+      .where(eq(messageReactions.messageId, messageId))
+      .orderBy(asc(messageReactions.createdAt));
+    return rows.map(toReaction);
   }
 
   async function loadConversation(conversationId: string): Promise<Conversation | null> {
@@ -275,6 +299,7 @@ export function drizzleAdapter(db: DrizzlePgDatabase): StorageAdapter {
           createdAt: now,
           editedAt: null,
           deletedAt: null,
+          replyToMessageId: input.replyToMessageId,
           metadata: input.metadata,
         })
         .returning();
@@ -288,6 +313,15 @@ export function drizzleAdapter(db: DrizzlePgDatabase): StorageAdapter {
     async getMessage(messageId: string): Promise<Message | null> {
       const [row] = await db.select().from(messages).where(eq(messages.id, messageId)).limit(1);
       return row ? toMessage(row) : null;
+    },
+
+    async getMessagesByIds(messageIds: string[]): Promise<Message[]> {
+      if (messageIds.length === 0) return [];
+      const rows = await db
+        .select()
+        .from(messages)
+        .where(or(...messageIds.map((id) => eq(messages.id, id))));
+      return rows.map(toMessage);
     },
 
     async listMessages(input: ListMessagesInput): Promise<ListMessagesResult> {
@@ -400,6 +434,49 @@ export function drizzleAdapter(db: DrizzlePgDatabase): StorageAdapter {
 
       for (const row of rows) counts[row.conversationId] = row.count;
       return counts;
+    },
+
+    async addReaction(input: ReactionInput): Promise<Reaction[]> {
+      // Idempotent (ADR 0013): the unique (message_id, user_id, emoji) index is
+      // the arbiter, so a double-tap or a replayed request is a no-op rather
+      // than a duplicate row or an error.
+      await db
+        .insert(messageReactions)
+        .values({
+          messageId: input.messageId,
+          userId: input.userId,
+          emoji: input.emoji,
+          createdAt: new Date(),
+        })
+        .onConflictDoNothing({
+          target: [messageReactions.messageId, messageReactions.userId, messageReactions.emoji],
+        });
+      return reactionsFor(input.messageId);
+    },
+
+    async removeReaction(input: ReactionInput): Promise<Reaction[]> {
+      // Idempotent: deleting zero rows is success, not an error.
+      await db
+        .delete(messageReactions)
+        .where(
+          and(
+            eq(messageReactions.messageId, input.messageId),
+            eq(messageReactions.userId, input.userId),
+            eq(messageReactions.emoji, input.emoji),
+          ),
+        );
+      return reactionsFor(input.messageId);
+    },
+
+    async listReactionsByMessageIds(messageIds: string[]): Promise<Reaction[]> {
+      if (messageIds.length === 0) return [];
+      const rows = await db
+        .select()
+        .from(messageReactions)
+        .where(or(...messageIds.map((id) => eq(messageReactions.messageId, id))))
+        // Earliest-first, which is the order core aggregates `userIds` in.
+        .orderBy(asc(messageReactions.createdAt));
+      return rows.map(toReaction);
     },
   };
 }

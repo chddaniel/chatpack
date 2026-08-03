@@ -75,6 +75,8 @@ The framework-agnostic client mirrors the server routes from `@chatpack/core`:
 | `messages.send`          | `POST /conversations/:id/messages`                    |
 | `messages.edit`          | `PATCH /messages/:id`                                 |
 | `messages.delete`        | `DELETE /messages/:id`                                |
+| `messages.react`         | `POST /messages/:id/reactions`                        |
+| `messages.unreact`       | `DELETE /messages/:id/reactions`                      |
 | `realtime`               | `GET /stream` with native reconnect and deduplication |
 
 Every request returns `{ data, error }`. The client passes browser credentials
@@ -82,6 +84,35 @@ to the server and never replaces the server's auth hook. The optional `userId`
 option is a cache hint, not a credential: it keeps the viewer's own messages
 from counting as unread. Omit it and the client infers the id from the first
 message it sends.
+
+## Replies and reactions
+
+`messages.send` takes an optional `replyToMessageId`; every message comes back
+with `replyToMessageId`, a read-only `replyTo` preview
+(`{ id, senderId, excerpt, deleted }`) for the quote bar, and `reactions`
+(`[{ emoji, count, userIds }]`).
+
+```ts
+const sent = await chatClient.messages.send({ conversationId, body: "Hello" });
+if (sent.error === null) {
+  await chatClient.messages.send({
+    conversationId,
+    body: "Hi back",
+    replyToMessageId: sent.data.id,
+  });
+
+  const reacted = await chatClient.messages.react({ messageId: sent.data.id, emoji: "👍" });
+  reacted.data?.reactions; // [{ emoji: "👍", count: 1, userIds: ["bob"] }]
+  await chatClient.messages.unreact({ messageId: sent.data.id, emoji: "👍" });
+}
+```
+
+Both reaction calls are idempotent and return the message with its **complete**
+reaction set, which goes straight into the cache. An `emoji` is any non-empty
+string up to 32 characters - `""` or longer comes back as `INVALID_INPUT`, an
+unknown `messageId` as `MESSAGE_NOT_FOUND`, both as results rather than throws.
+These are quote-replies, not threads: a flat pointer at one earlier message in
+the same conversation.
 
 ## Realtime cache updates
 
@@ -92,6 +123,18 @@ missing from the list is fetched once and prepended. `message.updated` and
 `message.deleted` do not reorder, matching server-side activity ordering, and
 redelivered events never double-count. `conversations.markRead` clears
 `unreadCount` locally when the marked message is the newest one cached.
+
+`reaction.added` and `reaction.removed` replace one cached message's `reactions`
+and touch nothing else - no reorder, no unread bump, no change to the seq
+baseline. The event carries the complete set, so applying it twice is harmless,
+and only that field is merged, so a stale `body` in the payload can't clobber
+what the cache holds. A reaction on a message outside the loaded page is
+dropped rather than spliced into a paginated list. Reactions have no `seq`, so
+they are **not** gap-filled on reconnect; one applied while disconnected
+appears on the next refetch. Narrow with the exported
+`isReactionChatEvent(event)` - each `ChatpackEvent` member has a _union_ of
+literal `type` values, which TypeScript can't use to eliminate a member, so an
+inline `event.type === "reaction.added"` check does not narrow.
 
 ## Plugins
 

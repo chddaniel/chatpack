@@ -24,6 +24,8 @@ import type {
   ListMessagesResult,
   Message,
   Participant,
+  Reaction,
+  ReactionInput,
   StorageAdapter,
   UpdateLastReadInput,
   UpdateMessageInput,
@@ -58,6 +60,11 @@ export function memoryAdapter(): StorageAdapter {
   const messages = new Map<string, Message>();
   /** Message ids per conversation in insertion (ascending seq) order. */
   const messageIdsByConversation = new Map<string, string[]>();
+  /**
+   * Reactions per message, in insertion (earliest-first) order - the order core
+   * aggregates into `ReactionSummary.userIds` (ADR 0013).
+   */
+  const reactionsByMessage = new Map<string, Reaction[]>();
 
   let idCounter = 0;
   const nextId = (prefix: string): string => `${prefix}_${(++idCounter).toString(36)}`;
@@ -151,6 +158,7 @@ export function memoryAdapter(): StorageAdapter {
         createdAt: new Date(),
         editedAt: null,
         deletedAt: null,
+        replyToMessageId: input.replyToMessageId,
         metadata: { ...input.metadata },
       };
 
@@ -162,6 +170,14 @@ export function memoryAdapter(): StorageAdapter {
     async getMessage(messageId: string): Promise<Message | null> {
       const message = messages.get(messageId);
       return message ? { ...message } : null;
+    },
+
+    async getMessagesByIds(messageIds: string[]): Promise<Message[]> {
+      // Unknown ids are simply absent - never null entries, never a throw.
+      return messageIds
+        .map((id) => messages.get(id))
+        .filter((message): message is Message => message !== undefined)
+        .map((message) => ({ ...message }));
     },
 
     async listMessages(input: ListMessagesInput): Promise<ListMessagesResult> {
@@ -243,6 +259,53 @@ export function memoryAdapter(): StorageAdapter {
         counts[conversationId] = count;
       }
       return counts;
+    },
+
+    async addReaction(input: ReactionInput): Promise<Reaction[]> {
+      if (!messages.has(input.messageId)) {
+        throw new Error(`memoryAdapter: unknown message "${input.messageId}".`);
+      }
+      const current = reactionsByMessage.get(input.messageId) ?? [];
+      // Idempotent (ADR 0013): the same (message, user, emoji) triple twice
+      // leaves exactly one reaction.
+      const exists = current.some(
+        (reaction) => reaction.userId === input.userId && reaction.emoji === input.emoji,
+      );
+      if (!exists) {
+        current.push({
+          messageId: input.messageId,
+          userId: input.userId,
+          emoji: input.emoji,
+          createdAt: new Date(),
+        });
+        reactionsByMessage.set(input.messageId, current);
+      }
+      return current.map((reaction) => ({ ...reaction }));
+    },
+
+    async removeReaction(input: ReactionInput): Promise<Reaction[]> {
+      if (!messages.has(input.messageId)) {
+        throw new Error(`memoryAdapter: unknown message "${input.messageId}".`);
+      }
+      const current = reactionsByMessage.get(input.messageId) ?? [];
+      // Idempotent: removing a reaction that was never there is a no-op.
+      const remaining = current.filter(
+        (reaction) => !(reaction.userId === input.userId && reaction.emoji === input.emoji),
+      );
+      reactionsByMessage.set(input.messageId, remaining);
+      return remaining.map((reaction) => ({ ...reaction }));
+    },
+
+    async listReactionsByMessageIds(messageIds: string[]): Promise<Reaction[]> {
+      const result: Reaction[] = [];
+      for (const messageId of messageIds) {
+        // Insertion order is already earliest-first per message, which is what
+        // core's `userIds` aggregation expects.
+        for (const reaction of reactionsByMessage.get(messageId) ?? []) {
+          result.push({ ...reaction });
+        }
+      }
+      return result;
     },
   };
 }

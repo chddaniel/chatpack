@@ -1,6 +1,6 @@
 /** Per-client cache contracts for REST results and durable stream updates. */
 import type { ChatClientResult, ChatpackClientError } from "./errors";
-import type { DurableChatEvent, ChatpackEvent } from "./realtime";
+import { isReactionChatEvent, type DurableChatEvent, type ChatpackEvent } from "./realtime";
 import { createStore, type ReadonlyStore, type Store } from "./store";
 import type {
   ClientConversation,
@@ -61,6 +61,14 @@ export interface ChatpackCache extends ReadonlyStore<ChatpackCacheSnapshot> {
     append: boolean,
   ): void;
   applyEvent(event: ChatpackEvent, options?: ApplyEventOptions): void;
+  /**
+   * Replace the reaction set of one cached message (ADR 0013).
+   *
+   * Takes a whole message because both sources - a `reaction.*` stream event
+   * and the response to a react/unreact call - carry the complete post-change
+   * snapshot. A no-op when the message is not in a loaded page.
+   */
+  applyReactions(conversationId: string, message: ClientMessage): void;
   /** Clears the viewer's unread count after a successful `markRead`. */
   applyRead(conversationId: string, messageId: string): void;
   /** Adds a conversation the list has not seen yet at the most-recent end. */
@@ -77,6 +85,25 @@ function replaceMessage(messages: ClientMessage[], message: ClientMessage): Clie
       ? [...messages, message]
       : messages.map((item, itemIndex) => (itemIndex === index ? message : item));
   return next.sort((left, right) => right.seq - left.seq);
+}
+
+/**
+ * Apply a reaction change to a cached thread (ADR 0013).
+ *
+ * Unlike a message event this never *inserts*: a reaction on a message outside
+ * the loaded page is dropped rather than splicing a lone message into a
+ * paginated list it does not belong in. The event carries the complete
+ * reaction set, so overwriting is idempotent.
+ */
+function replaceReactions(
+  messages: ClientMessage[],
+  message: ClientMessage,
+): ClientMessage[] | null {
+  const index = messages.findIndex((item) => item.id === message.id);
+  if (index === -1) return null;
+  return messages.map((item, itemIndex) =>
+    itemIndex === index ? { ...item, reactions: message.reactions } : item,
+  );
 }
 
 function mergeMessages(current: ClientMessage[], incoming: ClientMessage[]): ClientMessage[] {
@@ -140,7 +167,25 @@ export function createChatpackCache(options: ChatpackCacheOptions = {}): Chatpac
   const seenSeq = new Map<string, number>();
   let viewerId = options.userId;
 
+  /** Shared by the stream event and the local echo of a react/unreact call. */
+  function applyReactions(conversationId: string, message: ClientMessage): void {
+    store.update((current) => {
+      const existing = current.messagesByConversation[conversationId];
+      if (existing?.data == null) return current;
+      const messages = replaceReactions(existing.data.messages, message);
+      if (messages === null) return current;
+      return {
+        ...current,
+        messagesByConversation: {
+          ...current.messagesByConversation,
+          [conversationId]: { ...existing, data: { ...existing.data, messages } },
+        },
+      };
+    });
+  }
+
   return {
+    applyReactions,
     getSnapshot: store.getSnapshot,
     subscribe: store.subscribe,
     setConversationsLoading() {
@@ -270,29 +315,41 @@ export function createChatpackCache(options: ChatpackCacheOptions = {}): Chatpac
     applyEvent(event, eventOptions = {}) {
       if ("ephemeral" in event) return;
 
+      // A reaction is not a message (ADR 0013): it never reorders the list,
+      // never bumps `unreadCount`, and never advances the seq baseline.
+      if (isReactionChatEvent(event)) {
+        applyReactions(event.conversationId, event.message);
+        return;
+      }
+      // Re-bound as a const so the narrowing above survives into the closures
+      // below - TypeScript discards narrowing of a parameter inside a callback.
+      const durable: DurableChatEvent = event;
+
       // Only `message.created` bumps server-side activity (adapters touch
       // `lastActivityAt` in `addMessage` only), so edits and deletes must not
       // reorder the list or the client would disagree with the next refetch.
-      const previousSeq = seenSeq.get(event.conversationId) ?? 0;
-      const isNew = event.type === "message.created" && event.message.seq > previousSeq;
-      if (event.message.seq > previousSeq) seenSeq.set(event.conversationId, event.message.seq);
+      const previousSeq = seenSeq.get(durable.conversationId) ?? 0;
+      const isNew = durable.type === "message.created" && durable.message.seq > previousSeq;
+      if (durable.message.seq > previousSeq) {
+        seenSeq.set(durable.conversationId, durable.message.seq);
+      }
 
       // The sender's own message reaches them twice - once as the local echo
       // of the write, once over their own stream - and neither is unread.
-      if (eventOptions.local === true) viewerId ??= event.message.senderId;
-      const isOwn = eventOptions.local === true || event.message.senderId === viewerId;
+      if (eventOptions.local === true) viewerId ??= durable.message.senderId;
+      const isOwn = eventOptions.local === true || durable.message.senderId === viewerId;
       const bumpUnread = isNew && !isOwn;
 
       store.update((current) => {
         let next = current;
 
-        const existing = current.messagesByConversation[event.conversationId];
+        const existing = current.messagesByConversation[durable.conversationId];
         if (existing !== undefined) {
           next = {
             ...next,
             messagesByConversation: {
               ...next.messagesByConversation,
-              [event.conversationId]: applyDurableEvent(existing, event),
+              [durable.conversationId]: applyDurableEvent(existing, durable),
             },
           };
         }
@@ -303,7 +360,7 @@ export function createChatpackCache(options: ChatpackCacheOptions = {}): Chatpac
         if (list !== null) {
           const reordered = touchConversations(
             list.conversations,
-            event.conversationId,
+            durable.conversationId,
             bumpUnread,
           );
           if (reordered !== null) {
@@ -314,13 +371,13 @@ export function createChatpackCache(options: ChatpackCacheOptions = {}): Chatpac
           }
         }
 
-        const one = next.conversationsById[event.conversationId];
+        const one = next.conversationsById[durable.conversationId];
         if (bumpUnread && one?.data != null) {
           next = {
             ...next,
             conversationsById: {
               ...next.conversationsById,
-              [event.conversationId]: {
+              [durable.conversationId]: {
                 ...one,
                 data: { ...one.data, unreadCount: one.data.unreadCount + 1 },
               },

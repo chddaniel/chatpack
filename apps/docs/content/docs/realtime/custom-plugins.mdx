@@ -163,6 +163,14 @@ Their source is compact and readable:
 ## Custom transports
 
 If you implement a custom `Transport`, note that `publish`/`subscribe` carry
-`TransportEvent = ChatEvent | EphemeralEvent` - discriminate with the exported
-`isEphemeralEvent()` guard. Rationale in
-[ADR 0008](https://github.com/chddaniel/chatpack/blob/main/docs/decisions/0008-ephemeral-events-in-core-plugins.md).
+`TransportEvent = ChatEvent | ReactionEvent | EphemeralEvent` - **three**
+members, so `!isEphemeralEvent(e)` no longer means "this is a message". Use the
+exported `isMessageEvent(e)` guard when you need the `seq` / `id:` frame, and
+`isEphemeralEvent(e)` for the droppable ones. Reaction events sit in between:
+stored, but with no `seq`, so they are never replayed. Rationale in
+[ADR 0008](https://github.com/chddaniel/chatpack/blob/main/docs/decisions/0008-ephemeral-events-in-core-plugins.md)
+and
+[ADR 0013](https://github.com/chddaniel/chatpack/blob/main/docs/decisions/0013-reactions-and-replies.md).
+
+Plugin `onEventDelivered` still only ever receives a `ChatEvent` - reaction
+delivery does not invoke it.

@@ -48,6 +48,18 @@ const stubStorage = {
   async countUnread(input) {
     return Object.fromEntries(input.conversationIds.map((id) => [id, 0]));
   },
+  async getMessagesByIds() {
+    return [];
+  },
+  async addReaction() {
+    return [];
+  },
+  async removeReaction() {
+    return [];
+  },
+  async listReactionsByMessageIds() {
+    return [];
+  },
 } satisfies StorageAdapter;
 
 describe("toNextRouteHandlers", () => {

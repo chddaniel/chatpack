@@ -272,10 +272,34 @@ curl -X POST /api/chat/conversations/conv_1/messages \
     "createdAt": "2026-07-22T19:48:06.416Z",
     "editedAt": null,
     "deletedAt": null,
-    "metadata": {}
+    "metadata": {},
+    "replyToMessageId": null,
+    "replyTo": null,
+    "reactions": []
   }
 }
 ```
+
+Quote-reply by passing `replyToMessageId`, and react with a `POST` (removing is
+the same route with `DELETE`; the emoji travels in the body, not the path):
+
+```sh
+curl -X POST /api/chat/conversations/conv_1/messages \
+  -H 'content-type: application/json' \
+  -d '{"body": "hey alice!", "replyToMessageId": "msg_1"}'
+
+curl -X POST /api/chat/messages/msg_1/reactions \
+  -H 'content-type: application/json' \
+  -d '{"emoji": "👍"}'
+```
+
+A reply carries a read-only `replyTo` preview
+(`{ id, senderId, excerpt, deleted }`) hydrated per request - edit the parent
+and the quote bar follows. Reaction routes are idempotent and always return the
+message with its **complete** reaction set
+(`[{ emoji, count, userIds }]`). These are quote-replies, not threads, and a
+reaction is not a message: it has no `seq` and never reorders the conversation
+list.
 
 List history (newest first, keyset-paginated):
 
@@ -295,7 +319,7 @@ for domain errors:
 { "error": { "code": "FORBIDDEN_READ", "message": "…" } }
 ```
 
-The full endpoint reference (all 9 routes, request/response shapes, error
+The full endpoint reference (all 11 routes, request/response shapes, error
 codes) lives in [`@chatpack/core`'s README](./packages/core#rest-api).
 
 ### 5. Use the first-party client (optional)
@@ -377,6 +401,11 @@ events.addEventListener("message.created", (e) => {
   // render it - reconnection & missed-message backfill are automatic
 });
 
+events.addEventListener("reaction.added", (e) => {
+  const { message } = JSON.parse((e as MessageEvent).data);
+  // message.reactions is the COMPLETE set after the change - replace, don't merge
+});
+
 events.onerror = () => {
   if (events.readyState === EventSource.CLOSED) {
     // Fatal (e.g. 401 from your auth hook): the browser will NOT retry.
@@ -391,8 +420,13 @@ If the connection drops, `EventSource` reconnects with `Last-Event-ID` and
 Chatpack replays whatever was missed **from storage** - durable-first delivery,
 no lost messages.
 
-Two things to know before going live:
+Three things to know before going live:
 
+- **Reactions are live but not replayed.** `reaction.added` /
+  `reaction.removed` are stored, unlike ephemeral plugin events, but reactions
+  have no `seq` - so their frames carry no `id:` (emitting one would rewind
+  `Last-Event-ID`) and they are **not** gap-filled. A reaction applied while the
+  client was offline appears on the next refetch of that thread.
 - **Browser auth must be cookie-based for SSE** - `EventSource` can't send
   custom headers, so your `auth` hook needs to resolve the user from a session
   cookie (sent automatically same-origin). Bearer-token headers work for the
@@ -432,6 +466,10 @@ const { messages } = await chat.api.listMessages({
   userId: "bob",
   conversationId: conversation.id,
 });
+
+// react to a message (idempotent - returns the full reaction set)
+await chat.api.addReaction({ userId: "bob", messageId: messages[0].id, emoji: "👍" });
+await chat.api.removeReaction({ userId: "bob", messageId: messages[0].id, emoji: "👍" });
 ```
 
 That's it. Only the two participants can read or write - enforced by default,
@@ -564,10 +602,11 @@ Want to write your own plugin? The seam is public - see `ChatpackPlugin` in
 | Typing / presence / read-tick plugins   | ✅ Done (v0.next) |
 | Unread counts (`unreadCount`)           | ✅ Done (v0.next) |
 | Browser client + React hooks            | ✅ Done (v0.next) |
+| Reactions + quote-replies               | ✅ Done (v0.next) |
 
 Deliberately **not** in scope yet: groups, file uploads, push notifications,
-UI components. See [docs/MVP.md](./docs/MVP.md) for the full scope and
-reasoning.
+UI components, message threads (replies are flat pointers, not threads). See
+[docs/MVP.md](./docs/MVP.md) for the full scope and reasoning.
 
 ## Packages
 

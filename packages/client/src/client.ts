@@ -60,7 +60,19 @@ export interface MessageSendInput {
   conversationId: string;
   body: string;
   role?: MessageRole;
+  /**
+   * Quote-reply to this message (ADR 0013). Must be a message in the same
+   * conversation; replying to a deleted one is allowed.
+   */
+  replyToMessageId?: string;
   metadata?: Metadata;
+}
+
+/** Input for adding or removing one of your own reactions. */
+export interface MessageReactInput {
+  messageId: string;
+  /** Any non-empty string up to 32 characters - emoji, `:shortcode:`, or a custom id. */
+  emoji: string;
 }
 
 /** Input for editing a message. */
@@ -118,6 +130,16 @@ export interface MessageActions {
     input: MessageDeleteInput,
     options?: ChatClientRequestOptions,
   ): Promise<ChatClientResult<ClientMessage>>;
+  /** Add one of your own reactions. Idempotent - reacting twice is one reaction. */
+  react(
+    input: MessageReactInput,
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<ClientMessage>>;
+  /** Remove one of your own reactions. Idempotent - removing a missing one is a no-op. */
+  unreact(
+    input: MessageReactInput,
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<ClientMessage>>;
 }
 
 /** Public framework-agnostic Chatpack client surface. */
@@ -165,6 +187,8 @@ export function createChatClient<
     "message.created",
     "message.updated",
     "message.deleted",
+    "reaction.added",
+    "reaction.removed",
     ...plugins.flatMap((plugin) => plugin.eventTypes),
   ];
   /**
@@ -268,6 +292,34 @@ export function createChatClient<
     },
   };
 
+  /**
+   * Add or remove a reaction and echo the change into the cache. The response
+   * carries the full message, so the local echo writes the same complete
+   * snapshot the other participant receives over the stream.
+   *
+   * The emoji travels in the body for both verbs (see the route comment in
+   * `packages/core/src/handler.ts`).
+   */
+  async function changeReaction(
+    method: "POST" | "DELETE",
+    input: MessageReactInput,
+    optionsForRequest: ChatClientRequestOptions | undefined,
+  ): Promise<ChatClientResult<ClientMessage>> {
+    const result = await requester.request<unknown>(
+      "/messages/" + encodeURIComponent(input.messageId) + "/reactions",
+      {
+        method,
+        body: { emoji: input.emoji },
+        ...requestOptions(optionsForRequest),
+      },
+    );
+    const message = unwrapResult<ClientMessage>(result, "message");
+    if (message.error === null) {
+      cache.applyReactions(message.data.conversationId, message.data);
+    }
+    return message;
+  }
+
   const messageActions: MessageActions = {
     async list(input, optionsForRequest) {
       cache.setMessagesLoading(input.conversationId);
@@ -337,6 +389,12 @@ export function createChatClient<
         });
       }
       return message;
+    },
+    async react(input, optionsForRequest) {
+      return changeReaction("POST", input, optionsForRequest);
+    },
+    async unreact(input, optionsForRequest) {
+      return changeReaction("DELETE", input, optionsForRequest);
     },
   };
 

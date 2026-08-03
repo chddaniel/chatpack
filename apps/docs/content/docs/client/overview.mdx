@@ -26,6 +26,34 @@ if (result.error === null) {
 }
 ```
 
+## Replies and reactions
+
+`messages.send` takes an optional `replyToMessageId`, and `messages.react` /
+`messages.unreact` add and remove one of your own reactions:
+
+```ts
+const sent = await chatClient.messages.send({ conversationId, body: "Hello" });
+if (sent.error === null) {
+  await chatClient.messages.send({
+    conversationId,
+    body: "Hi back",
+    replyToMessageId: sent.data.id,
+  });
+
+  const reacted = await chatClient.messages.react({ messageId: sent.data.id, emoji: "👍" });
+  reacted.data?.reactions; // [{ emoji: "👍", count: 1, userIds: ["bob"] }]
+  await chatClient.messages.unreact({ messageId: sent.data.id, emoji: "👍" });
+}
+```
+
+Both reaction calls are idempotent and return the message with its **complete**
+reaction set, which the client writes straight into the cache. Every cached
+message carries `replyToMessageId`, a read-only `replyTo` preview
+(`{ id, senderId, excerpt, deleted }`) for the quote bar, and `reactions`.
+An `emoji` is any non-empty string up to 32 characters; `""` or longer comes
+back as `INVALID_INPUT`, and an unknown `messageId` as `MESSAGE_NOT_FOUND` -
+as results, not throws.
+
 Methods return a discriminated `{ data, error }` result. Expected HTTP failures
 do not throw. Network failures use `NETWORK_ERROR`; server error codes remain
 available, such as `UNAUTHENTICATED`, `FORBIDDEN_WRITE`, and

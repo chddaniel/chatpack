@@ -25,6 +25,7 @@ export {
   type EditMessageInput,
   type DeleteMessageInput,
   type MarkReadInput,
+  type ReactionApiInput,
 } from "./chatpack";
 
 // Configuration
@@ -46,8 +47,12 @@ export type {
   ConversationWithUnread,
   Participant,
   Message,
+  MessageReference,
   MessageRole,
+  MessageWithDetails,
   Metadata,
+  Reaction,
+  ReactionSummary,
 } from "./types";
 
 // Storage adapter contract (for adapter authors)
@@ -61,6 +66,7 @@ export type {
   ListMessagesInput,
   ListMessagesResult,
   ListMessagesAfterSeqInput,
+  ReactionInput,
   UpdateMessageInput,
   UpdateLastReadInput,
   CountUnreadInput,
@@ -73,9 +79,12 @@ export { createHandler, type ChatpackHandler, type HandlerOptions } from "./hand
 export {
   inProcessTransport,
   isEphemeralEvent,
+  isMessageEvent,
+  isReactionEvent,
   type Transport,
   type ChatEvent,
   type EphemeralEvent,
+  type ReactionEvent,
   type TransportEvent,
   type TransportListener,
 } from "./transport";

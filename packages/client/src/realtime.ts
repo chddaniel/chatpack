@@ -11,6 +11,23 @@ export interface DurableChatEvent {
   message: ClientMessage;
 }
 
+/**
+ * Durable reaction event delivered by the Chatpack stream (ADR 0013).
+ *
+ * Carries the message's **complete** reaction set, never a delta, so applying
+ * the same event twice is harmless. Not gap-filled on reconnect: reactions have
+ * no `seq`, so a client that was offline recovers them by refetching.
+ */
+export interface ReactionChatEvent {
+  type: "reaction.added" | "reaction.removed";
+  conversationId: string;
+  /** Who added or removed the reaction. */
+  actorId: string;
+  /** The reaction key that changed. */
+  emoji: string;
+  message: ClientMessage;
+}
+
 /** Ephemeral plugin event delivered by the Chatpack stream. */
 export interface EphemeralChatEvent {
   type: string;
@@ -21,8 +38,18 @@ export interface EphemeralChatEvent {
   at: string;
 }
 
-/** Union of durable core events and ephemeral plugin events. */
-export type ChatpackEvent = DurableChatEvent | EphemeralChatEvent;
+/** Union of durable core events, reaction events, and ephemeral plugin events. */
+export type ChatpackEvent = DurableChatEvent | ReactionChatEvent | EphemeralChatEvent;
+
+/**
+ * True for the two reaction events (ADR 0013), mirroring `isReactionEvent` on
+ * the server. A predicate rather than an inline `type ===` check because each
+ * member of `ChatpackEvent` has a *union* of literal types for `type`, which
+ * TypeScript cannot use to eliminate a member from the union.
+ */
+export function isReactionChatEvent(event: ChatpackEvent): event is ReactionChatEvent {
+  return event.type === "reaction.added" || event.type === "reaction.removed";
+}
 /** Lifecycle states for the realtime stream. */
 export type ChatRealtimeStatus = "idle" | "connecting" | "open" | "closed";
 
@@ -87,6 +114,24 @@ function parseEvent(event: Event): ChatpackEvent | null {
       senderId: parsed.senderId,
       payload: parsed.payload,
       at: parsed.at,
+    };
+  }
+
+  if (parsed.type === "reaction.added" || parsed.type === "reaction.removed") {
+    if (
+      typeof parsed.conversationId !== "string" ||
+      typeof parsed.actorId !== "string" ||
+      typeof parsed.emoji !== "string" ||
+      !isMessage(parsed.message)
+    ) {
+      return null;
+    }
+    return {
+      type: parsed.type,
+      conversationId: parsed.conversationId,
+      actorId: parsed.actorId,
+      emoji: parsed.emoji,
+      message: parsed.message,
     };
   }
 

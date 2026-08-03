@@ -13,6 +13,7 @@ export type {
   MessageDeleteInput,
   MessageEditInput,
   MessageListInput,
+  MessageReactInput,
   MessageSendInput,
 } from "./client";
 export type {
@@ -30,9 +31,11 @@ export type {
   PluginSurfaces,
 } from "./plugin";
 export type { ClientRequestInit } from "./request";
+export { isReactionChatEvent } from "./realtime";
 export type {
   DurableChatEvent,
   EphemeralChatEvent,
+  ReactionChatEvent,
   ChatpackEvent,
   ChatRealtime,
   ChatRealtimeSnapshot,
@@ -51,8 +54,10 @@ export type {
   ClientConversationPage,
   ClientMessage,
   ClientMessagePage,
+  ClientMessageReference,
   ClientMetadata,
   ClientParticipant,
   ClientPresence,
   ClientPresenceResponse,
+  ClientReactionSummary,
 } from "./wire";

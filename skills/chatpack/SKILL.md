@@ -24,7 +24,8 @@ installed `llms.txt` wins (it matches the installed version).
    `basePath` (default `/api/chat`).
 2. **The only server-side methods on `chat.api`** are: `getOrCreateConversation`,
    `listConversations`, `getConversation`, `sendMessage`, `listMessages`,
-   `editMessage`, `deleteMessage`, `markRead`, `listMessagesAfter`.
+   `editMessage`, `deleteMessage`, `addReaction`, `removeReaction`, `markRead`,
+   `listMessagesAfter`.
    `getOrCreateDirectConversation` is a storage-adapter method - never call the
    adapter directly. If a method name is not in this list, **it does not exist -
    do not invent it.**
@@ -176,18 +177,30 @@ const { conversation } = await fetch("/api/chat/conversations", {
   body: JSON.stringify({ otherUserId: "bob" }),
 }).then((r) => r.json());
 
-// 3. send a message - the text field is `body` (NOT text/content)
+// 3. send a message - the text field is `body` (NOT text/content).
+//    Add `replyToMessageId` to quote-reply an earlier message in the thread.
 await fetch(`/api/chat/conversations/${conversation.id}/messages`, {
   method: "POST",
   headers: { "content-type": "application/json" },
   body: JSON.stringify({ body: "hey bob!" }),
 });
 
-// 4. live updates - ONE EventSource; reconnect + gap-fill are automatic
+// 4. react - POST to add, DELETE to remove; emoji goes in the BODY both times
+await fetch(`/api/chat/messages/msg_1/reactions`, {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ emoji: "👍" }),
+});
+
+// 5. live updates - ONE EventSource; reconnect + gap-fill are automatic
 const events = new EventSource("/api/chat/stream");
 events.addEventListener("message.created", (e) => {
   const { message } = JSON.parse((e as MessageEvent).data);
   // dedupe by message.id (delivery is at-least-once), then render
+});
+events.addEventListener("reaction.added", (e) => {
+  const { message } = JSON.parse((e as MessageEvent).data);
+  // message.reactions is the COMPLETE set after the change - replace, don't merge
 });
 ```
 
@@ -200,6 +213,19 @@ Client semantics that trip up generated code:
 - Every conversation object carries the viewer's **`unreadCount`** (messages
   newer than their read-state, excluding their own) - read the badge from
   there, don't count client-side.
+- Every message carries `reactions` (`[{ emoji, count, userIds }]`),
+  `replyToMessageId`, and a read-only `replyTo` preview
+  (`{ id, senderId, excerpt, deleted }`) hydrated per request - render the quote
+  bar from `replyTo`, never store your own copy. Reaction routes are
+  **idempotent** and always return the message's **complete** reaction set:
+  replace that field, don't merge. `emoji` is any non-empty string ≤32 chars
+  (`"👍"`, `":shipit:"`, `"custom_1234"`); `""` or longer is `INVALID_INPUT`.
+  Replies are flat pointers, **not threads**; a reaction is not a message - no
+  `seq`, no conversation reorder, no unread bump.
+- **Reaction events aren't replayed.** `reaction.added`/`reaction.removed` are
+  live-only: reactions have no `seq`, so their frames carry no `id:` and
+  `Last-Event-ID` gap-fill skips them. Refetch the thread on stream reopen to
+  pick up reactions applied while offline.
 - Plugin events on the same stream: `typing.started/.stopped`,
   `presence.online/.offline`, `receipt.delivered/.read` - ephemeral, never
   replayed. Throttle typing POSTs to ~1 per 3s; expire indicators after ~5s.
@@ -209,7 +235,7 @@ Client semantics that trip up generated code:
 
 ## Step 5 - Verify BEFORE declaring success (mandatory)
 
-Run these (adjust port/cookie names). All three must pass; do not report the
+Run these (adjust port/cookie names). All four must pass; do not report the
 integration as working until they do.
 
 ```sh
@@ -224,7 +250,14 @@ curl -si -X POST localhost:3000/api/chat/conversations/conv_1/messages \
 curl -s 'localhost:3000/api/chat/conversations/conv_1/messages?limit=10' \
   -H 'cookie: demo_user=bob'
 
-# 3. live stream (expect ": connected", then events as messages are sent)
+# 3. react twice (expect the SAME single reaction both times - it's idempotent)
+curl -s -X POST localhost:3000/api/chat/messages/msg_1/reactions \
+  -H 'cookie: demo_user=bob' -H 'content-type: application/json' -d '{"emoji":"👍"}'
+curl -s -X POST localhost:3000/api/chat/messages/msg_1/reactions \
+  -H 'cookie: demo_user=bob' -H 'content-type: application/json' -d '{"emoji":"👍"}'
+
+# 4. live stream (expect ": connected", then events as messages are sent;
+#    reaction.added frames arrive with no `id:` line - that is correct)
 curl -sN localhost:3000/api/chat/stream -H 'cookie: demo_user=bob'
 ```
 
@@ -247,10 +280,11 @@ AND the Network tab must show it on `/api/chat/*` requests.
 ## Custom storage adapter (Supabase JS / Convex / Firestore / other)
 
 Do NOT improvise: read **Part 2 of `llms.txt`** and follow it exactly - it
-contains the 10-method `StorageAdapter` contract, the invariants (atomic
+contains the 14-method `StorageAdapter` contract, the invariants (atomic
 `pairKey` creation, atomic per-conversation `seq`, `Date` instances not ISO
 strings, soft-delete as tombstone, newest-first vs oldest-first ordering,
-batched exact unread counts), the reference Postgres schema, a skeleton, and
-an 11-point verification checklist.
+batched exact unread counts, idempotent reaction writes that never touch
+`lastSeq`/activity), the reference Postgres schema, a skeleton, and a
+14-point verification checklist.
 The adapter must run server-side with privileged credentials; `chatpack_*`
 tables must never be readable by browser/anon clients.

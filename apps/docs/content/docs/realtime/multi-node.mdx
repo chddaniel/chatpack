@@ -89,6 +89,7 @@ is yours to do, since this package didn't open them.
 | Feature                                            | Multi-node? |
 | -------------------------------------------------- | ----------- |
 | `message.created` / `message.updated` / `.deleted` | ✅ Yes      |
+| `reaction.added` / `reaction.removed`              | ✅ Yes      |
 | `typing()` indicators                              | ✅ Yes      |
 | `receipts()` delivered/read ticks                  | ✅ Yes      |
 | `presence()` online/offline                        | ❌ Per-node |
@@ -122,7 +123,10 @@ Failures surface through `onError` instead of the request path.
 
 Redis pub/sub itself is at-most-once - there's no replay buffer, which is exactly
 why durable events remain replayable from storage and ephemeral ones are defined
-as droppable.
+as droppable. Reaction events sit in between: they're stored, but they have no
+`seq`, so `Last-Event-ID` can't replay them either - a reaction missed during an
+outage appears on the next refetch of that thread
+([Reaction events](/docs/realtime/sse#reaction-events-are-a-third-category)).
 
 ## Notes
 

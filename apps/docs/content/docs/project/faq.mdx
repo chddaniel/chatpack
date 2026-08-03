@@ -120,6 +120,27 @@ by `payload.messageId`; treat `lastReadMessageId` as the durable truth.
 
 </Accordion>
 
+<Accordion title="A reaction added while I was offline never arrived - why?">
+
+By design. Reactions are stored, but they have no `seq`, so their SSE frames
+carry no `id:` (emitting one would rewind `Last-Event-ID` and replay messages)
+and `Last-Event-ID` gap-fill can't replay them. Refetch the thread when the
+stream reopens - `@chatpack/client` users get the reactions on the next
+`messages.list`. Details in
+[Real-time with SSE](/docs/realtime/sse#reaction-events-are-a-third-category).
+
+</Accordion>
+
+<Accordion title="Why does reacting twice not add two reactions?">
+
+Reaction writes are idempotent: `(messageId, userId, emoji)` is unique, so
+reacting again is a no-op and un-reacting something you never reacted to is
+also a no-op - neither is an error. Both routes return the message with its
+**complete** reaction set, so replace that field in your UI rather than
+merging into it.
+
+</Accordion>
+
 </Accordions>
 
 ## Storage
@@ -154,6 +175,20 @@ your database on your own schedule.
 
 </Accordion>
 
+<Accordion title="I upgraded and Postgres errors on a missing table or column - why?">
+
+Reactions and quote-replies added a fourth table
+(`chatpack_message_reactions`) and a `reply_to_message_id` column on
+`chatpack_messages`. **Re-run the migration before deploying the upgrade** -
+every statement is `IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS`, so re-running
+the whole script is safe and preserves your data and `seq` counters. Custom
+adapters need the four new `StorageAdapter` methods
+(`getMessagesByIds`, `addReaction`, `removeReaction`,
+`listReactionsByMessageIds`); see the
+[custom adapter guide](/docs/storage/custom-adapter).
+
+</Accordion>
+
 </Accordions>
 
 ## Project
@@ -173,7 +208,19 @@ versions and read changelogs when upgrading.
 
 All deliberately out of scope for v0 - see [Roadmap](/docs/project/roadmap).
 The data model anticipates groups; attachments can point at files you host via
-`metadata`.
+`metadata`. Reactions and quote-replies **did** ship - they fit the existing
+seams without a new data model.
+
+</Accordion>
+
+<Accordion title="Are replies threads?">
+
+No. `replyToMessageId` is a flat pointer at one earlier message in the same
+conversation - there are no thread ids, no per-thread reply counts, and no
+nested pagination. The API hydrates a read-only `replyTo` preview
+(`{ id, senderId, excerpt, deleted }`) per request so the quote bar follows
+edits and deletions of the parent. Real threads need a different data model and
+stay a non-goal.
 
 </Accordion>
 

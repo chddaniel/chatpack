@@ -24,7 +24,7 @@
  * @module
  */
 
-import type { Conversation, Message, Metadata, MessageRole } from "./types";
+import type { Conversation, Message, Metadata, MessageRole, Reaction } from "./types";
 
 /** Input for {@link StorageAdapter.getOrCreateDirectConversation}. */
 export interface GetOrCreateDirectConversationInput {
@@ -75,7 +75,22 @@ export interface AddMessageInput {
   senderId: string;
   body: string;
   role: MessageRole;
+  /**
+   * The message this one quote-replies to, or `null` for a normal message
+   * (`docs/decisions/0013`). Core has already verified it exists in the same
+   * conversation - store it verbatim, no validation needed.
+   */
+  replyToMessageId: string | null;
   metadata: Metadata;
+}
+
+/** Input for {@link StorageAdapter.addReaction} and {@link StorageAdapter.removeReaction}. */
+export interface ReactionInput {
+  messageId: string;
+  /** The reacting user. Comes from the auth hook, never from a request body. */
+  userId: string;
+  /** The reaction key, already trimmed and length-checked by core. */
+  emoji: string;
 }
 
 /** Input for {@link StorageAdapter.listMessages}. */
@@ -168,6 +183,16 @@ export interface StorageAdapter {
   /** Fetch a single message by id, or `null` if unknown. */
   getMessage(messageId: string): Promise<Message | null>;
 
+  /**
+   * Fetch many messages by id in one call - core uses this to hydrate
+   * quote-reply previews, one batched call per page (`docs/decisions/0013`).
+   *
+   * Order does not matter and unknown ids must simply be absent from the
+   * result (never `null` entries, never a throw). An empty input array must
+   * return an empty array without touching the database.
+   */
+  getMessagesByIds(messageIds: string[]): Promise<Message[]>;
+
   /** List messages in a conversation, newest-first, with cursor pagination. */
   listMessages(input: ListMessagesInput): Promise<ListMessagesResult>;
 
@@ -206,4 +231,35 @@ export interface StorageAdapter {
    * core treats missing keys as 0.
    */
   countUnread(input: CountUnreadInput): Promise<Record<string, number>>;
+
+  /**
+   * Add a reaction (`docs/decisions/0013`). **Idempotent**: the same
+   * `(messageId, userId, emoji)` triple twice must leave exactly one
+   * reaction, not two and not an error.
+   *
+   * Returns **all** reactions on the message afterwards, so core can publish a
+   * complete snapshot without a second round trip. Reactions must not touch
+   * the conversation's activity ordering or `lastSeq` - a reaction is not a
+   * message.
+   */
+  addReaction(input: ReactionInput): Promise<Reaction[]>;
+
+  /**
+   * Remove a reaction. **Idempotent**: removing one that was never there is a
+   * silent no-op, not an error (an unreact can be replayed).
+   *
+   * Returns all remaining reactions on the message, same as
+   * {@link StorageAdapter.addReaction}.
+   */
+  removeReaction(input: ReactionInput): Promise<Reaction[]>;
+
+  /**
+   * All reactions on a set of messages, batched - core uses this to decorate
+   * message pages, one call per page.
+   *
+   * Sort ascending by `createdAt` so aggregated `userIds` come out
+   * earliest-first. Messages with no reactions are simply absent from the
+   * result; an empty input array returns an empty array.
+   */
+  listReactionsByMessageIds(messageIds: string[]): Promise<Reaction[]>;
 }

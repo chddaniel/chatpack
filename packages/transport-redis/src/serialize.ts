@@ -81,7 +81,8 @@ export function decodeEnvelope(payload: string): EventEnvelope | null {
   if (typeof eventRecord["type"] !== "string") return null;
 
   if (!isEphemeralEvent(event as TransportEvent)) {
-    // Durable event: revive the message's Date fields.
+    // Message or reaction event: both carry a message, so both need its Date
+    // fields revived (ADR 0013). `replyTo` and `reactions` are plain JSON.
     const message = eventRecord["message"];
     if (typeof message !== "object" || message === null || Array.isArray(message)) return null;
     const messageRecord = message as Record<string, unknown>;

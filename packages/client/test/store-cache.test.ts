@@ -15,6 +15,9 @@ const page: ClientMessagePage = {
       createdAt: "2026-01-01T00:00:00.000Z",
       editedAt: null,
       deletedAt: null,
+      replyToMessageId: null,
+      replyTo: null,
+      reactions: [],
     },
   ],
   nextCursor: null,
@@ -219,6 +222,132 @@ describe("conversations list realtime updates", () => {
       message: makeMessage({ seq: 1 }),
     });
     expect(cache.getSnapshot().conversations.data).toBeNull();
+  });
+});
+
+describe("reactions in the cache (ADR 0013)", () => {
+  const summary = [{ emoji: "👍", count: 1, userIds: ["bob"] }];
+
+  it("replaces the reaction set of a loaded message", () => {
+    const cache = createChatpackCache({ userId: "alice" });
+    cache.setMessages("c1", { data: page, error: null }, false);
+
+    cache.applyEvent({
+      type: "reaction.added",
+      conversationId: "c1",
+      actorId: "bob",
+      emoji: "👍",
+      message: { ...page.messages[0]!, reactions: summary },
+    });
+    const messages = cache.getSnapshot().messagesByConversation["c1"]!.data!.messages;
+    expect(messages).toHaveLength(1);
+    expect(messages[0]!.reactions).toEqual(summary);
+
+    // The event carries the whole set, so applying it twice is idempotent...
+    cache.applyEvent({
+      type: "reaction.added",
+      conversationId: "c1",
+      actorId: "bob",
+      emoji: "👍",
+      message: { ...page.messages[0]!, reactions: summary },
+    });
+    expect(cache.getSnapshot().messagesByConversation["c1"]!.data!.messages[0]!.reactions).toEqual(
+      summary,
+    );
+
+    // ...and a removal is just another full snapshot.
+    cache.applyEvent({
+      type: "reaction.removed",
+      conversationId: "c1",
+      actorId: "bob",
+      emoji: "👍",
+      message: { ...page.messages[0]!, reactions: [] },
+    });
+    expect(cache.getSnapshot().messagesByConversation["c1"]!.data!.messages[0]!.reactions).toEqual(
+      [],
+    );
+  });
+
+  it("never reorders the list, bumps unread, or advances the seq baseline", () => {
+    const cache = cacheWithList([0, 3]);
+    cache.setConversation("c2", { data: makeConversation("c2", 3), error: null });
+    const message = makeMessage({ conversationId: "c2", id: "m9", seq: 9 });
+    cache.setMessages(
+      "c2",
+      { data: { messages: [message], nextCursor: null }, error: null },
+      false,
+    );
+
+    cache.applyEvent({
+      type: "reaction.added",
+      conversationId: "c2",
+      actorId: "bob",
+      emoji: "👍",
+      message: { ...message, reactions: summary },
+    });
+
+    // c2 is still second, still at 3 unread.
+    expect(listOf(cache)).toEqual([
+      ["c1", 0],
+      ["c2", 3],
+    ]);
+    expect(cache.getSnapshot().conversationsById["c2"]?.data?.unreadCount).toBe(3);
+
+    // The seq baseline is untouched, so a *later* real message at the same seq
+    // still counts as new rather than being swallowed as a replay.
+    cache.applyEvent({
+      type: "message.created",
+      conversationId: "c2",
+      message: makeMessage({ conversationId: "c2", id: "m10", seq: 10 }),
+    });
+    expect(listOf(cache)).toEqual([
+      ["c2", 4],
+      ["c1", 0],
+    ]);
+  });
+
+  it("drops a reaction on a message outside the loaded page", () => {
+    const cache = createChatpackCache({ userId: "alice" });
+    cache.setMessages("c1", { data: page, error: null }, false);
+
+    // Older message, not in this page: splicing it in would put a lone message
+    // into a paginated list where it does not belong.
+    cache.applyEvent({
+      type: "reaction.added",
+      conversationId: "c1",
+      actorId: "bob",
+      emoji: "👍",
+      message: makeMessage({ id: "m_old", seq: 0, reactions: summary }),
+    });
+    const messages = cache.getSnapshot().messagesByConversation["c1"]!.data!.messages;
+    expect(messages.map((m) => m.id)).toEqual(["m1"]);
+  });
+
+  it("ignores a reaction for a conversation with no loaded thread", () => {
+    const cache = createChatpackCache({ userId: "alice" });
+    cache.applyReactions("c1", { ...page.messages[0]!, reactions: summary });
+    expect(cache.getSnapshot().messagesByConversation["c1"]).toBeUndefined();
+  });
+
+  it("keeps every other field of the cached message", () => {
+    const cache = createChatpackCache({ userId: "alice" });
+    const reply = makeMessage({
+      id: "m2",
+      seq: 2,
+      body: "quoting",
+      replyToMessageId: "m1",
+      replyTo: { id: "m1", senderId: "alice", excerpt: "hello", deleted: false },
+    });
+    cache.setMessages("c1", { data: { messages: [reply], nextCursor: null }, error: null }, false);
+
+    // A reaction event is applied field-by-field, so a stale body or preview in
+    // the event payload can never clobber what the cache already has.
+    cache.applyReactions("c1", { ...reply, body: "STALE", replyTo: null, reactions: summary });
+    expect(cache.getSnapshot().messagesByConversation["c1"]!.data!.messages[0]).toMatchObject({
+      body: "quoting",
+      replyTo: { id: "m1", excerpt: "hello" },
+      reactions: summary,
+    });
   });
 });
 

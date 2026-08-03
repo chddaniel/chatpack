@@ -81,10 +81,12 @@ lives at [`examples/messenger`](../../examples/messenger).
 | `api.getOrCreateConversation` | Find or create the 1:1 conversation for a user pair                                             |
 | `api.listConversations`       | List a user's conversations, most recent first                                                  |
 | `api.getConversation`         | Fetch one conversation (read-permission checked)                                                |
-| `api.sendMessage`             | Send a text message (write-permission checked)                                                  |
+| `api.sendMessage`             | Send a text message, optionally quote-replying to another (write-permission checked)            |
 | `api.listMessages`            | Paginate history, newest-first                                                                  |
 | `api.editMessage`             | Edit your own message                                                                           |
 | `api.deleteMessage`           | Soft-delete your own message                                                                    |
+| `api.addReaction`             | React as `userId` (write-permission checked); idempotent                                        |
+| `api.removeReaction`          | Remove one of your own reactions; idempotent                                                    |
 | `api.markRead`                | Update durable read-state (`last_read`); monotonic - marking an older message is a silent no-op |
 | `api.listMessagesAfter`       | Messages after a `seq` (SSE reconnect gap-fill)                                                 |
 
@@ -93,21 +95,29 @@ Conversation-returning methods (`getOrCreateConversation`,
 calling user's **`unreadCount`** - messages newer than their read-state,
 excluding their own (soft-deleted messages count; they render as tombstones).
 
+Message-returning methods all return `MessageWithDetails` - the stored
+`Message` plus two per-request decorations: `replyTo` (the quoted parent's
+read-only preview `{ id, senderId, excerpt, deleted }`, or `null`) and
+`reactions` (`[{ emoji, count, userIds }]`, grouped, earliest-first). Neither is
+stored; core computes both from batched adapter calls, one per page, so an
+edited parent's excerpt is never stale.
+
 ### Which API do I call?
 
 The same task, from both sides - `chat.api.*` in server code, the REST route
 from a browser/client:
 
-| I want to...                    | Server (`chat.api.*`)          | HTTP                               |
-| ------------------------------- | ------------------------------ | ---------------------------------- |
-| Start a chat with someone       | `getOrCreateConversation`      | `POST /conversations`              |
-| Show the inbox / sidebar        | `listConversations`            | `GET /conversations`               |
-| Open one conversation           | `getConversation`              | `GET /conversations/:id`           |
-| Load history / scroll back      | `listMessages`                 | `GET /conversations/:id/messages`  |
-| Send a message                  | `sendMessage`                  | `POST /conversations/:id/messages` |
-| Edit / delete my message        | `editMessage`, `deleteMessage` | `PATCH` / `DELETE /messages/:id`   |
-| Mark a conversation read        | `markRead`                     | `POST /conversations/:id/read`     |
-| Get live updates in the browser | - (server-sent events)         | `GET /stream` via `EventSource`    |
+| I want to...                    | Server (`chat.api.*`)           | HTTP                                      |
+| ------------------------------- | ------------------------------- | ----------------------------------------- |
+| Start a chat with someone       | `getOrCreateConversation`       | `POST /conversations`                     |
+| Show the inbox / sidebar        | `listConversations`             | `GET /conversations`                      |
+| Open one conversation           | `getConversation`               | `GET /conversations/:id`                  |
+| Load history / scroll back      | `listMessages`                  | `GET /conversations/:id/messages`         |
+| Send a message                  | `sendMessage`                   | `POST /conversations/:id/messages`        |
+| Edit / delete my message        | `editMessage`, `deleteMessage`  | `PATCH` / `DELETE /messages/:id`          |
+| React / un-react                | `addReaction`, `removeReaction` | `POST` / `DELETE /messages/:id/reactions` |
+| Mark a conversation read        | `markRead`                      | `POST /conversations/:id/read`            |
+| Get live updates in the browser | - (server-sent events)          | `GET /stream` via `EventSource`           |
 
 > **Pagination vs gap-fill - don't mix them up.** Infinite scroll ("load
 > older messages") is `listMessages` with the `nextCursor` from the previous
@@ -193,17 +203,19 @@ keyed by resource - `{ conversation }`, `{ message }`, `{ conversations, nextCur
 `chat.api.*` methods return the bare object (`Conversation`, `Message`, ...),
 so don't reuse HTTP-response types for `chat.api.*` calls or vice versa:
 
-| Method | Path                          | Request body / query                   | Response (200/201)                        |
-| ------ | ----------------------------- | -------------------------------------- | ----------------------------------------- |
-| POST   | `/conversations`              | `{ otherUserId, metadata? }`           | `{ conversation }`                        |
-| GET    | `/conversations`              | `?limit=&cursor=`                      | `{ conversations, nextCursor }`           |
-| GET    | `/conversations/:id`          | -                                      | `{ conversation }`                        |
-| POST   | `/conversations/:id/messages` | `{ body, role?, metadata? }`           | `{ message }` (201)                       |
-| GET    | `/conversations/:id/messages` | `?limit=&cursor=`                      | `{ messages, nextCursor }` - newest first |
-| POST   | `/conversations/:id/read`     | `{ messageId }`                        | `{ ok: true }`                            |
-| PATCH  | `/messages/:id`               | `{ body }`                             | `{ message }`                             |
-| DELETE | `/messages/:id`               | -                                      | `{ message }` (soft-deleted)              |
-| GET    | `/stream`                     | SSE; auto `Last-Event-ID` on reconnect | `text/event-stream`                       |
+| Method | Path                          | Request body / query                            | Response (200/201)                        |
+| ------ | ----------------------------- | ----------------------------------------------- | ----------------------------------------- |
+| POST   | `/conversations`              | `{ otherUserId, metadata? }`                    | `{ conversation }`                        |
+| GET    | `/conversations`              | `?limit=&cursor=`                               | `{ conversations, nextCursor }`           |
+| GET    | `/conversations/:id`          | -                                               | `{ conversation }`                        |
+| POST   | `/conversations/:id/messages` | `{ body, role?, replyToMessageId?, metadata? }` | `{ message }` (201)                       |
+| GET    | `/conversations/:id/messages` | `?limit=&cursor=`                               | `{ messages, nextCursor }` - newest first |
+| POST   | `/conversations/:id/read`     | `{ messageId }`                                 | `{ ok: true }`                            |
+| PATCH  | `/messages/:id`               | `{ body }`                                      | `{ message }`                             |
+| DELETE | `/messages/:id`               | -                                               | `{ message }` (soft-deleted)              |
+| POST   | `/messages/:id/reactions`     | `{ emoji }`                                     | `{ message }` (full reaction set)         |
+| DELETE | `/messages/:id/reactions`     | `{ emoji }`                                     | `{ message }` (full reaction set)         |
+| GET    | `/stream`                     | SSE; auto `Last-Event-ID` on reconnect          | `text/event-stream`                       |
 
 Every conversation object in a response carries the **viewer's**
 `unreadCount` - messages newer than their read-state, excluding their own.
@@ -229,6 +241,20 @@ Opt-in plugins from `@chatpack/core/plugins` add routes of their own
   `createdAt`/`editedAt`/`deletedAt` as `Date` (correct for the server-side
   `chat.api.*` calls), but JSON serialization means HTTP clients receive ISO
   8601 strings - type them as `string` in frontend code.
+- **Reaction routes are idempotent both ways** (reacting twice = one reaction,
+  un-reacting nothing = no-op) and always return the message with its
+  **complete** reaction set - replace that cache entry, don't merge a delta.
+  The `emoji` is in the request **body** on `DELETE` too, because reaction keys
+  are arbitrary strings that mangle in a path segment. A key is any non-empty
+  string, trimmed, up to 32 characters (not validated as a Unicode emoji);
+  violations are 400 `INVALID_INPUT`. Reacting needs **write** permission, like
+  editing, and the actor always comes from the auth hook.
+- **`replyToMessageId` must name a message in the same conversation** (else 404
+  `MESSAGE_NOT_FOUND`); replying to a soft-deleted message is allowed, deleting
+  a parent leaves its replies intact, a reply to a reply is still one flat hop,
+  and the pointer is immutable. These are quote-replies, **not threads**.
+- **A reaction is not a message:** no `seq`, no `unreadCount` bump, no
+  reordering of the conversation list.
 
 Example - send a message (the text field is **`body`**):
 
@@ -306,8 +332,9 @@ keep heavy work in your own queue (design: `docs/decisions/0011`).
 ## Real-time (SSE)
 
 `GET /stream` is a Server-Sent Events endpoint. Each connected user receives
-`message.created` / `message.updated` / `message.deleted` events for their
-conversations only - participation is re-checked server-side per event.
+`message.created` / `message.updated` / `message.deleted` and
+`reaction.added` / `reaction.removed` events for their conversations only -
+participation is re-checked server-side per event.
 
 ```ts
 const events = new EventSource("/api/chat/stream");
@@ -318,6 +345,11 @@ events.addEventListener("message.created", (e) => {
   const { message } = JSON.parse((e as MessageEvent).data);
 });
 
+events.addEventListener("reaction.added", (e) => {
+  const { message, actorId, emoji } = JSON.parse((e as MessageEvent).data);
+  // message.reactions is the COMPLETE set after the change - replace, don't merge.
+});
+
 events.onerror = () => {
   if (events.readyState === EventSource.CLOSED) {
     // Fatal (e.g. 401): the browser will NOT retry. Re-auth, then recreate.
@@ -326,6 +358,17 @@ events.onerror = () => {
   // Last-Event-ID and the server replays what was missed.
 };
 ```
+
+**Reaction events are a third category.** They're durable (stored, unlike
+ephemeral plugin events) but reactions have no `seq`, so their SSE frames carry
+**no `id:` line** - emitting one would rewind `Last-Event-ID` and replay
+messages the client already has. The trade-off: reactions are **not
+gap-filled**. A reaction applied while a client was disconnected shows up on
+the next refetch of that thread, not as a replayed frame. The payload is
+`{ type, message, actorId, emoji }`, where `message.reactions` is the complete
+set after the change - replace that field, don't merge into it. Design
+rationale:
+[ADR 0013](../../docs/decisions/0013-reactions-and-replies.md).
 
 > **Browser auth for SSE must be cookie-based.** `EventSource` cannot send
 > custom headers, so your `auth` hook must be able to resolve the user from
@@ -421,6 +464,12 @@ You can write your own plugin - implement the exported `ChatpackPlugin`
 interface (extra routes via `handleRequest`, live signals via
 `publishEphemeral`, hooks for stream open/close, mark-read, and delivery).
 
+If you write your own `Transport`, note that `TransportEvent` now has **three**
+members: `ChatEvent` (messages), `ReactionEvent`, and `EphemeralEvent`. So
+`!isEphemeralEvent(event)` no longer means "this is a message" - use the
+exported `isMessageEvent(event)` when you need the `seq`/`id:` frame. Plugin
+`onEventDelivered` still only ever sees a `ChatEvent`.
+
 > **⚠️ Deployment reality check:** the default transport is **in-process** and
 > `memoryAdapter` is **per-process** - both assume one long-lived server
 > (a Node server, a single Fly/Railway container, `next start`, `Bun.serve`).
@@ -466,11 +515,15 @@ deliberately small:
 | `listConversations`             | A user's conversations, most-recently-active first, cursor-paginated     |
 | `addMessage`                    | Persist + assign the next strictly-increasing `seq` for the conversation |
 | `getMessage`                    | Fetch by id, or `null`                                                   |
+| `getMessagesByIds`              | Batched fetch by id; unknown ids simply absent (reply previews)          |
 | `listMessages`                  | Newest-first, cursor-paginated                                           |
 | `listMessagesAfterSeq`          | Messages with `seq > afterSeq`, **oldest first** (SSE gap-fill)          |
 | `updateMessage`                 | Edit body / set `editedAt` / set `deletedAt` in place                    |
 | `updateLastRead`                | Set a participant's `lastReadMessageId`                                  |
 | `countUnread`                   | Batched per-conversation unread counts for one viewer                    |
+| `addReaction`                   | Idempotent insert; return the message's **full** reaction set            |
+| `removeReaction`                | Idempotent delete; return the remaining set                              |
+| `listReactionsByMessageIds`     | Batched reactions for a page, ascending `createdAt`                      |
 
 Contract rules that the type signatures alone don't tell you:
 
@@ -498,6 +551,20 @@ Contract rules that the type signatures alone don't tell you:
   with `seq` greater than the seq of the viewer's `lastReadMessageId`
   (`null` = 0) and `senderId !== userId`. Tombstones count. One query per
   page, not one per conversation.
+- **Reaction writes are idempotent and return the full set.** Enforce
+  uniqueness on `(messageId, userId, emoji)` in the database
+  (insert-on-conflict-do-nothing), not in JS; a duplicate react and a missing
+  un-react are both no-ops. Return every reaction on the message afterwards -
+  core publishes that as a snapshot, so a delta blanks other users' reactions
+  in every client. Reactions must **not** touch the conversation's `lastSeq` or
+  activity timestamp.
+- **Batched lookups tolerate misses.** `getMessagesByIds` and
+  `listReactionsByMessageIds` take a whole page's ids and do one query;
+  unknown ids are simply absent (no `null`s, no throw), and `[]` in means `[]`
+  out without touching the database. Sort reactions ascending by `createdAt`.
+- **Store `replyToMessageId` verbatim** - core already validated that it names
+  a message in the same conversation. Adapters never see `replyTo` /
+  `reactions`; those are core's per-request decorations.
 
 The [in-memory adapter](../adapter-memory) is the reference implementation,
 and the [Drizzle/Postgres adapter](../adapter-drizzle) shows the contract on

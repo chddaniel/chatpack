@@ -19,11 +19,17 @@ description: What shipped in v0, what's deliberately out of scope, and where Cha
 | Typing / presence / read-tick plugins   | ✅ Done (v0.next) |
 | Unread counts (`unreadCount`)           | ✅ Done (v0.next) |
 | Redis transport (multi-node SSE)        | ✅ Done (v0.next) |
+| Browser client + React hooks            | ✅ Done (v0.next) |
+| Reactions + quote-replies               | ✅ Done (v0.next) |
 
 ## Deliberately not in scope yet
 
 - **Group conversations** - v0 is 1:1 only; the data model anticipates groups
   (group conversations simply won't carry a pair key).
+- **Message threads** - `replyToMessageId` is a flat pointer at one earlier
+  message, not a thread tree: no thread ids, no per-thread reply counts, no
+  nested pagination. See
+  [Conversations & messages](/docs/concepts/conversations-messages).
 - **File uploads / attachments** - use `metadata` to point at files you host.
 - **Push notifications** - your app's job for now.
 - **React UI components** - Chatpack is headless; bring your own frontend.

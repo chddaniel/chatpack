@@ -16,11 +16,11 @@ import {
   type TransportEvent,
   type ChatEvent,
 } from "../src/transport";
-import type { Message } from "../src/types";
+import type { MessageWithDetails } from "../src/types";
 
 const fakeApi = {} as ChatpackApi;
 
-function sampleMessage(): Message {
+function sampleMessage(): MessageWithDetails {
   return {
     id: "m1",
     conversationId: "c1",
@@ -31,7 +31,10 @@ function sampleMessage(): Message {
     createdAt: new Date(),
     editedAt: null,
     deletedAt: null,
+    replyToMessageId: null,
     metadata: {},
+    replyTo: null,
+    reactions: [],
   };
 }
 

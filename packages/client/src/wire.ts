@@ -1,6 +1,13 @@
 /** JSON wire types returned by the Chatpack HTTP handler. */
 
-import type { ConversationWithUnread, Message, Metadata, Participant } from "@chatpack/core";
+import type {
+  ConversationWithUnread,
+  MessageReference,
+  MessageWithDetails,
+  Metadata,
+  Participant,
+  ReactionSummary,
+} from "@chatpack/core";
 
 /** Recursively convert server `Date` values to JSON timestamp strings. */
 export type Jsonify<T> = T extends Date
@@ -13,8 +20,15 @@ export type Jsonify<T> = T extends Date
 
 /** Conversation shape returned over HTTP. */
 export type ClientConversation = Jsonify<ConversationWithUnread>;
-/** Message shape returned over HTTP. */
-export type ClientMessage = Jsonify<Message>;
+/**
+ * Message shape returned over HTTP, including the server-hydrated `replyTo`
+ * preview and `reactions` summary (ADR 0013).
+ */
+export type ClientMessage = Jsonify<MessageWithDetails>;
+/** Quote-reply preview of a parent message. */
+export type ClientMessageReference = Jsonify<MessageReference>;
+/** Reactions of one kind on a message, grouped by emoji. */
+export type ClientReactionSummary = Jsonify<ReactionSummary>;
 /** Participant shape returned over HTTP. */
 export type ClientParticipant = Jsonify<Participant>;
 /** Metadata shape returned over HTTP. */

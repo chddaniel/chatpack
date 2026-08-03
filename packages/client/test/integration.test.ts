@@ -166,4 +166,108 @@ describe("client and handler integration", () => {
     carol.dispose();
     dave.dispose();
   });
+
+  it("reacts and replies through the real handler, converging both clients", async () => {
+    const chat = chatpack({
+      storage: memoryAdapter(),
+      auth: (request) => {
+        const userId = request.headers.get("x-user-id");
+        return userId === null ? null : { id: userId };
+      },
+    });
+    const handler = chat.handler({ heartbeatIntervalMs: 0 });
+    const streams = new Map<string, ScriptedEventSource>();
+    const clientFor = (userId: string) => {
+      const stream = new ScriptedEventSource(userId);
+      streams.set(userId, stream);
+      return createChatClient({
+        userId,
+        fetch: async (input, init) => {
+          const requestURL = new URL(input instanceof Request ? input.url : input);
+          const headers = new Headers(init?.headers);
+          headers.set("x-user-id", userId);
+          return handler.fetch(
+            new Request("http://chatpack.invalid" + requestURL.pathname + requestURL.search, {
+              ...init,
+              headers,
+            }),
+          );
+        },
+        eventSource: () => stream,
+      });
+    };
+
+    const alice = clientFor("alice");
+    const bob = clientFor("bob");
+    chat.transport.subscribe((event) => {
+      for (const stream of streams.values()) stream.deliver(event);
+    });
+
+    const conversation = await alice.conversations.create({ otherUserId: "bob" });
+    if (conversation.error !== null) throw new Error("setup failed");
+    const conversationId = conversation.data.id;
+
+    const parent = await alice.messages.send({ conversationId, body: "the original" });
+    if (parent.error !== null) throw new Error("send failed");
+
+    // Both clients load the thread and open their streams.
+    await alice.messages.list({ conversationId });
+    await bob.messages.list({ conversationId });
+    alice.realtime.connect();
+    bob.realtime.connect();
+
+    // A quote-reply arrives with the parent preview already hydrated.
+    const reply = await bob.messages.send({
+      conversationId,
+      body: "quoting that",
+      replyToMessageId: parent.data.id,
+    });
+    if (reply.error !== null) throw new Error("reply failed");
+    expect(reply.data.replyTo).toMatchObject({
+      id: parent.data.id,
+      senderId: "alice",
+      excerpt: "the original",
+    });
+
+    const aliceThread = () =>
+      alice.$store.getSnapshot().messagesByConversation[conversationId]!.data!.messages;
+    const bobThread = () =>
+      bob.$store.getSnapshot().messagesByConversation[conversationId]!.data!.messages;
+    expect(aliceThread()[0]!.replyTo?.excerpt).toBe("the original");
+
+    // Bob reacts to alice's message: his own cache echoes the response, and
+    // alice's cache picks it up off the stream. Both land on the same set.
+    const reacted = await bob.messages.react({ messageId: parent.data.id, emoji: "👍" });
+    if (reacted.error !== null) throw new Error("react failed");
+    const summary = [{ emoji: "👍", count: 1, userIds: ["bob"] }];
+    expect(reacted.data.reactions).toEqual(summary);
+    expect(bobThread().find((m) => m.id === parent.data.id)!.reactions).toEqual(summary);
+    expect(aliceThread().find((m) => m.id === parent.data.id)!.reactions).toEqual(summary);
+
+    // Alice joins the same key; the count grows on both sides.
+    await alice.messages.react({ messageId: parent.data.id, emoji: "👍" });
+    const both = [{ emoji: "👍", count: 2, userIds: ["bob", "alice"] }];
+    expect(aliceThread().find((m) => m.id === parent.data.id)!.reactions).toEqual(both);
+    expect(bobThread().find((m) => m.id === parent.data.id)!.reactions).toEqual(both);
+
+    // Unreacting is scoped to the caller and converges the same way.
+    await bob.messages.unreact({ messageId: parent.data.id, emoji: "👍" });
+    const alone = [{ emoji: "👍", count: 1, userIds: ["alice"] }];
+    expect(bobThread().find((m) => m.id === parent.data.id)!.reactions).toEqual(alone);
+    expect(aliceThread().find((m) => m.id === parent.data.id)!.reactions).toEqual(alone);
+
+    // A reaction is not a message: no phantom thread entries, and the list is
+    // still ordered by the last real message.
+    expect(aliceThread()).toHaveLength(2);
+    expect(aliceThread().map((m) => m.body)).toEqual(["quoting that", "the original"]);
+
+    // Server-side errors surface as results, not throws.
+    const bad = await bob.messages.react({ messageId: parent.data.id, emoji: "" });
+    expect(bad.error?.code).toBe("INVALID_INPUT");
+    const missing = await bob.messages.react({ messageId: "nope", emoji: "👍" });
+    expect(missing.error?.code).toBe("MESSAGE_NOT_FOUND");
+
+    alice.dispose();
+    bob.dispose();
+  });
 });

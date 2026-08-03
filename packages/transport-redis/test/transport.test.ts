@@ -1,9 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
-import type { ChatEvent, EphemeralEvent, Message, TransportEvent } from "@chatpack/core";
+import type {
+  ChatEvent,
+  EphemeralEvent,
+  MessageWithDetails,
+  ReactionEvent,
+  TransportEvent,
+} from "@chatpack/core";
 import { DEFAULT_CHANNEL, decodeEnvelope, redisTransport } from "../src/index";
 import { FakeIoredis, FakeNodeRedis, FakeRedisBroker } from "./fake-redis";
 
-function message(overrides: Partial<Message> = {}): Message {
+// Events carry the API-decorated message (`replyTo` + `reactions`, ADR 0013),
+// so that is what crosses the wire between nodes.
+function message(overrides: Partial<MessageWithDetails> = {}): MessageWithDetails {
   return {
     id: "m1",
     conversationId: "c1",
@@ -14,6 +22,9 @@ function message(overrides: Partial<Message> = {}): Message {
     createdAt: new Date("2026-08-03T10:00:00.000Z"),
     editedAt: null,
     deletedAt: null,
+    replyToMessageId: null,
+    replyTo: null,
+    reactions: [],
     metadata: {},
     ...overrides,
   };
@@ -245,6 +256,46 @@ describe("redisTransport - Date fields survive the wire", () => {
     expect(relayed.recipientIds).toEqual(["alice", "bob"]);
     expect(relayed.message.seq).toBe(42);
     expect(relayed.message.metadata).toEqual({ attachmentUrl: "https://example.com/a.png" });
+  });
+
+  // Reaction events are the third event category (ADR 0013): durable-backed
+  // like a chat event, so they take the same Date-revival path, but they carry
+  // `actorId`/`emoji` and a decorated message that must cross intact.
+  it("relays reaction events with their actor, key, and full reaction set", () => {
+    const { nodeA, nodeB } = twoNodes();
+    const onB: TransportEvent[] = [];
+    nodeB.subscribe((event) => onB.push(event));
+
+    const createdAt = new Date("2026-08-03T10:00:00.000Z");
+    nodeA.publish({
+      type: "reaction.added",
+      conversationId: "c1",
+      recipientIds: ["alice", "bob"],
+      actorId: "bob",
+      emoji: "👍",
+      message: message({
+        createdAt,
+        replyToMessageId: "m0",
+        replyTo: { id: "m0", senderId: "alice", excerpt: "the original", deleted: false },
+        reactions: [{ emoji: "👍", count: 1, userIds: ["bob"] }],
+      }),
+    });
+
+    expect(onB).toHaveLength(1);
+    const relayed = onB[0] as ReactionEvent;
+    expect(relayed.type).toBe("reaction.added");
+    expect(relayed.actorId).toBe("bob");
+    expect(relayed.emoji).toBe("👍");
+    expect(relayed.message.reactions).toEqual([{ emoji: "👍", count: 1, userIds: ["bob"] }]);
+    expect(relayed.message.replyTo).toEqual({
+      id: "m0",
+      senderId: "alice",
+      excerpt: "the original",
+      deleted: false,
+    });
+    // Same Date contract as a message event.
+    expect(relayed.message.createdAt).toBeInstanceOf(Date);
+    expect(relayed.message.createdAt.getTime()).toBe(createdAt.getTime());
   });
 });
 

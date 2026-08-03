@@ -8,17 +8,19 @@ All routes are served by the one handler, relative to `basePath` (default
 
 ## Core routes
 
-| Method | Path                          | Request body / query                   | Response (200/201)                        |
-| ------ | ----------------------------- | -------------------------------------- | ----------------------------------------- |
-| POST   | `/conversations`              | `{ otherUserId, metadata? }`           | `{ conversation }`                        |
-| GET    | `/conversations`              | `?limit=&cursor=`                      | `{ conversations, nextCursor }`           |
-| GET    | `/conversations/:id`          | -                                      | `{ conversation }`                        |
-| POST   | `/conversations/:id/messages` | `{ body, role?, metadata? }`           | `{ message }` (201)                       |
-| GET    | `/conversations/:id/messages` | `?limit=&cursor=`                      | `{ messages, nextCursor }` - newest first |
-| POST   | `/conversations/:id/read`     | `{ messageId }`                        | `{ ok: true }`                            |
-| PATCH  | `/messages/:id`               | `{ body }`                             | `{ message }`                             |
-| DELETE | `/messages/:id`               | -                                      | `{ message }` (soft-deleted)              |
-| GET    | `/stream`                     | SSE; auto `Last-Event-ID` on reconnect | `text/event-stream`                       |
+| Method | Path                          | Request body / query                            | Response (200/201)                        |
+| ------ | ----------------------------- | ----------------------------------------------- | ----------------------------------------- |
+| POST   | `/conversations`              | `{ otherUserId, metadata? }`                    | `{ conversation }`                        |
+| GET    | `/conversations`              | `?limit=&cursor=`                               | `{ conversations, nextCursor }`           |
+| GET    | `/conversations/:id`          | -                                               | `{ conversation }`                        |
+| POST   | `/conversations/:id/messages` | `{ body, role?, replyToMessageId?, metadata? }` | `{ message }` (201)                       |
+| GET    | `/conversations/:id/messages` | `?limit=&cursor=`                               | `{ messages, nextCursor }` - newest first |
+| POST   | `/conversations/:id/read`     | `{ messageId }`                                 | `{ ok: true }`                            |
+| PATCH  | `/messages/:id`               | `{ body }`                                      | `{ message }`                             |
+| DELETE | `/messages/:id`               | -                                               | `{ message }` (soft-deleted)              |
+| POST   | `/messages/:id/reactions`     | `{ emoji }`                                     | `{ message }` (full reaction set)         |
+| DELETE | `/messages/:id/reactions`     | `{ emoji }`                                     | `{ message }` (full reaction set)         |
+| GET    | `/stream`                     | SSE; auto `Last-Event-ID` on reconnect          | `text/event-stream`                       |
 
 ## Plugin routes
 
@@ -47,6 +49,34 @@ These trip up hand-written and generated clients alike:
   Paginate by passing `nextCursor` back as `?cursor=`; `nextCursor: null`
   means no more results.
 - **The message text field is `body`** (not `text` / `content`).
+- **Every message carries `reactions` and its reply fields.** `reactions` is
+  grouped: `[{ emoji, count, userIds }]`, `userIds` earliest-first (at most two
+  entries, since v0 is 1:1 - enough to render "you reacted" without a second
+  request). `replyToMessageId` is the stored pointer; `replyTo` is a read-only
+  preview `{ id, senderId, excerpt, deleted }` **hydrated per request, never
+  stored**, so it can't go stale when the parent is edited and renders even
+  when the parent is far outside the loaded page. `excerpt` is the parent's
+  first 140 characters with `"…"` appended when truncated, and `""` when the
+  parent is a tombstone.
+- **Reaction routes are idempotent both ways** and always return the message
+  with its **complete** reaction set - replace that cache entry rather than
+  merging a delta. The acting user comes from the `auth` hook, so a caller can
+  only ever add or remove reactions attributed to themselves. Reacting needs
+  **write** permission (like editing - other participants see it). The `emoji`
+  travels in the request **body** on `DELETE` too, because reaction keys can be
+  arbitrary strings that mangle badly in a path segment.
+- **A reaction key is any non-empty string, trimmed, up to 32 characters** -
+  `"👍"`, `":shipit:"`, `"custom_1234"` all work; `""` and 33+ characters are
+  `400 INVALID_INPUT`. It is not validated as a Unicode emoji.
+- **A reaction is not a message.** It gets no `seq`, never bumps
+  `unreadCount`, and never reorders the conversation list.
+- **Replies are flat pointers, not threads.** `replyToMessageId` must name a
+  message in the **same conversation** (else `404 MESSAGE_NOT_FOUND` - the same
+  wording used for unknown ids, so a cross-conversation probe reveals nothing).
+  Replying to a soft-deleted message is allowed (the parent can be deleted
+  between render and send); deleting a parent leaves its replies intact with
+  `replyTo.deleted: true`; a reply to a reply is still one hop; and the pointer
+  is immutable, since `PATCH /messages/:id` only ever changes the body.
 - **`role`** is `"user" | "assistant" | "system"` (default `"user"`) - a
   stored label; core never branches on it. Anything else is a 400.
 - **`otherUserId` is not validated to exist** (Chatpack never owns a users
@@ -78,10 +108,56 @@ curl -X POST /api/chat/conversations/conv_1/messages \
     "createdAt": "2026-07-22T19:48:06.416Z",
     "editedAt": null,
     "deletedAt": null,
+    "replyToMessageId": null,
+    "replyTo": null,
+    "reactions": [],
     "metadata": {}
   }
 }
 ```
+
+Quote-reply to it, then react:
+
+```sh
+curl -X POST /api/chat/conversations/conv_1/messages \
+  -H 'content-type: application/json' \
+  -d '{"body": "hey alice!", "replyToMessageId": "msg_1"}'
+```
+
+```json
+{
+  "message": {
+    "id": "msg_2",
+    "senderId": "bob",
+    "body": "hey alice!",
+    "seq": 2,
+    "replyToMessageId": "msg_1",
+    "replyTo": { "id": "msg_1", "senderId": "alice", "excerpt": "hey bob!", "deleted": false },
+    "reactions": []
+  }
+}
+```
+
+```sh
+curl -X POST /api/chat/messages/msg_1/reactions \
+  -H 'content-type: application/json' \
+  -d '{"emoji": "👍"}'
+```
+
+```json
+{
+  "message": {
+    "id": "msg_1",
+    "body": "hey bob!",
+    "seq": 1,
+    "reactions": [{ "emoji": "👍", "count": 1, "userIds": ["bob"] }]
+  }
+}
+```
+
+`DELETE` the same route with the same body removes it again. Both calls are
+idempotent, and both return the message's whole reaction set - so the response
+is what you write into the cache.
 
 Find-or-create a conversation:
 
@@ -170,6 +246,21 @@ Durable events on `GET /stream` (replayed from storage on reconnect via
 | `message.created` | `{ message }` | a message was sent to one of your conversations         |
 | `message.updated` | `{ message }` | a message was edited                                    |
 | `message.deleted` | `{ message }` | a message was soft-deleted (body `""`, `deletedAt` set) |
+
+Reaction events are durable-backed but carry **no `id:` field**, because
+`Last-Event-ID` means "the newest message `seq` I have seen" and a reaction
+produces no new `seq` - an `id:` here would poison gap-fill:
+
+| Event              | Data                          | When                     |
+| ------------------ | ----------------------------- | ------------------------ |
+| `reaction.added`   | `{ actorId, emoji, message }` | someone added a reaction |
+| `reaction.removed` | `{ actorId, emoji, message }` | someone removed one      |
+
+`message` holds the **complete** post-change reaction set, not a delta, so
+applying the same event twice is harmless. The trade-off: reactions are **not
+gap-filled**. One applied while a client was offline shows up on its next
+refetch, so refetch cached message pages when the stream reopens after having
+been open. `@chatpack/client` does that for you.
 
 Ephemeral plugin events (never stored, never replayed, no `id:` field):
 

@@ -41,16 +41,23 @@ export const chat = chatpack({
 
 ## Creating the tables
 
-Chatpack needs three tables (`chatpack_conversations`,
-`chatpack_conversation_participants`, `chatpack_messages`). Users are
-referenced **by id only** - there is no foreign key into your users table.
+Chatpack needs four tables (`chatpack_conversations`,
+`chatpack_conversation_participants`, `chatpack_messages`,
+`chatpack_message_reactions`). Users are referenced **by id only** - there is no
+foreign key into your users table.
+
+> **⚠️ Upgrading an existing database?** Reactions and quote-replies added the
+> `chatpack_message_reactions` table plus a `reply_to_message_id` column on
+> `chatpack_messages`. **Re-run the migration before deploying the upgrade.**
+> Every statement is `IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS`, so re-running
+> the whole script is safe and preserves your data and `seq` counters.
 
 **Option A - your `drizzle-kit` flow (recommended).** Re-export the schema and
 generate a migration like any other table you own:
 
 ```ts
 // db/schema.ts
-export * from "@chatpack/adapter-drizzle"; // conversations, participants, messages
+export * from "@chatpack/adapter-drizzle"; // conversations, participants, messages, reactions
 ```
 
 ```sh
@@ -108,7 +115,7 @@ The same pattern works with `drizzle-orm/vercel-postgres` on Vercel Edge.
 
 ## Correctness guarantees
 
-The two things a chat backend must get right under concurrency, and how this
+The things a chat backend must get right under concurrency, and how this
 adapter does them (details in
 [ADR 0007](../../docs/decisions/0007-postgres-adapter.md)):
 
@@ -119,6 +126,12 @@ adapter does them (details in
 - **One conversation per user pair** - creation uses
   `ON CONFLICT (pair_key) DO NOTHING` + re-select against the unique
   `pair_key` index, so concurrent find-or-create calls converge.
+- **Idempotent reactions** - the same shape:
+  `ON CONFLICT (message_id, user_id, emoji) DO NOTHING` against a unique index
+  on the triple, so five concurrent identical reactions collapse to one row.
+  Reacting deliberately issues **no** `UPDATE` on the conversation, so it can't
+  advance `last_seq` / `last_activity_at` or reorder the conversation list
+  ([ADR 0013](../../docs/decisions/0013-reactions-and-replies.md)).
 
 ## Testing
 

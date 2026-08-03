@@ -18,6 +18,8 @@
  * | POST   | `/conversations/:id/read`         | update my last-read          |
  * | PATCH  | `/messages/:id`                   | edit my message              |
  * | DELETE | `/messages/:id`                   | soft-delete my message       |
+ * | POST   | `/messages/:id/reactions`         | add my reaction              |
+ * | DELETE | `/messages/:id/reactions`         | remove my reaction           |
  * | GET    | `/stream`                         | SSE: live events for me      |
  *
  * Plugins (`chatpack({ plugins: [...] })`) may add routes of their own; they
@@ -33,7 +35,7 @@ import type { ChatpackApi } from "./chatpack";
 import type { AuthHook } from "./config";
 import { ChatpackError, type ChatpackErrorCode } from "./errors";
 import type { PluginRuntime } from "./plugin";
-import { isEphemeralEvent, type TransportEvent, type Transport } from "./transport";
+import { isEphemeralEvent, isMessageEvent, type TransportEvent, type Transport } from "./transport";
 
 /** Options for {@link createHandler} / `chat.handler()`. */
 export interface HandlerOptions {
@@ -144,6 +146,11 @@ function parseLimit(params: URLSearchParams): number | undefined {
  * gap-fill from. Ephemeral events carry **no** `id:` line - `EventSource`
  * never adopts them as `Last-Event-ID`, so typing/presence/receipt signals
  * can't disturb message gap-fill (`docs/decisions/0008`).
+ *
+ * Reaction events are durable-backed but also carry **no** `id:` line: a
+ * reaction produces no new `seq`, so adopting one as `Last-Event-ID` would
+ * poison gap-fill. Clients recover missed reactions by refetching on reconnect
+ * (`docs/decisions/0013`).
  */
 function sseFrame(event: TransportEvent): string {
   if (isEphemeralEvent(event)) {
@@ -154,6 +161,15 @@ function sseFrame(event: TransportEvent): string {
       senderId: event.senderId,
       payload: event.payload,
       at: event.at,
+    })}\n\n`;
+  }
+  if (!isMessageEvent(event)) {
+    return `event: ${event.type}\ndata: ${JSON.stringify({
+      type: event.type,
+      conversationId: event.conversationId,
+      actorId: event.actorId,
+      emoji: event.emoji,
+      message: event.message,
     })}\n\n`;
   }
   const id = `${event.conversationId}:${event.message.seq}`;
@@ -274,9 +290,10 @@ export function createHandler(
           // Participation re-checked server-side on every publish (MVP §9).
           if (!event.recipientIds.includes(userId)) return;
           enqueue(sseFrame(event));
-          // Only durable events count as "delivered" - ephemeral events must
-          // never trigger further ephemeral events (no feedback loops).
-          if (!closed && plugins?.hasPlugins && !isEphemeralEvent(event)) {
+          // Only durable **message** events count as "delivered": ephemeral
+          // events must never trigger further ephemeral events (no feedback
+          // loops), and a reaction is not a message a receipt should tick.
+          if (!closed && plugins?.hasPlugins && isMessageEvent(event)) {
             plugins.notifyEventDelivered(userId, event);
           }
         });
@@ -410,11 +427,13 @@ export function createHandler(
           );
         }
         const metadata = optionalMetadata(body["metadata"]);
+        const replyToMessageId = optionalString(body["replyToMessageId"], "replyToMessageId");
         const message = await api.sendMessage({
           userId,
           conversationId: segments[1]!,
           body: requiredString(body["body"], "body"),
           ...(role !== undefined ? { role } : {}),
+          ...(replyToMessageId !== undefined ? { replyToMessageId } : {}),
           ...(metadata !== undefined ? { metadata } : {}),
         });
         return json(201, { message });
@@ -452,6 +471,46 @@ export function createHandler(
           messageId: requiredString(body["messageId"], "messageId"),
         });
         return json(200, { ok: true });
+      }
+
+      // POST /messages/:id/reactions - add my reaction (idempotent)
+      //
+      // POST rather than the more idiomatic PUT: `chat.handler()` is
+      // re-exported by method name in Next.js route files, so adding a verb
+      // would 405 in every already-mounted app (`docs/decisions/0013`).
+      if (
+        method === "POST" &&
+        segments.length === 3 &&
+        segments[0] === "messages" &&
+        segments[2] === "reactions"
+      ) {
+        const body = await readJsonBody(request);
+        const message = await api.addReaction({
+          userId,
+          messageId: segments[1]!,
+          emoji: requiredString(body["emoji"], "emoji"),
+        });
+        return json(200, { message });
+      }
+
+      // DELETE /messages/:id/reactions - remove my reaction (idempotent)
+      //
+      // The emoji travels in the body, not the path: reaction keys are
+      // arbitrary strings (custom emoji ids, `:shortcodes:`) and multi-codepoint
+      // emoji percent-encode into long, easily-mangled path segments.
+      if (
+        method === "DELETE" &&
+        segments.length === 3 &&
+        segments[0] === "messages" &&
+        segments[2] === "reactions"
+      ) {
+        const body = await readJsonBody(request);
+        const message = await api.removeReaction({
+          userId,
+          messageId: segments[1]!,
+          emoji: requiredString(body["emoji"], "emoji"),
+        });
+        return json(200, { message });
       }
 
       // PATCH /messages/:id - edit

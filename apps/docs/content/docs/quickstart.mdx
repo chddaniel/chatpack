@@ -217,11 +217,18 @@ events.addEventListener("message.created", (e) => {
   const { message } = JSON.parse((e as MessageEvent).data);
   // render it - reconnection & missed-message backfill are automatic
 });
+
+events.addEventListener("reaction.added", (e) => {
+  const { message } = JSON.parse((e as MessageEvent).data);
+  // message.reactions is the COMPLETE set after the change - replace, don't merge
+});
 ```
 
 If the connection drops, `EventSource` reconnects with `Last-Event-ID` and
 Chatpack replays whatever was missed **from storage** - durable-first delivery,
-no lost messages. Details in [Real-time with SSE](/docs/realtime/sse).
+no lost messages. Reactions are the exception: they have no `seq`, so they're
+live-only and show up on the next refetch instead. Details in
+[Real-time with SSE](/docs/realtime/sse).
 
 </Step>
 <Step>
@@ -247,6 +254,15 @@ const { messages } = await chat.api.listMessages({
   userId: "bob",
   conversationId: conversation.id,
 });
+
+// quote-reply, and react (idempotent - returns the full reaction set)
+await chat.api.sendMessage({
+  userId: "bob",
+  conversationId: conversation.id,
+  body: "hey alice!",
+  replyToMessageId: messages[0].id,
+});
+await chat.api.addReaction({ userId: "bob", messageId: messages[0].id, emoji: "👍" });
 ```
 
 That's it. Only the two participants can read or write - enforced by default,

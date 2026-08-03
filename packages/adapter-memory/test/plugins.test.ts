@@ -364,6 +364,35 @@ describe("receipts()", () => {
     expect(read!.data["senderId"]).toBe("bob");
     expect(read!.data["payload"]).toEqual({ messageId: message.id });
   });
+
+  // A reaction is durable-backed but is not a message, so it must not look like
+  // a delivery to the receipts plugin (ADR 0013 §4) - otherwise every reaction
+  // would fire a duplicate "delivered" tick for a message sent long ago.
+  it("a reaction never fires a delivered tick", async () => {
+    const { chat, handler } = createHttpChat([receipts()]);
+    const conversation = await chat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "bob",
+    });
+
+    const alice = await connect(handler, "alice");
+    const bob = await connect(handler, "bob");
+
+    const message = await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "hi",
+    });
+    await bob.waitFor((e) => e.event === "message.created");
+    await alice.waitFor((e) => e.event === "receipt.delivered");
+
+    await chat.api.addReaction({ userId: "bob", messageId: message.id, emoji: "👍" });
+    await alice.waitFor((e) => e.event === "reaction.added");
+
+    // Still exactly the one tick from the original message.
+    const ticks = await alice.waitFor((e) => e.event === "receipt.delivered", 2, 300);
+    expect(ticks).toHaveLength(1);
+  });
 });
 
 describe("ephemeral events vs gap-fill", () => {

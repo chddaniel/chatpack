@@ -4,8 +4,9 @@ description: One EventSource - live messages, automatic reconnection, and missed
 ---
 
 `GET /stream` is a Server-Sent Events endpoint. Each connected user receives
-`message.created` / `message.updated` / `message.deleted` events for **their
-conversations only** - participation is re-checked server-side per event.
+`message.created` / `message.updated` / `message.deleted` plus
+`reaction.added` / `reaction.removed` events for **their conversations only** -
+participation is re-checked server-side per event.
 
 No WebSocket server, no Socket.IO, no reconnect code to write.
 
@@ -36,6 +37,12 @@ events.addEventListener("message.deleted", (e) => {
   // render a tombstone - body is "" and deletedAt is set
 });
 
+events.addEventListener("reaction.added", (e) => {
+  const { actorId, emoji, message } = JSON.parse((e as MessageEvent).data);
+  // `message.reactions` is the COMPLETE set after the change - replace, don't merge
+});
+// reaction.removed carries the same shape
+
 events.onerror = () => {
   if (events.readyState === EventSource.CLOSED) {
     // Fatal (e.g. 401): the browser will NOT retry. Re-auth, then recreate.
@@ -44,6 +51,29 @@ events.onerror = () => {
   // Last-Event-ID and the server replays what was missed.
 };
 ```
+
+## Reaction events are a third category
+
+`reaction.added` / `reaction.removed` are durable-backed - they are not
+`ephemeral: true` - but their frames deliberately carry **no `id:` line**.
+`Last-Event-ID` means "the newest message `seq` I have seen", and a reaction on
+a three-day-old message produces no new `seq`, so an `id:` here would poison
+gap-fill: the next reconnect would replay from the wrong place.
+
+The consequence is honest and bounded: **reactions are not gap-filled.** A
+reaction applied while a client was offline arrives on its next refetch rather
+than as a replay. Refetch the message pages you have cached when the stream
+reopens after having been open - `@chatpack/client` does this for you.
+
+The alternatives were worse. Bumping a message's `seq` when it's reacted to
+would make gap-fill work for free, but `seq` would stop being a stable
+creation-order key and reacting would reorder the transcript. A second replay
+cursor just for reactions would be exact, but adds a parallel protocol to the
+SSE contract for a payload that's cosmetic if briefly stale.
+
+If you write a custom `Transport`, note that `!isEphemeralEvent(e)` therefore no
+longer means "a message" - branch on `isMessageEvent(e)` wherever the message
+snapshot matters.
 
 ## No lost messages
 

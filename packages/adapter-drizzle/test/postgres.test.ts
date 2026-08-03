@@ -442,3 +442,310 @@ describe("unread counts on Postgres", () => {
     expect(byId.get(withDave.id)).toBe(0);
   });
 });
+
+describe("reactions and replies on Postgres (ADR 0013)", () => {
+  it("persists the reply pointer and hydrates the preview from a real join", async () => {
+    const conversation = await chat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "bob",
+    });
+    const parent = await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "the original",
+    });
+    const reply = await chat.api.sendMessage({
+      userId: "bob",
+      conversationId: conversation.id,
+      body: "quoting",
+      replyToMessageId: parent.id,
+    });
+    expect(reply.replyToMessageId).toBe(parent.id);
+
+    // Read back through a fresh query, so the preview comes from the DB.
+    const { messages } = await chat.api.listMessages({
+      userId: "alice",
+      conversationId: conversation.id,
+    });
+    expect(messages[0]).toMatchObject({
+      id: reply.id,
+      replyTo: { id: parent.id, senderId: "alice", excerpt: "the original", deleted: false },
+    });
+    expect(messages[1]!.replyTo).toBeNull();
+  });
+
+  it("batches parent lookups across a page of replies", async () => {
+    const conversation = await chat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "bob",
+    });
+    const parents = [];
+    for (let i = 1; i <= 3; i++) {
+      parents.push(
+        await chat.api.sendMessage({
+          userId: "alice",
+          conversationId: conversation.id,
+          body: `p${i}`,
+        }),
+      );
+    }
+    for (const parent of parents) {
+      await chat.api.sendMessage({
+        userId: "bob",
+        conversationId: conversation.id,
+        body: `re: ${parent.body}`,
+        replyToMessageId: parent.id,
+      });
+    }
+
+    const { messages } = await chat.api.listMessages({
+      userId: "alice",
+      conversationId: conversation.id,
+    });
+    const replies = messages.filter((m) => m.replyTo !== null);
+    expect(replies).toHaveLength(3);
+    expect(replies.map((m) => m.replyTo!.excerpt).sort()).toEqual(["p1", "p2", "p3"]);
+  });
+
+  it("ON CONFLICT DO NOTHING makes reacting twice idempotent", async () => {
+    const conversation = await chat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "bob",
+    });
+    const message = await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "react to me",
+    });
+
+    await chat.api.addReaction({ userId: "bob", messageId: message.id, emoji: "👍" });
+    const twice = await chat.api.addReaction({
+      userId: "bob",
+      messageId: message.id,
+      emoji: "👍",
+    });
+    expect(twice.reactions).toEqual([{ emoji: "👍", count: 1, userIds: ["bob"] }]);
+
+    // The unique index is the real arbiter: exactly one row survived.
+    const rows = await pglite.query<{ count: number }>(
+      `SELECT count(*)::int AS count FROM "chatpack_message_reactions"`,
+    );
+    expect(rows.rows[0]!.count).toBe(1);
+
+    // Concurrent identical reactions also collapse to one row.
+    await Promise.all(
+      Array.from({ length: 5 }, () =>
+        chat.api.addReaction({ userId: "alice", messageId: message.id, emoji: "🎉" }),
+      ),
+    );
+    const after = await pglite.query<{ count: number }>(
+      `SELECT count(*)::int AS count FROM "chatpack_message_reactions" WHERE "emoji" = '🎉'`,
+    );
+    expect(after.rows[0]!.count).toBe(1);
+  });
+
+  it("removing is idempotent and scoped to the caller's own reaction", async () => {
+    const conversation = await chat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "bob",
+    });
+    const message = await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "hi",
+    });
+
+    await chat.api.addReaction({ userId: "alice", messageId: message.id, emoji: "👍" });
+    await chat.api.addReaction({ userId: "bob", messageId: message.id, emoji: "👍" });
+
+    const removed = await chat.api.removeReaction({
+      userId: "bob",
+      messageId: message.id,
+      emoji: "👍",
+    });
+    expect(removed.reactions).toEqual([{ emoji: "👍", count: 1, userIds: ["alice"] }]);
+
+    const again = await chat.api.removeReaction({
+      userId: "bob",
+      messageId: message.id,
+      emoji: "👍",
+    });
+    expect(again.reactions).toEqual(removed.reactions);
+  });
+
+  it("groups reactions earliest-first across a message page", async () => {
+    const conversation = await chat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "bob",
+    });
+    const first = await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "m1",
+    });
+    const second = await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "m2",
+    });
+
+    await chat.api.addReaction({ userId: "bob", messageId: first.id, emoji: "👍" });
+    await chat.api.addReaction({ userId: "alice", messageId: first.id, emoji: "👍" });
+    await chat.api.addReaction({ userId: "bob", messageId: second.id, emoji: ":shipit:" });
+
+    const { messages } = await chat.api.listMessages({
+      userId: "alice",
+      conversationId: conversation.id,
+    });
+    const byId = new Map(messages.map((m) => [m.id, m.reactions]));
+    expect(byId.get(first.id)).toEqual([{ emoji: "👍", count: 2, userIds: ["bob", "alice"] }]);
+    expect(byId.get(second.id)).toEqual([{ emoji: ":shipit:", count: 1, userIds: ["bob"] }]);
+  });
+
+  it("a reaction never advances last_seq or last_activity_at", async () => {
+    const conversation = await chat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "bob",
+    });
+    const message = await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "hi",
+    });
+
+    const before = await pglite.query<{ last_seq: number; last_activity_at: string }>(
+      `SELECT "last_seq", "last_activity_at" FROM "chatpack_conversations" WHERE "id" = $1`,
+      [conversation.id],
+    );
+
+    await chat.api.addReaction({ userId: "bob", messageId: message.id, emoji: "👍" });
+    await chat.api.removeReaction({ userId: "bob", messageId: message.id, emoji: "👍" });
+
+    const after = await pglite.query<{ last_seq: number; last_activity_at: string }>(
+      `SELECT "last_seq", "last_activity_at" FROM "chatpack_conversations" WHERE "id" = $1`,
+      [conversation.id],
+    );
+    expect(after.rows[0]).toEqual(before.rows[0]);
+  });
+
+  it("deleting a conversation cascades its reactions away", async () => {
+    const conversation = await chat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "bob",
+    });
+    const message = await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "hi",
+    });
+    await chat.api.addReaction({ userId: "bob", messageId: message.id, emoji: "👍" });
+
+    // Chatpack never hard-deletes, but an app owning the row might (GDPR erase).
+    await pglite.query(`DELETE FROM "chatpack_conversations" WHERE "id" = $1`, [conversation.id]);
+
+    const rows = await pglite.query<{ count: number }>(
+      `SELECT count(*)::int AS count FROM "chatpack_message_reactions"`,
+    );
+    expect(rows.rows[0]!.count).toBe(0);
+  });
+});
+
+describe("upgrading a pre-ADR-0013 database", () => {
+  it("adds reply_to_message_id and the reactions table to an existing schema", async () => {
+    const legacy = new PGlite();
+    try {
+      // The v0 schema, verbatim minus everything ADR 0013 introduced.
+      await legacy.exec(`
+        CREATE TABLE "chatpack_conversations" (
+          "id" text PRIMARY KEY,
+          "pair_key" text NOT NULL,
+          "created_at" timestamptz NOT NULL,
+          "metadata" jsonb NOT NULL DEFAULT '{}',
+          "last_seq" integer NOT NULL DEFAULT 0,
+          "last_activity_at" timestamptz NOT NULL
+        );
+        CREATE UNIQUE INDEX "chatpack_conversations_pair_key_idx"
+          ON "chatpack_conversations" ("pair_key");
+        CREATE TABLE "chatpack_conversation_participants" (
+          "conversation_id" text NOT NULL
+            REFERENCES "chatpack_conversations"("id") ON DELETE CASCADE,
+          "user_id" text NOT NULL,
+          "joined_at" timestamptz NOT NULL,
+          "last_read_message_id" text
+        );
+        CREATE UNIQUE INDEX "chatpack_participants_conv_user_idx"
+          ON "chatpack_conversation_participants" ("conversation_id", "user_id");
+        CREATE TABLE "chatpack_messages" (
+          "id" text PRIMARY KEY,
+          "conversation_id" text NOT NULL
+            REFERENCES "chatpack_conversations"("id") ON DELETE CASCADE,
+          "sender_id" text NOT NULL,
+          "body" text NOT NULL,
+          "role" text NOT NULL DEFAULT 'user',
+          "seq" bigint NOT NULL,
+          "created_at" timestamptz NOT NULL,
+          "edited_at" timestamptz,
+          "deleted_at" timestamptz,
+          "metadata" jsonb NOT NULL DEFAULT '{}'
+        );
+        CREATE UNIQUE INDEX "chatpack_messages_conv_seq_idx"
+          ON "chatpack_messages" ("conversation_id", "seq");
+      `);
+
+      // Existing data, written before the upgrade.
+      const legacyDb = drizzle(legacy) as unknown as DrizzlePgDatabase;
+      const before = chatpack({ storage: drizzleAdapter(legacyDb), telemetry: false });
+      const conversation = await before.api.getOrCreateConversation({
+        userId: "alice",
+        otherUserId: "bob",
+      });
+      await legacy.query(
+        `INSERT INTO "chatpack_messages"
+           ("id", "conversation_id", "sender_id", "body", "role", "seq", "created_at")
+         VALUES ('legacy_1', $1, 'alice', 'written before the upgrade', 'user', 1, now())`,
+        [conversation.id],
+      );
+      await legacy.query(`UPDATE "chatpack_conversations" SET "last_seq" = 1 WHERE "id" = $1`, [
+        conversation.id,
+      ]);
+
+      // Re-running the migration is the whole upgrade: CREATE TABLE IF NOT
+      // EXISTS no-ops on chatpack_messages, so the ALTER carries the column.
+      await legacy.exec(migrationSql);
+
+      const upgraded = chatpack({ storage: drizzleAdapter(legacyDb), telemetry: false });
+      const reply = await upgraded.api.sendMessage({
+        userId: "bob",
+        conversationId: conversation.id,
+        body: "quoting the old message",
+        replyToMessageId: "legacy_1",
+      });
+      expect(reply.replyTo).toMatchObject({
+        id: "legacy_1",
+        excerpt: "written before the upgrade",
+      });
+      expect(reply.seq).toBe(2); // the old seq counter is untouched
+
+      const reacted = await upgraded.api.addReaction({
+        userId: "alice",
+        messageId: "legacy_1",
+        emoji: "👍",
+      });
+      expect(reacted.reactions).toEqual([{ emoji: "👍", count: 1, userIds: ["alice"] }]);
+
+      // Pre-existing rows read back with the new fields defaulted, not missing.
+      const { messages } = await upgraded.api.listMessages({
+        userId: "alice",
+        conversationId: conversation.id,
+      });
+      const legacyMessage = messages.find((m) => m.id === "legacy_1")!;
+      expect(legacyMessage.replyToMessageId).toBeNull();
+      expect(legacyMessage.replyTo).toBeNull();
+
+      // And the migration stays idempotent when run a third time.
+      await legacy.exec(migrationSql);
+    } finally {
+      await legacy.close();
+    }
+  });
+});

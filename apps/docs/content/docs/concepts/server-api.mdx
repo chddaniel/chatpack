@@ -15,33 +15,36 @@ enforces the same permissions.
 
 ## Methods
 
-| Method                        | What it does                                                                                            |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `api.getOrCreateConversation` | Find or create the 1:1 conversation for a user pair                                                     |
-| `api.listConversations`       | List a user's conversations, most recent first                                                          |
-| `api.getConversation`         | Fetch one conversation (read-permission checked)                                                        |
-| `api.sendMessage`             | Send a text message (write-permission checked; [message hooks](/docs/concepts/message-hooks) apply)     |
-| `api.listMessages`            | Paginate history, newest-first                                                                          |
-| `api.editMessage`             | Edit your own message                                                                                   |
-| `api.deleteMessage`           | Soft-delete your own message                                                                            |
-| `api.markRead`                | Update durable read-state (`lastReadMessageId`); monotonic - marking an older message is a silent no-op |
-| `api.listMessagesAfter`       | Messages after a `seq` (SSE reconnect gap-fill)                                                         |
+| Method                        | What it does                                                                                                                              |
+| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `api.getOrCreateConversation` | Find or create the 1:1 conversation for a user pair                                                                                       |
+| `api.listConversations`       | List a user's conversations, most recent first                                                                                            |
+| `api.getConversation`         | Fetch one conversation (read-permission checked)                                                                                          |
+| `api.sendMessage`             | Send a text message, optionally quote-replying to another (write-permission checked; [message hooks](/docs/concepts/message-hooks) apply) |
+| `api.listMessages`            | Paginate history, newest-first                                                                                                            |
+| `api.editMessage`             | Edit your own message                                                                                                                     |
+| `api.deleteMessage`           | Soft-delete your own message                                                                                                              |
+| `api.addReaction`             | React as `userId` (write-permission checked); idempotent                                                                                  |
+| `api.removeReaction`          | Remove one of your own reactions; idempotent                                                                                              |
+| `api.markRead`                | Update durable read-state (`lastReadMessageId`); monotonic - marking an older message is a silent no-op                                   |
+| `api.listMessagesAfter`       | Messages after a `seq` (SSE reconnect gap-fill)                                                                                           |
 
 ## Which API do I call?
 
 The same task, from both sides - `chat.api.*` in server code, the REST route
 from a browser or HTTP client:
 
-| I want to...                    | Server (`chat.api.*`)          | HTTP                               |
-| ------------------------------- | ------------------------------ | ---------------------------------- |
-| Start a chat with someone       | `getOrCreateConversation`      | `POST /conversations`              |
-| Show the inbox / sidebar        | `listConversations`            | `GET /conversations`               |
-| Open one conversation           | `getConversation`              | `GET /conversations/:id`           |
-| Load history / scroll back      | `listMessages`                 | `GET /conversations/:id/messages`  |
-| Send a message                  | `sendMessage`                  | `POST /conversations/:id/messages` |
-| Edit / delete my message        | `editMessage`, `deleteMessage` | `PATCH` / `DELETE /messages/:id`   |
-| Mark a conversation read        | `markRead`                     | `POST /conversations/:id/read`     |
-| Get live updates in the browser | - (server-sent events)         | `GET /stream` via `EventSource`    |
+| I want to...                    | Server (`chat.api.*`)           | HTTP                                      |
+| ------------------------------- | ------------------------------- | ----------------------------------------- |
+| Start a chat with someone       | `getOrCreateConversation`       | `POST /conversations`                     |
+| Show the inbox / sidebar        | `listConversations`             | `GET /conversations`                      |
+| Open one conversation           | `getConversation`               | `GET /conversations/:id`                  |
+| Load history / scroll back      | `listMessages`                  | `GET /conversations/:id/messages`         |
+| Send a message                  | `sendMessage`                   | `POST /conversations/:id/messages`        |
+| Edit / delete my message        | `editMessage`, `deleteMessage`  | `PATCH` / `DELETE /messages/:id`          |
+| React / un-react                | `addReaction`, `removeReaction` | `POST` / `DELETE /messages/:id/reactions` |
+| Mark a conversation read        | `markRead`                      | `POST /conversations/:id/read`            |
+| Get live updates in the browser | - (server-sent events)          | `GET /stream` via `EventSource`           |
 
 ## Usage
 
@@ -58,6 +61,24 @@ const message = await chat.api.sendMessage({
   conversationId: conversation.id,
   body: "hey bob!",
 });
+
+// quote-reply to it - a flat pointer, not a thread
+const reply = await chat.api.sendMessage({
+  userId: "bob",
+  conversationId: conversation.id,
+  body: "hey alice!",
+  replyToMessageId: message.id,
+});
+reply.replyTo; // { id, senderId, excerpt: "hey bob!", deleted: false }
+
+// react (idempotent both ways; returns the message with its whole set)
+const reacted = await chat.api.addReaction({
+  userId: "bob",
+  messageId: message.id,
+  emoji: "👍",
+});
+reacted.reactions; // [{ emoji: "👍", count: 1, userIds: ["bob"] }]
+await chat.api.removeReaction({ userId: "bob", messageId: message.id, emoji: "👍" });
 
 // paginate history (newest first)
 const { messages, nextCursor } = await chat.api.listMessages({
@@ -87,6 +108,14 @@ Conversation-returning methods (`getOrCreateConversation`,
 the conversation plus the calling user's `unreadCount` (messages newer than
 their read-state, excluding their own). See
 [Conversations & messages](/docs/concepts/conversations-messages#read-state-and-unread-counts).
+
+Every message-returning method (`sendMessage`, `listMessages`, `editMessage`,
+`deleteMessage`, `addReaction`, `removeReaction`, `listMessagesAfter`) returns
+`MessageWithDetails` - the stored `Message` plus two per-request decorations:
+`replyTo` (the quoted parent's preview, or `null`) and `reactions` (grouped by
+emoji). Neither is stored: core computes them from batched adapter calls, one
+per page, which is why an edited parent's excerpt is never stale. Storage
+adapters and permission hooks only ever see the bare `Message`.
 
 Timestamps are real `Date` instances on the server, ISO strings over HTTP.
 

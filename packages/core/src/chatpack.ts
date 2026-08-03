@@ -18,12 +18,26 @@ import { createPluginRuntime } from "./plugin";
 import type { StorageAdapter } from "./storage";
 import { inProcessTransport, type ChatEvent, type Transport } from "./transport";
 import { TelemetryCounters, resolveTelemetryEnabled, startTelemetryFlusher } from "./telemetry";
-import type { Conversation, ConversationWithUnread, Message, Metadata, MessageRole } from "./types";
+import type {
+  Conversation,
+  ConversationWithUnread,
+  Message,
+  MessageReference,
+  MessageWithDetails,
+  Metadata,
+  MessageRole,
+  Reaction,
+  ReactionSummary,
+} from "./types";
 
 /** Default page size for list endpoints. */
 const DEFAULT_LIMIT = 50;
 /** Hard cap for list endpoints. */
 const MAX_LIMIT = 200;
+/** Max length of a reaction key (ADR 0013 §3). */
+const MAX_EMOJI_LENGTH = 32;
+/** How much of a quoted parent body a reply preview carries (ADR 0013 §1). */
+const EXCERPT_LENGTH = 140;
 
 /**
  * Compute the deterministic pair key for two user ids: sorted and joined with
@@ -71,6 +85,13 @@ export interface SendMessageInput {
   body: string;
   /** Defaults to `"user"`. AI escape hatch only. */
   role?: MessageRole;
+  /**
+   * Quote-reply to this message (`docs/decisions/0013`). Must be a message in
+   * the same conversation, else `MESSAGE_NOT_FOUND`. Replying to a
+   * soft-deleted message is allowed - the parent can be deleted between
+   * render and send.
+   */
+  replyToMessageId?: string;
   metadata?: Metadata;
 }
 
@@ -84,8 +105,8 @@ export interface ListMessagesApiInput {
 
 /** Result of {@link ChatpackApi.listMessages}. */
 export interface ListMessagesApiResult {
-  /** Newest-first (descending `seq`). */
-  messages: Message[];
+  /** Newest-first (descending `seq`), with `replyTo` and `reactions` hydrated. */
+  messages: MessageWithDetails[];
   nextCursor: string | null;
 }
 
@@ -121,6 +142,18 @@ export interface ListMessagesAfterInput {
   limit?: number;
 }
 
+/** Input for {@link ChatpackApi.addReaction} and {@link ChatpackApi.removeReaction}. */
+export interface ReactionApiInput {
+  /** The reacting user. A caller can only ever react as themselves. */
+  userId: string;
+  messageId: string;
+  /**
+   * The reaction key: any non-empty string, trimmed, up to 32 characters
+   * (ADR 0013 §3). Not validated as an emoji.
+   */
+  emoji: string;
+}
+
 /**
  * The server-side core API. Every method takes the acting `userId` explicitly
  * and enforces permissions before touching storage.
@@ -142,17 +175,30 @@ export interface ChatpackApi {
    */
   getConversation(input: GetConversationInput): Promise<ConversationWithUnread>;
 
-  /** Send a text message. Requires write permission. */
-  sendMessage(input: SendMessageInput): Promise<Message>;
+  /** Send a text message, optionally quote-replying to another. Requires write permission. */
+  sendMessage(input: SendMessageInput): Promise<MessageWithDetails>;
 
   /** List messages newest-first with cursor pagination. Requires read permission. */
   listMessages(input: ListMessagesApiInput): Promise<ListMessagesApiResult>;
 
   /** Edit a message's body. Only the original sender may edit. */
-  editMessage(input: EditMessageInput): Promise<Message>;
+  editMessage(input: EditMessageInput): Promise<MessageWithDetails>;
 
   /** Soft-delete a message. Only the original sender may delete. */
-  deleteMessage(input: DeleteMessageInput): Promise<Message>;
+  deleteMessage(input: DeleteMessageInput): Promise<MessageWithDetails>;
+
+  /**
+   * React to a message as `userId` (`docs/decisions/0013`). Idempotent -
+   * reacting twice with the same emoji leaves one reaction. Requires write
+   * permission, like editing: it is a mutation the other participant sees.
+   */
+  addReaction(input: ReactionApiInput): Promise<MessageWithDetails>;
+
+  /**
+   * Remove one of `userId`'s own reactions. Idempotent - removing a reaction
+   * that was never there is a silent no-op.
+   */
+  removeReaction(input: ReactionApiInput): Promise<MessageWithDetails>;
 
   /**
    * Update the caller's durable read-state in a conversation. Monotonic:
@@ -163,10 +209,11 @@ export interface ChatpackApi {
 
   /**
    * Messages in a conversation with `seq` greater than `afterSeq`, oldest
-   * first. Used for SSE reconnection gap-fill (MVP §9); requires read
-   * permission.
+   * first, with `replyTo` and `reactions` hydrated so a replayed frame is
+   * indistinguishable from a live one. Used for SSE reconnection gap-fill
+   * (MVP §9); requires read permission.
    */
-  listMessagesAfter(input: ListMessagesAfterInput): Promise<Message[]>;
+  listMessagesAfter(input: ListMessagesAfterInput): Promise<MessageWithDetails[]>;
 }
 
 /** The object returned by {@link chatpack}. */
@@ -307,13 +354,167 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
   }
 
   /** Publish a live event. Durable-first: storage write has already succeeded. */
-  function publish(type: ChatEvent["type"], conversation: Conversation, message: Message): void {
+  function publish(
+    type: ChatEvent["type"],
+    conversation: Conversation,
+    message: MessageWithDetails,
+  ): void {
     transport.publish({
       type,
       conversationId: conversation.id,
       recipientIds: conversation.participants.map((p) => p.userId),
       message,
     });
+  }
+
+  /** Validate a reaction key: non-empty after trimming, at most 32 chars. */
+  function normalizeEmoji(value: string): string {
+    if (typeof value !== "string" || value.trim() === "") {
+      throw new ChatpackError("INVALID_INPUT", `"emoji" must be a non-empty string.`);
+    }
+    // Trim so "👍" and "👍 " can't become two separate buckets (ADR 0013 §3).
+    const emoji = value.trim();
+    if (emoji.length > MAX_EMOJI_LENGTH) {
+      throw new ChatpackError(
+        "INVALID_INPUT",
+        `"emoji" must be at most ${MAX_EMOJI_LENGTH} characters, got ${emoji.length}.`,
+      );
+    }
+    return emoji;
+  }
+
+  /** Build the read-only preview of a quoted parent message (ADR 0013 §1). */
+  function toReference(parent: Message): MessageReference {
+    const deleted = parent.deletedAt !== null;
+    return {
+      id: parent.id,
+      senderId: parent.senderId,
+      // A tombstone has an empty body already; be explicit so a future adapter
+      // that keeps the text on delete still can't leak it through a quote.
+      excerpt: deleted
+        ? ""
+        : parent.body.length > EXCERPT_LENGTH
+          ? `${parent.body.slice(0, EXCERPT_LENGTH)}…`
+          : parent.body,
+      deleted,
+    };
+  }
+
+  /** Group raw reaction rows by emoji, preserving earliest-first reactor order. */
+  function summarize(reactions: Reaction[]): ReactionSummary[] {
+    const byEmoji = new Map<string, ReactionSummary>();
+    for (const reaction of reactions) {
+      const existing = byEmoji.get(reaction.emoji);
+      if (existing) {
+        existing.count += 1;
+        existing.userIds.push(reaction.userId);
+      } else {
+        byEmoji.set(reaction.emoji, {
+          emoji: reaction.emoji,
+          count: 1,
+          userIds: [reaction.userId],
+        });
+      }
+    }
+    return [...byEmoji.values()];
+  }
+
+  /**
+   * Decorate messages with `replyTo` previews and `reactions` (ADR 0013):
+   * exactly two batched storage calls for the whole page, and none at all for
+   * a page with no replies and no reactions.
+   */
+  async function withDetails(messages: Message[]): Promise<MessageWithDetails[]> {
+    if (messages.length === 0) return [];
+
+    const parentIds = [
+      ...new Set(
+        messages
+          .map((message) => message.replyToMessageId)
+          .filter((id): id is string => id !== null),
+      ),
+    ];
+    const [parents, reactions] = await Promise.all([
+      parentIds.length === 0 ? Promise.resolve([]) : storage.getMessagesByIds(parentIds),
+      storage.listReactionsByMessageIds(messages.map((message) => message.id)),
+    ]);
+
+    const parentsById = new Map(parents.map((parent) => [parent.id, parent]));
+    const reactionsByMessage = new Map<string, Reaction[]>();
+    for (const reaction of reactions) {
+      const list = reactionsByMessage.get(reaction.messageId);
+      if (list) list.push(reaction);
+      else reactionsByMessage.set(reaction.messageId, [reaction]);
+    }
+
+    return messages.map((message) => {
+      const parent =
+        message.replyToMessageId === null ? undefined : parentsById.get(message.replyToMessageId);
+      return {
+        ...message,
+        replyTo: parent === undefined ? null : toReference(parent),
+        reactions: summarize(reactionsByMessage.get(message.id) ?? []),
+      };
+    });
+  }
+
+  async function withDetailsOne(message: Message): Promise<MessageWithDetails> {
+    const [decorated] = await withDetails([message]);
+    return decorated as MessageWithDetails;
+  }
+
+  /**
+   * Publish a reaction change. Carries the full post-change reaction set, so
+   * receiving the same event twice is harmless - and no `id:` frame, so
+   * message gap-fill is undisturbed (ADR 0013 §4).
+   */
+  function publishReaction(
+    type: "reaction.added" | "reaction.removed",
+    conversation: Conversation,
+    message: MessageWithDetails,
+    actorId: string,
+    emoji: string,
+  ): void {
+    transport.publish({
+      type,
+      conversationId: conversation.id,
+      recipientIds: conversation.participants.map((p) => p.userId),
+      actorId,
+      emoji,
+      message,
+    });
+  }
+
+  /**
+   * Shared body of `addReaction`/`removeReaction`: identical validation,
+   * permission, and publish path - only the storage call differs.
+   */
+  async function changeReaction(
+    input: ReactionApiInput,
+    apply: (emoji: string) => Promise<Reaction[]>,
+    eventType: "reaction.added" | "reaction.removed",
+  ): Promise<MessageWithDetails> {
+    requireNonEmptyId(input.userId, "userId");
+    requireNonEmptyId(input.messageId, "messageId");
+    const emoji = normalizeEmoji(input.emoji);
+
+    const message = await storage.getMessage(input.messageId);
+    if (!message) {
+      throw new ChatpackError("MESSAGE_NOT_FOUND", `Message "${input.messageId}" was not found.`);
+    }
+
+    const conversation = await requireConversation(message.conversationId);
+    // Write permission, like edit/delete: a reaction is a mutation the other
+    // participant sees, not a read.
+    await requireWrite(input.userId, conversation);
+
+    const reactions = await apply(emoji);
+    // Reuse the batched decorator for `replyTo`, then override `reactions`
+    // with what the write returned - it is already the authoritative set.
+    const decorated = await withDetailsOne(message);
+    const updated: MessageWithDetails = { ...decorated, reactions: summarize(reactions) };
+    publishReaction(eventType, conversation, updated, input.userId, emoji);
+    return updated;
   }
 
   /**
@@ -417,6 +618,21 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
       const conversation = await requireConversation(input.conversationId);
       await requireWrite(input.userId, conversation);
 
+      // A reply must point inside this conversation (ADR 0013 §1). Same error
+      // as markRead uses, so a cross-conversation id can't be used to probe
+      // whether a message exists somewhere the caller cannot read. Deleted
+      // parents are fine - the parent can vanish between render and send.
+      if (input.replyToMessageId !== undefined) {
+        requireNonEmptyId(input.replyToMessageId, "replyToMessageId");
+        const parent = await storage.getMessage(input.replyToMessageId);
+        if (!parent || parent.conversationId !== conversation.id) {
+          throw new ChatpackError(
+            "MESSAGE_NOT_FOUND",
+            `Message "${input.replyToMessageId}" was not found in conversation "${conversation.id}".`,
+          );
+        }
+      }
+
       const hookConversation = {
         ...conversation,
         participantIds: conversation.participants.map((p) => p.userId),
@@ -435,18 +651,20 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
         senderId: input.userId,
         body: accepted.body,
         role: input.role ?? "user",
+        replyToMessageId: input.replyToMessageId ?? null,
         metadata: accepted.metadata,
       });
 
       telemetry.increment("messagesSent");
+      const decorated = await withDetailsOne(message);
       // Durable-first (MVP §9): the message exists before anyone is told.
-      publish("message.created", conversation, message);
+      publish("message.created", conversation, decorated);
       await runAfterMessageSend({
         message,
         conversation: hookConversation,
         action: "send",
       });
-      return message;
+      return decorated;
     },
 
     async listMessages(input) {
@@ -459,7 +677,7 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
         limit: normalizeLimit(input.limit),
         cursor: input.cursor,
       });
-      return { messages, nextCursor };
+      return { messages: await withDetails(messages), nextCursor };
     },
 
     async editMessage(input) {
@@ -502,13 +720,14 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
         body: accepted.body,
         editedAt: new Date(),
       });
-      publish("message.updated", conversation, updated);
+      const decorated = await withDetailsOne(updated);
+      publish("message.updated", conversation, decorated);
       await runAfterMessageSend({
         message: updated,
         conversation: hookConversation,
         action: "edit",
       });
-      return updated;
+      return decorated;
     },
 
     async deleteMessage(input) {
@@ -521,7 +740,7 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
       if (existing.senderId !== input.userId) {
         throw new ChatpackError("NOT_MESSAGE_SENDER", "Only the sender can delete a message.");
       }
-      if (existing.deletedAt) return existing; // idempotent
+      if (existing.deletedAt) return withDetailsOne(existing); // idempotent
 
       const conversation = await requireConversation(existing.conversationId);
       await requireWrite(input.userId, conversation);
@@ -531,8 +750,11 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
         body: "",
         deletedAt: new Date(),
       });
-      publish("message.deleted", conversation, updated);
-      return updated;
+      // Reactions on a deleted message are left alone: the tombstone still
+      // renders, and clearing them would be a second write for no gain.
+      const decorated = await withDetailsOne(updated);
+      publish("message.deleted", conversation, decorated);
+      return decorated;
     },
 
     async markRead(input) {
@@ -592,11 +814,29 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
       const conversation = await requireConversation(input.conversationId);
       await requireRead(input.userId, conversation);
 
-      return storage.listMessagesAfterSeq({
+      const missed = await storage.listMessagesAfterSeq({
         conversationId: conversation.id,
         afterSeq: input.afterSeq,
         limit: normalizeLimit(input.limit),
       });
+      return withDetails(missed);
+    },
+
+    async addReaction(input) {
+      return changeReaction(
+        input,
+        (emoji) => storage.addReaction({ messageId: input.messageId, userId: input.userId, emoji }),
+        "reaction.added",
+      );
+    },
+
+    async removeReaction(input) {
+      return changeReaction(
+        input,
+        (emoji) =>
+          storage.removeReaction({ messageId: input.messageId, userId: input.userId, emoji }),
+        "reaction.removed",
+      );
     },
   };
 

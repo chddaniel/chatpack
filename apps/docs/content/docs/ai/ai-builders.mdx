@@ -39,7 +39,8 @@ restating anywhere an agent might look:
    conversations, messages, read-state, typing, presence, AND the SSE stream.
 2. **These are the only server-side methods** on `chat.api`:
    `getOrCreateConversation`, `listConversations`, `getConversation`,
-   `sendMessage`, `listMessages`, `editMessage`, `deleteMessage`, `markRead`,
+   `sendMessage`, `listMessages`, `editMessage`, `deleteMessage`,
+   `addReaction`, `removeReaction`, `markRead`,
    `listMessagesAfter`. There is **no**
    `chat.api.getOrCreateDirectConversation` (that's a storage-adapter method -
    never call the adapter directly). If a name is not in this list, it does
@@ -95,7 +96,14 @@ curl -si -X POST localhost:3000/api/chat/conversations/conv_1/messages \
 curl -s 'localhost:3000/api/chat/conversations/conv_1/messages?limit=10' \
   -H 'cookie: demo_user=bob'
 
-# 3. live stream (expect ": connected", then events as messages are sent)
+# 3. react twice (expect the SAME single reaction both times - it's idempotent)
+curl -s -X POST localhost:3000/api/chat/messages/msg_1/reactions \
+  -H 'cookie: demo_user=bob' -H 'content-type: application/json' -d '{"emoji":"👍"}'
+curl -s -X POST localhost:3000/api/chat/messages/msg_1/reactions \
+  -H 'cookie: demo_user=bob' -H 'content-type: application/json' -d '{"emoji":"👍"}'
+
+# 4. live stream (expect ": connected", then events as messages are sent;
+#    reaction.added frames arrive with no `id:` line - that is correct)
 curl -sN localhost:3000/api/chat/stream -H 'cookie: demo_user=bob'
 ```
 

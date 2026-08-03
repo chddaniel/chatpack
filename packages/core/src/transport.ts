@@ -9,10 +9,14 @@
  * the interface is shaped so a Redis/pub-sub adapter can drop in later with
  * **no public API changes** (MVP §5).
  *
- * Two kinds of events travel on the transport (`docs/decisions/0008`):
+ * Three kinds of events travel on the transport (`docs/decisions/0008`,
+ * `docs/decisions/0013`):
  *
  * - {@link ChatEvent} - durable message events, backed by storage, replayable
  *   on reconnect via `Last-Event-ID` gap-fill.
+ * - {@link ReactionEvent} - durable reaction changes. Backed by storage, but
+ *   **not** gap-filled: reactions have no `seq`, so a reconnecting client
+ *   recovers them by refetching rather than replaying (ADR 0013 §2).
  * - {@link EphemeralEvent} - fire-and-forget signals (typing, presence,
  *   receipt ticks) that are never stored and never replayed. Miss one and
  *   it's gone - which is correct for "Alice is typing…".
@@ -20,13 +24,13 @@
  * @module
  */
 
-import type { Message } from "./types";
+import type { MessageWithDetails } from "./types";
 
 /**
  * A live event published on the transport whenever a message is created,
  * edited, or soft-deleted.
  *
- * Every event carries the full {@link Message} snapshot - consumers reconcile
+ * Every event carries the full message snapshot - consumers reconcile
  * by `message.id` + `message.seq` (see `docs/decisions/0003`), so events are
  * safe to receive more than once (at-least-once delivery, MVP §9).
  */
@@ -37,8 +41,39 @@ export interface ChatEvent {
   conversationId: string;
   /** The user ids that may receive this event (the two participants). */
   recipientIds: string[];
-  /** Full message snapshot after the action. */
-  message: Message;
+  /**
+   * Full message snapshot after the action, including the API decorations
+   * (`replyTo`, `reactions`) so a live frame and a fetched page carry the same
+   * shape. Gap-fill replay hydrates them too (ADR 0013).
+   */
+  message: MessageWithDetails;
+}
+
+/**
+ * A live event published whenever a reaction is added or removed
+ * (`docs/decisions/0013`).
+ *
+ * Durable-backed like {@link ChatEvent}, but its SSE frame carries **no `id:`
+ * line**: `Last-Event-ID` must keep meaning "the newest message `seq` I have
+ * seen" (ADR 0006), and a reaction produces no new `seq`. Clients therefore
+ * refetch cached pages when a stream reopens instead of replaying reactions.
+ *
+ * The `message` snapshot always carries the message's **complete** reaction
+ * set, never a delta, so applying the same event twice is harmless.
+ */
+export interface ReactionEvent {
+  /** What happened. */
+  type: "reaction.added" | "reaction.removed";
+  /** The conversation the reacted-to message belongs to. */
+  conversationId: string;
+  /** The user ids that may receive this event (the two participants). */
+  recipientIds: string[];
+  /** The user who added or removed the reaction. */
+  actorId: string;
+  /** The reaction key that was added or removed. */
+  emoji: string;
+  /** Full message snapshot after the change, including all `reactions`. */
+  message: MessageWithDetails;
 }
 
 /**
@@ -69,12 +104,37 @@ export interface EphemeralEvent {
   at: string;
 }
 
-/** Any event carried by the transport: durable or ephemeral. */
-export type TransportEvent = ChatEvent | EphemeralEvent;
+/** Any event carried by the transport: durable, reaction, or ephemeral. */
+export type TransportEvent = ChatEvent | ReactionEvent | EphemeralEvent;
 
 /** Type guard: is this transport event an {@link EphemeralEvent}? */
 export function isEphemeralEvent(event: TransportEvent): event is EphemeralEvent {
   return "ephemeral" in event && event.ephemeral === true;
+}
+
+/**
+ * Type guard: is this a durable **message** event?
+ *
+ * Since ADR 0013 the union has three members, so "not ephemeral" no longer
+ * means "a message". Branch on this wherever the message snapshot matters -
+ * gap-fill `id:` frames, `receipts()` delivery ticks - so a reaction is never
+ * mistaken for a new message.
+ */
+export function isMessageEvent(event: TransportEvent): event is ChatEvent {
+  return (
+    !isEphemeralEvent(event) &&
+    (event.type === "message.created" ||
+      event.type === "message.updated" ||
+      event.type === "message.deleted")
+  );
+}
+
+/** Type guard: is this transport event a {@link ReactionEvent}? */
+export function isReactionEvent(event: TransportEvent): event is ReactionEvent {
+  return (
+    !isEphemeralEvent(event) &&
+    (event.type === "reaction.added" || event.type === "reaction.removed")
+  );
 }
 
 /** Callback invoked for each event delivered to a subscription. */

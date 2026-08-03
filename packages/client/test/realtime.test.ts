@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createRealtime } from "../src/realtime";
+import { createRealtime, isReactionChatEvent, type ChatpackEvent } from "../src/realtime";
 import type { ChatpackEventSource } from "../src/config";
 
 class MockEventSource implements ChatpackEventSource {
@@ -79,6 +79,63 @@ describe("realtime", () => {
     unsubscribe();
     realtime.disconnect();
     expect(realtime.getSnapshot().status).toBe("closed");
+  });
+
+  it("parses reaction events and rejects malformed ones (ADR 0013)", () => {
+    const source = new MockEventSource();
+    const received: ChatpackEvent[] = [];
+    const realtime = createRealtime({
+      url: "/api/chat/stream",
+      credentials: "same-origin",
+      eventSource: () => source,
+      eventTypes: ["reaction.added", "reaction.removed"],
+      onEvent: (event) => received.push(event),
+    });
+    realtime.connect();
+
+    const message = {
+      id: "m1",
+      conversationId: "c1",
+      senderId: "bob",
+      body: "hello",
+      role: "user",
+      metadata: {},
+      seq: 1,
+      createdAt: "2026-01-01T00:00:00.000Z",
+      editedAt: null,
+      deletedAt: null,
+      replyToMessageId: null,
+      replyTo: null,
+      reactions: [{ emoji: "👍", count: 1, userIds: ["bob"] }],
+    };
+    source.emit("reaction.added", {
+      type: "reaction.added",
+      conversationId: "c1",
+      actorId: "bob",
+      emoji: "👍",
+      message,
+    });
+
+    expect(received).toHaveLength(1);
+    const event = received[0]!;
+    expect(isReactionChatEvent(event)).toBe(true);
+    if (!isReactionChatEvent(event)) throw new Error("expected a reaction event");
+    expect(event.actorId).toBe("bob");
+    expect(event.emoji).toBe("👍");
+    expect(event.message.reactions).toEqual([{ emoji: "👍", count: 1, userIds: ["bob"] }]);
+
+    // A frame missing any required field is dropped, never half-applied.
+    source.emit("reaction.added", { type: "reaction.added", conversationId: "c1", message });
+    source.emit("reaction.removed", {
+      type: "reaction.removed",
+      conversationId: "c1",
+      actorId: "bob",
+      emoji: "👍",
+      message: { id: "m1" },
+    });
+    expect(received).toHaveLength(1);
+
+    realtime.disconnect();
   });
 
   it("reports a stream error instead of throwing when EventSource is unavailable", () => {

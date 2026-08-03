@@ -5,7 +5,7 @@ description: The data model - pair keys, message ordering with seq, read-state, 
 
 ## The data model
 
-Three entities, all stored through the adapter:
+Four entities, all stored through the adapter:
 
 **Conversation**
 
@@ -74,9 +74,38 @@ Three entities, all stored through the adapter:
     createdAt: { description: "For display only; seq is the sort key.", type: "Date" },
     editedAt: { description: "Set when the message was edited.", type: "Date | null" },
     deletedAt: { description: "Set when soft-deleted (tombstone).", type: "Date | null" },
+    replyToMessageId: {
+      description:
+        "Quote-reply pointer at another message in the same conversation, or null. Immutable - edits only change the body.",
+      type: "string | null",
+    },
     metadata: { description: "Arbitrary JSON object. Default {}.", type: "Metadata" },
   }}
 />
+
+The API returns `MessageWithDetails` - the above plus two fields computed per
+request and never stored: `replyTo` (the quoted parent's preview) and
+`reactions` (grouped by emoji). See
+[Quote-replies](#quote-replies-a-pointer-not-a-thread) and
+[Reactions](#reactions).
+
+**Reaction**
+
+<TypeTable
+  type={{
+    messageId: { description: "The message being reacted to.", type: "string" },
+    userId: { description: "The reacting user's id.", type: "string" },
+    emoji: {
+      description:
+        'The reaction key: any non-empty string up to 32 chars, trimmed. "👍", ":shipit:", and a custom emoji id are all valid.',
+      type: "string",
+    },
+    createdAt: { description: "When the reaction was added.", type: "Date" },
+  }}
+/>
+
+Reactions are unique on the `(messageId, userId, emoji)` triple. They have no
+id and no `seq` - they are durable, but they are not messages.
 
 ## One conversation per pair
 
@@ -174,6 +203,88 @@ await chat.api.deleteMessage({ userId, messageId });
 Deletes are **soft**: the message keeps its `id` and `seq`, its `body` becomes
 `""`, and `deletedAt` is set - clients render a tombstone ("message deleted").
 Editing a deleted message fails with `409 MESSAGE_DELETED`.
+
+## Quote-replies: a pointer, not a thread
+
+Pass `replyToMessageId` when sending, and the message stores a pointer at an
+earlier message in the same conversation:
+
+```ts
+const reply = await chat.api.sendMessage({
+  userId: "bob",
+  conversationId,
+  body: "agreed",
+  replyToMessageId: "msg_1",
+});
+
+reply.replyToMessageId; // "msg_1" - stored
+reply.replyTo; // { id: "msg_1", senderId: "alice", excerpt: "hey bob!", deleted: false }
+```
+
+`replyTo` is a **read-only preview resolved on every request, never stored**.
+That choice is the point of the feature: denormalizing a copy of the parent's
+body into the reply row would go stale on the next edit, and letting clients
+look the parent up themselves fails exactly when it matters, because the thing
+you replied to has usually scrolled out of the loaded page. `excerpt` is the
+parent's first 140 characters with `"…"` appended when truncated, and `""` when
+the parent is a tombstone. Hydration costs one batched adapter call per page,
+and every adapter produces byte-identical previews because the rule lives in
+core.
+
+Semantics worth knowing:
+
+- The parent must be **in the same conversation**, else `404
+MESSAGE_NOT_FOUND` - the same wording as an unknown id, so a
+  cross-conversation probe can't confirm a message exists somewhere you can't
+  read.
+- **Replying to a tombstone is allowed** (`replyTo.deleted: true`, empty
+  excerpt). The parent can be deleted between render and send; rejecting that
+  would be a race the sender cannot win.
+- **Deleting a parent leaves its replies alone.** Each keeps its pointer and
+  renders a "message deleted" quote bar.
+- **A reply to a reply is flat.** One hop, no nesting, no depth limit, no
+  thread root - the transcript stays one `seq`-ordered list.
+- The pointer is **immutable**: `editMessage` only ever changes the body, so a
+  reply can't be re-targeted.
+
+<Callout type="info">
+  This is deliberately **not** threads. A thread is a second axis of ordering - a message becomes a
+  container with its own reply list, unread count, and pagination. That stays out of scope; see the
+  [roadmap](/docs/project/roadmap).
+</Callout>
+
+## Reactions
+
+```ts
+const reacted = await chat.api.addReaction({ userId: "bob", messageId: "msg_1", emoji: "👍" });
+reacted.reactions; // [{ emoji: "👍", count: 1, userIds: ["bob"] }]
+
+await chat.api.removeReaction({ userId: "bob", messageId: "msg_1", emoji: "👍" });
+```
+
+Both writes are **idempotent** - reacting twice with the same key leaves one
+reaction, un-reacting something that was never there is a silent no-op - and
+both return the message with its **complete** reaction set, so the response is
+what you write into your cache. `userIds` is earliest-first and safe to expose
+in full precisely because v0 is 1:1: at most two entries, so a client can
+render "you reacted" without a viewer-relative field or a second request.
+
+A **reaction key is any non-empty string, trimmed, up to 32 characters** - not
+validated as a Unicode emoji. `":shipit:"`, `"custom_1234"`, and a workspace's
+uploaded emoji id are all legitimate keys, the same way `role` and `metadata`
+are escape hatches. Whitespace is trimmed so `"👍"` and `"👍 "` can't become
+two separate buckets. Violations are `400 INVALID_INPUT`.
+
+Reacting requires **write** permission, matching edit and delete - it's a
+mutation the other participant sees. The acting user id comes from the auth
+hook, never a request body, so a caller can only ever react as themselves.
+
+<Callout type="info">
+  **A reaction is not a message.** It gets no `seq`, doesn't light the unread badge, doesn't advance
+  the conversation's activity time, and doesn't reorder the conversation list. One consequence on
+  the wire: reaction events are not gap-filled on SSE reconnect - see
+  [Real-time](/docs/realtime/sse).
+</Callout>
 
 ## Metadata
 
