@@ -354,6 +354,40 @@ describe("redisTransport - driver shapes", () => {
     expect(onB).toHaveLength(1);
   });
 
+  it("drives node-redis by its inline listener even though it is also an EventEmitter", () => {
+    // Regression: detection used to be `typeof subscriber.on === "function"`,
+    // which is true for BOTH drivers. Real node-redis clients extend
+    // EventEmitter, so they took the ioredis path - `subscribe(channel)` with no
+    // listener - and received nothing at all, while emitting "listener is not a
+    // function" on their error channel. Verified against redis@6 + a real
+    // server before this test was written.
+    const broker = new FakeRedisBroker();
+    const subscriber = new FakeNodeRedis(broker);
+    expect(typeof subscriber.on).toBe("function"); // the trap the old check fell into
+
+    const messageEvents: unknown[] = [];
+    subscriber.on("message", () => messageEvents.push(true));
+
+    const nodeA = redisTransport({
+      publisher: new FakeNodeRedis(broker),
+      subscriber: new FakeNodeRedis(broker),
+      nodeId: "node-a",
+    });
+    const nodeB = redisTransport({
+      publisher: new FakeNodeRedis(broker),
+      subscriber,
+      nodeId: "node-b",
+    });
+    const onB: TransportEvent[] = [];
+    nodeB.subscribe((event) => onB.push(event));
+
+    nodeA.publish(chatEvent());
+
+    expect(onB).toHaveLength(1);
+    // Delivery came through the inline listener, not a "message" event.
+    expect(messageEvents).toHaveLength(0);
+  });
+
   it("delivers exactly once per event, not once per supported driver path", () => {
     const { nodeA, nodeB } = twoNodes();
     const onB: TransportEvent[] = [];

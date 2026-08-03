@@ -66,11 +66,16 @@ export interface RedisPublisher {
  *   to `subscribe` is a Node-style `(err, count)` completion callback, *not* a
  *   message listener - passing a message handler there would never fire.)
  * - **`node-redis` v4+** takes the listener inline:
- *   `subscribe(channel, (payload, channel) => ...)`, with no `"message"` event.
+ *   `subscribe(channel, (payload, channel) => ...)`, and does *not* emit a
+ *   `"message"` event at all.
  *
- * Detection is by the presence of `on`: if the client is an event emitter it is
- * driven the ioredis way, otherwise the listener is passed to `subscribe`. That
- * keeps delivery on exactly one path, so no event is handled twice.
+ * Detection cannot use the presence of `on`: **both** drivers are
+ * `EventEmitter`s, so that test sends node-redis down the ioredis path, where
+ * `subscribe(channel)` without a listener leaves it with nothing to call and no
+ * event is ever delivered. The reliable discriminator is the casing of the
+ * pattern-subscribe method, which the two drivers spell differently:
+ * node-redis has camelCase `pSubscribe`, ioredis has lowercase `psubscribe`.
+ * Exactly one delivery path is ever wired, so no event is handled twice.
  */
 export interface RedisSubscriber {
   subscribe(
@@ -80,6 +85,8 @@ export interface RedisSubscriber {
   unsubscribe?(channel: string): Promise<unknown> | unknown;
   on?(event: "message", listener: (channel: string, payload: string) => void): unknown;
   off?(event: "message", listener: (channel: string, payload: string) => void): unknown;
+  /** Present on `node-redis` v4+ (camelCase) - used to identify that driver. */
+  pSubscribe?: unknown;
 }
 
 /** Where a transport failure happened, for {@link RedisTransportOptions.onError}. */
@@ -208,7 +215,11 @@ export function redisTransport(options: RedisTransportOptions): RedisTransport {
   }
 
   // One delivery path only, chosen by driver shape (see RedisSubscriber).
-  const isEventEmitter = typeof subscriber.on === "function";
+  // node-redis is identified by its camelCase `pSubscribe`; everything else
+  // (ioredis, and fakes shaped like it) is driven as an event emitter. Both
+  // drivers have `on`, so that cannot be the test.
+  const isNodeRedis = typeof subscriber.pSubscribe === "function";
+  const useEmitter = !isNodeRedis && typeof subscriber.on === "function";
   const emitterListener = (incomingChannel: string, payload: string): void => {
     if (incomingChannel !== channel) return;
     handleInbound(payload);
@@ -216,7 +227,7 @@ export function redisTransport(options: RedisTransportOptions): RedisTransport {
 
   try {
     let subscribed: Promise<unknown> | unknown;
-    if (isEventEmitter) {
+    if (useEmitter) {
       subscriber.on?.("message", emitterListener);
       subscribed = subscriber.subscribe(channel);
     } else {
@@ -260,7 +271,7 @@ export function redisTransport(options: RedisTransportOptions): RedisTransport {
       if (closed) return;
       closed = true;
       listeners.clear();
-      if (isEventEmitter && typeof subscriber.off === "function") {
+      if (useEmitter && typeof subscriber.off === "function") {
         subscriber.off("message", emitterListener);
       }
       try {

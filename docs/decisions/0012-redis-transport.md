@@ -39,13 +39,24 @@ alternative - depending on or peer-depending on a specific driver - would force 
 version-compatibility matrix on us and possibly a second copy of the driver into
 the user's app, for no gain: we use two commands.
 
-The two drivers disagree on message delivery (`ioredis` is an event emitter;
-`node-redis` takes the listener inline in `subscribe`), so the shape is detected
-at runtime by the presence of `on`. Exactly one delivery path is ever wired, so
-no event is handled twice. Note `ioredis`'s optional second argument to
-`subscribe` is a Node-style `(err, count)` completion callback, **not** a message
-listener - treating it as one is a silent no-op, so the test double deliberately
-refuses it.
+The two drivers disagree on message delivery (`ioredis` emits a `"message"`
+event; `node-redis` takes the listener inline in `subscribe`), so the shape is
+detected at runtime. Exactly one delivery path is ever wired, so no event is
+handled twice.
+
+The discriminator is the **casing of the pattern-subscribe method**: `node-redis`
+spells it `pSubscribe`, `ioredis` spells it `psubscribe`. The obvious test - the
+presence of `on` - is wrong, and was a real bug caught before release: both
+drivers extend `EventEmitter`, so it routed `node-redis` down the `ioredis` path,
+called `subscribe(channel)` with no listener, and delivered **zero** events while
+node-redis emitted "listener is not a function" on its error channel. Nothing
+threw and publishing still succeeded, so a deploy would look healthy while no
+cross-node event ever arrived. The test double now extends `EventEmitter` like
+the real client, which turns that mistake into a test failure.
+
+Note `ioredis`'s optional second argument to `subscribe` is a Node-style
+`(err, count)` completion callback, **not** a message listener - treating it as
+one is a silent no-op, so the ioredis test double deliberately refuses it.
 
 **3. Two connections are required, and enforced.**
 

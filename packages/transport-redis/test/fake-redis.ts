@@ -8,6 +8,8 @@
  * bug that a mocked-out transport would hide.
  */
 
+import { EventEmitter } from "node:events";
+
 /** A broker shared by every client created from it, standing in for a server. */
 export class FakeRedisBroker {
   private readonly channels = new Map<string, Set<(payload: string) => void>>();
@@ -52,6 +54,11 @@ export class FakeIoredis {
     return Promise.resolve(this.broker.publish(channel, message));
   }
 
+  /** Lowercase, as ioredis spells it - the counterpart to node-redis's `pSubscribe`. */
+  psubscribe(): Promise<number> {
+    return Promise.resolve(1);
+  }
+
   /**
    * ioredis resolves with the subscription count. Its optional second argument
    * is a Node-style `(err, count)` completion callback - deliberately not
@@ -89,13 +96,29 @@ export class FakeIoredis {
 
 /**
  * A `node-redis` v4-shaped client: the listener is passed to `subscribe`, and
- * there is **no** `on` method - which is exactly how the transport tells the two
- * drivers apart.
+ * no `"message"` event is ever emitted.
+ *
+ * Deliberately an `EventEmitter` with a real `on`/`off`, because the actual
+ * driver is one (verified against `redis@6`). An earlier version of this double
+ * omitted `on` entirely, which let a transport that detected drivers by
+ * `typeof subscriber.on === "function"` pass the suite while silently receiving
+ * zero events against real node-redis. It also carries the camelCase
+ * `pSubscribe` that identifies the driver.
  */
-export class FakeNodeRedis {
+export class FakeNodeRedis extends EventEmitter {
   private readonly bridges = new Map<string, (payload: string) => void>();
 
-  constructor(private readonly broker: FakeRedisBroker) {}
+  constructor(private readonly broker: FakeRedisBroker) {
+    super();
+  }
+
+  /**
+   * Never called by the transport - present only because its casing is how
+   * node-redis is told apart from ioredis (`psubscribe`).
+   */
+  pSubscribe(): Promise<void> {
+    return Promise.resolve();
+  }
 
   publish(channel: string, message: string): Promise<number> {
     return Promise.resolve(this.broker.publish(channel, message));
