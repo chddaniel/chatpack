@@ -1,6 +1,6 @@
 {
   "name": "@chatpack/client",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Framework-agnostic Chatpack client with optional React hooks",
   "license": "MIT",
   "homepage": "https://github.com/chddaniel/chatpack#readme",
