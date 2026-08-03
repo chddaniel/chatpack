@@ -26,6 +26,7 @@
  * @module
  */
 
+import { sql } from "drizzle-orm";
 import {
   bigint,
   index,
@@ -105,7 +106,13 @@ export const messages = pgTable(
     replyToMessageId: text("reply_to_message_id"),
     metadata: jsonb("metadata").notNull().default({}),
   },
-  (table) => [uniqueIndex("chatpack_messages_conv_seq_idx").on(table.conversationId, table.seq)],
+  (table) => [
+    uniqueIndex("chatpack_messages_conv_seq_idx").on(table.conversationId, table.seq),
+    index("chatpack_messages_body_search_idx").using(
+      "gin",
+      sql`to_tsvector('simple', ${table.body})`,
+    ),
+  ],
 );
 
 /** `chatpack_message_reactions` - one row per (message, user, emoji). */
@@ -196,6 +203,8 @@ export const migrationStatements: readonly string[] = [
   ADD COLUMN IF NOT EXISTS "reply_to_message_id" text`,
   `CREATE UNIQUE INDEX IF NOT EXISTS "chatpack_messages_conv_seq_idx"
   ON "chatpack_messages" ("conversation_id", "seq")`,
+  `CREATE INDEX IF NOT EXISTS "chatpack_messages_body_search_idx"
+  ON "chatpack_messages" USING gin (to_tsvector('simple', "body"))`,
   `CREATE TABLE IF NOT EXISTS "chatpack_message_reactions" (
   "message_id" text NOT NULL REFERENCES "chatpack_messages"("id") ON DELETE CASCADE,
   "user_id" text NOT NULL,

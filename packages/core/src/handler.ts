@@ -15,6 +15,7 @@
  * | GET    | `/conversations/:id`              | fetch one conversation       |
  * | POST   | `/conversations/:id/messages`     | send a message               |
  * | GET    | `/conversations/:id/messages?limit&cursor` | list messages       |
+ * | GET    | `/search/messages?q&limit&cursor` | search message bodies      |
  * | POST   | `/conversations/:id/read`         | update my last-read          |
  * | PATCH  | `/messages/:id`                   | edit my message              |
  * | DELETE | `/messages/:id`                   | soft-delete my message       |
@@ -451,6 +452,24 @@ export function createHandler(
         const result = await api.listMessages({
           userId,
           conversationId: segments[1]!,
+          ...(limit !== undefined ? { limit } : {}),
+          ...(cursor !== undefined ? { cursor } : {}),
+        });
+        return json(200, result);
+      }
+
+      // GET /search/messages - ranked, permission-filtered search
+      if (
+        method === "GET" &&
+        segments.length === 2 &&
+        segments[0] === "search" &&
+        segments[1] === "messages"
+      ) {
+        const limit = parseLimit(url.searchParams);
+        const cursor = url.searchParams.get("cursor") ?? undefined;
+        const result = await api.searchMessages({
+          userId,
+          query: url.searchParams.get("q") ?? "",
           ...(limit !== undefined ? { limit } : {}),
           ...(cursor !== undefined ? { cursor } : {}),
         });

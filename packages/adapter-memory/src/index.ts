@@ -26,6 +26,8 @@ import type {
   Participant,
   Reaction,
   ReactionInput,
+  SearchMessagesInput,
+  SearchMessagesResult,
   StorageAdapter,
   UpdateLastReadInput,
   UpdateMessageInput,
@@ -41,6 +43,60 @@ interface ConversationRecord {
   nextSeq: number;
   /** Global activity tick of the latest message; used for most-recently-active ordering. */
   lastActivityTick: number;
+}
+
+interface SearchCandidate {
+  message: Message;
+  score: number;
+}
+
+const SEARCH_TOKEN = /[\p{L}\p{N}]+/gu;
+
+function searchTerms(value: string): string[] {
+  return [...new Set(value.toLowerCase().match(SEARCH_TOKEN) ?? [])];
+}
+
+function searchCandidate(message: Message, terms: string[]): SearchCandidate | null {
+  if (message.deletedAt) return null;
+  const tokens = message.body.toLowerCase().match(SEARCH_TOKEN) ?? [];
+  const counts = new Map<string, number>();
+  for (const token of tokens) counts.set(token, (counts.get(token) ?? 0) + 1);
+  if (!terms.every((term) => counts.has(term))) return null;
+  return {
+    message,
+    score: terms.reduce((total, term) => total + (counts.get(term) ?? 0), 0),
+  };
+}
+
+function compareSearchCandidates(a: SearchCandidate, b: SearchCandidate): number {
+  return (
+    b.score - a.score ||
+    b.message.createdAt.getTime() - a.message.createdAt.getTime() ||
+    (a.message.id < b.message.id ? 1 : a.message.id === b.message.id ? 0 : -1)
+  );
+}
+
+function encodeSearchCursor(candidate: SearchCandidate): string {
+  return encodeURIComponent(
+    JSON.stringify([candidate.score, candidate.message.createdAt.getTime(), candidate.message.id]),
+  );
+}
+
+function decodeSearchCursor(cursor: string): [number, number, string] | null {
+  try {
+    const value: unknown = JSON.parse(decodeURIComponent(cursor));
+    if (
+      Array.isArray(value) &&
+      typeof value[0] === "number" &&
+      typeof value[1] === "number" &&
+      typeof value[2] === "string"
+    ) {
+      return [value[0], value[1], value[2]];
+    }
+  } catch {
+    // Invalid cursors restart from the first result, matching other adapter cursors.
+  }
+  return null;
 }
 
 /**
@@ -196,6 +252,40 @@ export function memoryAdapter(): StorageAdapter {
         .map((m) => ({ ...m }));
 
       return { messages: page, nextCursor };
+    },
+
+    async searchMessages(input: SearchMessagesInput): Promise<SearchMessagesResult> {
+      const terms = searchTerms(input.query);
+      if (terms.length === 0) return { messages: [], nextCursor: null };
+
+      const candidates: SearchCandidate[] = [];
+      for (const message of messages.values()) {
+        const conversation = conversations.get(message.conversationId);
+        if (!conversation?.participants.has(input.userId)) continue;
+        const candidate = searchCandidate(message, terms);
+        if (candidate)
+          candidates.push({ message: { ...candidate.message }, score: candidate.score });
+      }
+      candidates.sort(compareSearchCandidates);
+
+      const cursor = input.cursor ? decodeSearchCursor(input.cursor) : null;
+      const start = cursor
+        ? candidates.findIndex(
+            (candidate) =>
+              candidate.score === cursor[0] &&
+              candidate.message.createdAt.getTime() === cursor[1] &&
+              candidate.message.id === cursor[2],
+          ) + 1
+        : 0;
+      const page = candidates.slice(start, start + input.limit + 1);
+      const visible = page.slice(0, input.limit);
+      const last = visible[visible.length - 1];
+      const nextCursor = page.length > input.limit && last ? encodeSearchCursor(last) : null;
+
+      return {
+        messages: visible.map((candidate) => candidate.message),
+        nextCursor,
+      };
     },
 
     async listMessagesAfterSeq(input: ListMessagesAfterSeqInput): Promise<Message[]> {

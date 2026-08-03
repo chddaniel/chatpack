@@ -87,7 +87,7 @@ WhatsApp-style extras feel related to 1:1 because consumer apps bundle them. Cha
 - **Attachments / file uploads** as a first-class API - storage/CDN opinions; huge scope
 - **Push / email notifications**
 - **AI features** - leave `metadata` / `role` escape hatches only; do not design for AI
-- **Threads, search, moderation, multi-tenant admin** - reactions and
+- **Threads, moderation, multi-tenant admin** - reactions and
   quote-replies shipped post-MVP (ADR 0012) because they fit the existing seams:
   reactions are a fourth table with no `seq` and no effect on ordering, and a
   reply is one nullable pointer column plus a per-request hydrated preview.

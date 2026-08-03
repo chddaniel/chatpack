@@ -40,6 +40,7 @@ from a browser or HTTP client:
 | Show the inbox / sidebar        | `listConversations`             | `GET /conversations`                      |
 | Open one conversation           | `getConversation`               | `GET /conversations/:id`                  |
 | Load history / scroll back      | `listMessages`                  | `GET /conversations/:id/messages`         |
+| Search messages                 | `searchMessages`                | `GET /search/messages?q=...`              |
 | Send a message                  | `sendMessage`                   | `POST /conversations/:id/messages`        |
 | Edit / delete my message        | `editMessage`, `deleteMessage`  | `PATCH` / `DELETE /messages/:id`          |
 | React / un-react                | `addReaction`, `removeReaction` | `POST` / `DELETE /messages/:id/reactions` |
@@ -80,6 +81,13 @@ const reacted = await chat.api.addReaction({
 reacted.reactions; // [{ emoji: "👍", count: 1, userIds: ["bob"] }]
 await chat.api.removeReaction({ userId: "bob", messageId: message.id, emoji: "👍" });
 
+// search participant conversations (case-insensitive, ranked)
+const search = await chat.api.searchMessages({
+  userId: "bob",
+  query: "hello",
+  limit: 50,
+});
+
 // paginate history (newest first)
 const { messages, nextCursor } = await chat.api.listMessages({
   userId: "bob",
@@ -109,8 +117,9 @@ the conversation plus the calling user's `unreadCount` (messages newer than
 their read-state, excluding their own). See
 [Conversations & messages](/docs/concepts/conversations-messages#read-state-and-unread-counts).
 
-Every message-returning method (`sendMessage`, `listMessages`, `editMessage`,
-`deleteMessage`, `addReaction`, `removeReaction`, `listMessagesAfter`) returns
+Every message-returning method (`sendMessage`, `listMessages`, `searchMessages`,
+`editMessage`, `deleteMessage`, `addReaction`, `removeReaction`,
+`listMessagesAfter`) returns
 `MessageWithDetails` - the stored `Message` plus two per-request decorations:
 `replyTo` (the quoted parent's preview, or `null`) and `reactions` (grouped by
 emoji). Neither is stored: core computes them from batched adapter calls, one

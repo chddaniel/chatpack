@@ -67,6 +67,13 @@ describe("migrationStatements (single-statement drivers, e.g. Neon HTTP)", () =>
   it("joined statements are exactly migrationSql (no drift between the two exports)", () => {
     expect(migrationStatements.map((s) => `${s};`).join("\n\n") + "\n").toBe(migrationSql);
   });
+
+  it("creates the message-body GIN search index", async () => {
+    const result = await pglite.query<{ indexname: string }>(
+      `SELECT indexname FROM pg_indexes WHERE tablename = 'chatpack_messages'`,
+    );
+    expect(result.rows.map((row) => row.indexname)).toContain("chatpack_messages_body_search_idx");
+  });
 });
 
 describe("conversations on Postgres", () => {
@@ -440,6 +447,80 @@ describe("unread counts on Postgres", () => {
     expect(byId.get(withBob.id)).toBe(1);
     expect(byId.get(withCarol.id)).toBe(2);
     expect(byId.get(withDave.id)).toBe(0);
+  });
+});
+
+describe("message search on Postgres", () => {
+  it("matches case-insensitively, ranks relevance, paginates, and excludes tombstones", async () => {
+    const withBob = await chat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "bob",
+    });
+    const withCarol = await chat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "carol",
+    });
+
+    await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: withBob.id,
+      body: "hello from bob's conversation",
+    });
+    const deleted = await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: withBob.id,
+      body: "HELLO deleted secret",
+    });
+    await chat.api.deleteMessage({ userId: "alice", messageId: deleted.id });
+    await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: withCarol.id,
+      body: "HELLO hello world",
+    });
+
+    const firstPage = await chat.api.searchMessages({ userId: "alice", query: "HeLLo", limit: 1 });
+    expect(firstPage.messages.map((message) => message.body)).toEqual(["HELLO hello world"]);
+    expect(firstPage.nextCursor).not.toBeNull();
+
+    const secondPage = await chat.api.searchMessages({
+      userId: "alice",
+      query: "hello",
+      limit: 1,
+      cursor: firstPage.nextCursor!,
+    });
+    expect(secondPage.messages.map((message) => message.body)).toEqual([
+      "hello from bob's conversation",
+    ]);
+    expect(secondPage.nextCursor).toBeNull();
+
+    const deletedSearch = await chat.api.searchMessages({ userId: "alice", query: "deleted" });
+    expect(deletedSearch.messages).toHaveLength(0);
+  });
+
+  it("does not search non-participant conversations yet", async () => {
+    const supportChat = chatpack({
+      storage: drizzleAdapter(db),
+      telemetry: false,
+      permissions: {
+        canRead: ({ user, conversation }) =>
+          user.id === "support" || conversation.participantIds.includes(user.id),
+      },
+    });
+    const conversation = await supportChat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "bob",
+    });
+    await supportChat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "support searchable transcript",
+    });
+
+    const support = await supportChat.api.searchMessages({
+      userId: "support",
+      query: "searchable",
+    });
+    expect(support.messages).toHaveLength(0);
   });
 });
 

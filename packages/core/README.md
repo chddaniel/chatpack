@@ -83,6 +83,7 @@ lives at [`examples/messenger`](../../examples/messenger).
 | `api.getConversation`         | Fetch one conversation (read-permission checked)                                                |
 | `api.sendMessage`             | Send a text message, optionally quote-replying to another (write-permission checked)            |
 | `api.listMessages`            | Paginate history, newest-first                                                                  |
+| `api.searchMessages`          | Search participant conversation bodies, ranked and cursor-paginated                             |
 | `api.editMessage`             | Edit your own message                                                                           |
 | `api.deleteMessage`           | Soft-delete your own message                                                                    |
 | `api.addReaction`             | React as `userId` (write-permission checked); idempotent                                        |
@@ -210,6 +211,7 @@ so don't reuse HTTP-response types for `chat.api.*` calls or vice versa:
 | GET    | `/conversations/:id`          | -                                               | `{ conversation }`                        |
 | POST   | `/conversations/:id/messages` | `{ body, role?, replyToMessageId?, metadata? }` | `{ message }` (201)                       |
 | GET    | `/conversations/:id/messages` | `?limit=&cursor=`                               | `{ messages, nextCursor }` - newest first |
+| GET    | `/search/messages`            | `?q=&limit=&cursor=`                            | `{ messages, nextCursor }` - ranked       |
 | POST   | `/conversations/:id/read`     | `{ messageId }`                                 | `{ ok: true }`                            |
 | PATCH  | `/messages/:id`               | `{ body }`                                      | `{ message }`                             |
 | DELETE | `/messages/:id`               | -                                               | `{ message }` (soft-deleted)              |
@@ -231,6 +233,10 @@ Opt-in plugins from `@chatpack/core/plugins` add routes of their own
 - **Message ordering:** both list endpoints return **newest first**
   (keyset-paginated by `cursor`). Reverse the page for a chronological
   top-to-bottom render.
+- **Search is case-insensitive and ranked** by relevance, creation time, and
+  message id. It searches only the viewer's participant conversations,
+  excludes tombstones, and does not yet support non-participant `canRead`
+  grants.
 - **`role`** must be `"user" | "assistant" | "system"` (default `"user"`).
   It's an AI escape hatch only - core never behaves differently based on it;
   any other value is a 400 `INVALID_INPUT`.

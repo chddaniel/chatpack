@@ -72,18 +72,18 @@ Estimated effort for the first public release is still **~3 focused days (roughl
 
 **What’s deliberately not in the package yet** (from the MVP defer / non-goal list):
 
-| Not in v0                                           | Why wait                                                |
-| --------------------------------------------------- | ------------------------------------------------------- |
-| Group conversations                                 | Bigger product surface; keep v0 simple                  |
-| Typing indicators                                   | Nice polish, not required for messaging to work         |
-| Online / presence (“who’s online”)                  | Product + privacy choice; many apps skip it             |
-| Live “delivered / read” ticks                       | Read status already covers the important part           |
-| Ready-made React UI / hooks                         | Developers bring their own frontend in v0               |
-| Image / GIF / file attachments                      | A whole second problem (hosting & uploads)              |
-| Push / email notifications                          | Separate product concern                                |
-| AI-specific chat features                           | Escape hatches only; not an AI framework                |
-| Threads, reactions, search, moderation, admin tools | Later                                                   |
-| Multi-server scale-out                              | Single-server is correct for v0; designed to grow later |
+| Not in v0                                   | Why wait                                                |
+| ------------------------------------------- | ------------------------------------------------------- |
+| Group conversations                         | Bigger product surface; keep v0 simple                  |
+| Typing indicators                           | Nice polish, not required for messaging to work         |
+| Online / presence (“who’s online”)          | Product + privacy choice; many apps skip it             |
+| Live “delivered / read” ticks               | Read status already covers the important part           |
+| Ready-made React UI / hooks                 | Developers bring their own frontend in v0               |
+| Image / GIF / file attachments              | A whole second problem (hosting & uploads)              |
+| Push / email notifications                  | Separate product concern                                |
+| AI-specific chat features                   | Escape hatches only; not an AI framework                |
+| Threads, reactions, moderation, admin tools | Later                                                   |
+| Multi-server scale-out                      | Single-server is correct for v0; designed to grow later |
 
 **Bottom line for day 3:** a developer can install Chatpack and get reliable **1:1 text + live messaging + read status** into their app quickly. That is the BetterAuth-style “wow, that’s all I had to do?” moment for chat.
 
@@ -121,7 +121,7 @@ developer turns them on with one line, or leaves them off entirely
 | Attachments (images / GIFs / files) - first version | Send media, with clear limits and a simple upload story                                       |
 | More configuration knobs                            | “1:1 only,” “1:1 + images,” “groups on/off” - closer to the Loom vision of install-and-choose |
 
-**Still later than 14 days (toward the year vision):** full Discord-like product depth, push/email notification suites, moderation/admin suites, search, reactions/threads at scale, multi-region infrastructure, and deep AI chat tooling.
+**Still later than 14 days (toward the year vision):** full Discord-like product depth, push/email notification suites, moderation/admin suites, reactions/threads at scale, multi-region infrastructure, and deep AI chat tooling.
 
 **Bottom line for day 14:** the package starts to match the Loom story in miniature - developers can choose a shape (1:1 vs groups, text vs media) instead of rebuilding those choices themselves. The year-long roadmap is how that becomes Telegram/Discord-class breadth.
 

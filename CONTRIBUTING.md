@@ -110,6 +110,10 @@ Rules of thumb:
 - `countUnread` is exact and batched: per conversation, messages with `seq`
   greater than the viewer's read seq (`null` = 0), excluding the viewer's
   own messages; tombstones count. One query per page, never one per id.
+- `searchMessages` returns non-tombstone messages from the requesting user's
+  participant conversations in case-insensitive ranked order. Core applies
+  `canRead` to the participant-scoped results. Non-participant search is not
+  supported yet.
 
 ## Code style
 

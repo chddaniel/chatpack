@@ -184,6 +184,81 @@ describe("permissions", () => {
   });
 });
 
+describe("message search", () => {
+  it("searches case-insensitively across conversations, ranks terms, paginates, and skips tombstones", async () => {
+    const chat = createChat({ permissions: { canRead: () => true } });
+    const withBob = await chat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "bob",
+    });
+    const withCarol = await chat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "carol",
+    });
+
+    await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: withBob.id,
+      body: "hello from bob's conversation",
+    });
+    const deleted = await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: withBob.id,
+      body: "HELLO deleted secret",
+    });
+    await chat.api.deleteMessage({ userId: "alice", messageId: deleted.id });
+    await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: withCarol.id,
+      body: "HELLO hello world",
+    });
+
+    const firstPage = await chat.api.searchMessages({
+      userId: "alice",
+      query: "HeLLo",
+      limit: 1,
+    });
+    expect(firstPage.messages).toHaveLength(1);
+    expect(firstPage.messages[0]!.body).toBe("HELLO hello world");
+    expect(firstPage.nextCursor).not.toBeNull();
+
+    const secondPage = await chat.api.searchMessages({
+      userId: "alice",
+      query: "hello",
+      limit: 1,
+      cursor: firstPage.nextCursor!,
+    });
+    expect(secondPage.messages.map((message) => message.body)).toEqual([
+      "hello from bob's conversation",
+    ]);
+    expect(secondPage.nextCursor).toBeNull();
+  });
+
+  it("does not search non-participant conversations yet", async () => {
+    const chat = createChat({
+      permissions: {
+        canRead: ({ user, conversation }) =>
+          user.id === "support" || conversation.participantIds.includes(user.id),
+      },
+    });
+    const conversation = await chat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "bob",
+    });
+    await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "support searchable transcript",
+    });
+
+    const support = await chat.api.searchMessages({ userId: "support", query: "searchable" });
+    expect(support.messages).toHaveLength(0);
+
+    const stranger = await chat.api.searchMessages({ userId: "mallory", query: "searchable" });
+    expect(stranger.messages).toHaveLength(0);
+  });
+});
+
 describe("messages", () => {
   it("assigns a strictly increasing seq per conversation", async () => {
     const chat = createChat();

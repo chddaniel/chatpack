@@ -39,7 +39,7 @@ restating anywhere an agent might look:
    conversations, messages, read-state, typing, presence, AND the SSE stream.
 2. **These are the only server-side methods** on `chat.api`:
    `getOrCreateConversation`, `listConversations`, `getConversation`,
-   `sendMessage`, `listMessages`, `editMessage`, `deleteMessage`,
+   `sendMessage`, `listMessages`, `searchMessages`, `editMessage`, `deleteMessage`,
    `addReaction`, `removeReaction`, `markRead`,
    `listMessagesAfter`. There is **no**
    `chat.api.getOrCreateDirectConversation` (that's a storage-adapter method -

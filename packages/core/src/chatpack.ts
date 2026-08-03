@@ -110,6 +110,21 @@ export interface ListMessagesApiResult {
   nextCursor: string | null;
 }
 
+/** Input for {@link ChatpackApi.searchMessages}. */
+export interface SearchMessagesApiInput {
+  userId: string;
+  /** Plain-text terms to search for, case-insensitively. */
+  query: string;
+  limit?: number;
+  cursor?: string;
+}
+
+/** Result of {@link ChatpackApi.searchMessages}. */
+export interface SearchMessagesApiResult {
+  messages: Message[];
+  nextCursor: string | null;
+}
+
 /** Input for {@link ChatpackApi.editMessage}. */
 export interface EditMessageInput {
   userId: string;
@@ -156,7 +171,7 @@ export interface ReactionApiInput {
 
 /**
  * The server-side core API. Every method takes the acting `userId` explicitly
- * and enforces permissions before touching storage.
+ * and enforces permissions at the core boundary around storage access.
  */
 export interface ChatpackApi {
   /**
@@ -180,6 +195,9 @@ export interface ChatpackApi {
 
   /** List messages newest-first with cursor pagination. Requires read permission. */
   listMessages(input: ListMessagesApiInput): Promise<ListMessagesApiResult>;
+
+  /** Search non-tombstone messages in the user's participant conversations. */
+  searchMessages(input: SearchMessagesApiInput): Promise<SearchMessagesApiResult>;
 
   /** Edit a message's body. Only the original sender may edit. */
   editMessage(input: EditMessageInput): Promise<MessageWithDetails>;
@@ -295,13 +313,17 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
   }
 
   async function requireRead(userId: string, conversation: Conversation): Promise<void> {
-    const allowed = await canRead(toPermissionContext(userId, conversation));
+    const allowed = await canReadConversation(userId, conversation);
     if (!allowed) {
       throw new ChatpackError(
         "FORBIDDEN_READ",
         `User "${userId}" may not read conversation "${conversation.id}".`,
       );
     }
+  }
+
+  async function canReadConversation(userId: string, conversation: Conversation): Promise<boolean> {
+    return canRead(toPermissionContext(userId, conversation));
   }
 
   async function requireWrite(userId: string, conversation: Conversation): Promise<void> {
@@ -678,6 +700,40 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
         cursor: input.cursor,
       });
       return { messages: await withDetails(messages), nextCursor };
+    },
+
+    async searchMessages(input) {
+      requireNonEmptyId(input.userId, "userId");
+      if (typeof input.query !== "string" || input.query.trim() === "") {
+        throw new ChatpackError("INVALID_INPUT", '"query" must be a non-empty string.');
+      }
+
+      const limit = normalizeLimit(input.limit);
+      const messages: Message[] = [];
+      let cursor = input.cursor;
+
+      // Adapter pages remain participant-scoped and ranked. Filtering a page
+      // in core keeps custom canRead hooks effective for those results.
+      for (;;) {
+        const page = await storage.searchMessages({
+          userId: input.userId,
+          query: input.query.trim(),
+          limit,
+          ...(cursor !== undefined ? { cursor } : {}),
+        });
+
+        for (const message of page.messages) {
+          const conversation = await storage.getConversation(message.conversationId);
+          if (conversation && (await canReadConversation(input.userId, conversation))) {
+            messages.push(message);
+          }
+        }
+
+        if (messages.length >= limit || page.nextCursor === null) {
+          return { messages: messages.slice(0, limit), nextCursor: page.nextCursor };
+        }
+        cursor = page.nextCursor;
+      }
     },
 
     async editMessage(input) {

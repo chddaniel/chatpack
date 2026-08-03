@@ -29,7 +29,7 @@
  * @module
  */
 
-import { and, asc, desc, eq, gt, lt, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, isNull, lt, ne, or, sql } from "drizzle-orm";
 import { alias, type PgDatabase, type PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 import type {
@@ -48,6 +48,8 @@ import type {
   Metadata,
   Reaction,
   ReactionInput,
+  SearchMessagesInput,
+  SearchMessagesResult,
   StorageAdapter,
   UpdateLastReadInput,
   UpdateMessageInput,
@@ -80,6 +82,27 @@ function generateId(prefix: string): string {
   // 128 bits of randomness via the Web Crypto API (available in Node 19+,
   // Bun, Deno, Workers) - no extra dependency.
   return `${prefix}_${crypto.randomUUID().replaceAll("-", "")}`;
+}
+
+function encodeSearchCursor(rank: number, createdAt: Date, id: string): string {
+  return encodeURIComponent(JSON.stringify([rank, createdAt.getTime(), id]));
+}
+
+function decodeSearchCursor(cursor: string): [number, number, string] | null {
+  try {
+    const value: unknown = JSON.parse(decodeURIComponent(cursor));
+    if (
+      Array.isArray(value) &&
+      typeof value[0] === "number" &&
+      typeof value[1] === "number" &&
+      typeof value[2] === "string"
+    ) {
+      return [value[0], value[1], value[2]];
+    }
+  } catch {
+    // Invalid cursors restart from the first result, matching other adapter cursors.
+  }
+  return null;
 }
 
 function toMessage(row: MessageRow): Message {
@@ -347,6 +370,55 @@ export function drizzleAdapter(db: DrizzlePgDatabase): StorageAdapter {
       const nextCursor = hasMore && last ? String(last.seq) : null;
 
       return { messages: page.map(toMessage), nextCursor };
+    },
+
+    async searchMessages(input: SearchMessagesInput): Promise<SearchMessagesResult> {
+      const vector = sql`to_tsvector('simple', ${messages.body})`;
+      const query = sql`plainto_tsquery('simple', ${input.query})`;
+      const rank = sql<number>`ts_rank(${vector}, ${query})`;
+      const conditions = [
+        sql`${vector} @@ ${query}`,
+        isNull(messages.deletedAt),
+        eq(conversationParticipants.userId, input.userId),
+      ];
+
+      const cursor = input.cursor ? decodeSearchCursor(input.cursor) : null;
+      if (cursor) {
+        const [cursorRank, cursorCreatedAt, cursorId] = cursor;
+        const cursorDate = new Date(cursorCreatedAt);
+        const cursorCondition = or(
+          sql`${rank} < ${cursorRank}`,
+          and(sql`${rank} = ${cursorRank}`, lt(messages.createdAt, cursorDate)),
+          and(
+            sql`${rank} = ${cursorRank}`,
+            eq(messages.createdAt, cursorDate),
+            lt(messages.id, cursorId),
+          ),
+        );
+        if (cursorCondition) conditions.push(cursorCondition);
+      }
+
+      const rows = await db
+        .select({ message: messages, rank })
+        .from(messages)
+        .innerJoin(
+          conversationParticipants,
+          eq(conversationParticipants.conversationId, messages.conversationId),
+        )
+        .where(and(...conditions))
+        .orderBy(desc(rank), desc(messages.createdAt), desc(messages.id))
+        .limit(input.limit + 1);
+
+      const page = rows.slice(0, input.limit);
+      const hasMore = rows.length > input.limit;
+      const last = page[page.length - 1];
+      return {
+        messages: page.map((row) => toMessage(row.message)),
+        nextCursor:
+          hasMore && last
+            ? encodeSearchCursor(last.rank, last.message.createdAt, last.message.id)
+            : null,
+      };
     },
 
     async listMessagesAfterSeq(input: ListMessagesAfterSeqInput): Promise<Message[]> {
