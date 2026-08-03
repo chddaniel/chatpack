@@ -38,5 +38,5 @@ const chat = chatpack({
 
 `presence()` remains per-node: it counts live SSE connections in process
 memory, which shared events don't change. Durable events, `typing()`, and
-`receipts()` all relay. Rationale in ADR 0013; guide at
+`receipts()` all relay. Rationale in ADR 0012; guide at
 `/docs/realtime/multi-node`.

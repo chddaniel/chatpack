@@ -459,7 +459,7 @@ Hard rules for the Redis transport:
   synchronous and never throws, senders succeed, and other-node clients
   gap-fill from storage on reconnect.
 - Sticky sessions are NOT needed - any node can serve any stream.
-  Rationale: `docs/decisions/0013`.
+  Rationale: `docs/decisions/0012`.
 
 ## Verify the integration (before declaring success)
 
@@ -965,7 +965,7 @@ branch on `isMessageEvent(e)` wherever the message snapshot matters (SSE `id:`
 frames, `receipts()` delivery ticks), or a reaction will be mistaken for a new
 message. `PluginEventDeliveredContext.event` stays `ChatEvent`: plugins observe
 message delivery only. Rationale: `docs/decisions/0008` and
-`docs/decisions/0013`.
+`docs/decisions/0012`.
 
 For multi-node fan-out, use `@chatpack/transport-redis` rather than writing
 your own (see the deployment table above). If you do write a custom
@@ -974,7 +974,7 @@ throw (the message is already stored - a fan-out failure must not fail the
 sender), and any event crossing a process boundary must have its `Message`
 date fields (`createdAt`/`editedAt`/`deletedAt`) revived into real `Date`
 instances, since `JSON.stringify` turns them into strings and core does not
-coerce. Rationale: `docs/decisions/0013`.
+coerce. Rationale: `docs/decisions/0012`.
 
 ---
 
