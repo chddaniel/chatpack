@@ -50,9 +50,11 @@ export default {
 
 <Callout type="warn">
   **Workers are isolates.** The default SSE transport is in-process - events won't reach connections
-  held by other isolates, and the memory adapter shares nothing. Use a database adapter (with an
-  HTTP driver - TCP drivers like `pg` don't run on edge) and poll `GET /conversations/:id/messages`
-  instead of `/stream`. See [Deployment](/docs/integrations/deployment).
+  held by other isolates, and the memory adapter shares nothing. A distributed transport doesn't
+  rescue this: the isolate's bounded lifetime is the blocker, not the fan-out. Use a database
+  adapter (with an HTTP driver - TCP drivers like `pg` don't run on edge) and poll `GET
+  /conversations/:id/messages` instead of `/stream`. See
+  [Deployment](/docs/integrations/deployment).
 </Callout>
 
 If your Chatpack instance only serves part of the app, route by prefix - the

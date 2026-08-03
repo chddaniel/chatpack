@@ -106,6 +106,34 @@ npx @chatpack/cli init
 The v1 command supports Next.js App Router, Hono, and Express. It never runs
 database migrations and never generates provider-specific authentication code.
 
+## `@chatpack/transport-redis`
+
+Redis pub/sub `Transport` for multi-node SSE fan-out. Needed once you run more
+than one app server: the default transport fans out inside a single process, so
+a message sent on node B never reaches a stream held by node A.
+
+```ts
+import { redisTransport } from "@chatpack/transport-redis";
+import Redis from "ioredis";
+
+const transport = redisTransport({
+  publisher: new Redis(process.env.REDIS_URL!),
+  subscriber: new Redis(process.env.REDIS_URL!),
+});
+```
+
+| Export                    | What it is                                                        |
+| ------------------------- | ----------------------------------------------------------------- |
+| `redisTransport(options)` | A `Transport` plus `nodeId` and `close()`                         |
+| `DEFAULT_CHANNEL`         | `"chatpack:events"`                                               |
+| Types                     | `RedisTransportOptions`, `RedisPublisher`, `RedisSubscriber`, ... |
+
+Bring your own client (`ioredis` or `node-redis` v4+) - Chatpack has no Redis
+dependency. Two separate connections are required, since a client in subscriber
+mode cannot `PUBLISH`.
+
+→ [Multi-node fan-out](/docs/realtime/multi-node)
+
 ## llms.txt in every tarball
 
 Every published package ships the repo's

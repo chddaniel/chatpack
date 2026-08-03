@@ -1,0 +1,156 @@
+---
+title: Multi-node fan-out
+description: Run more than one app server and keep /stream working, with the Redis pub/sub transport.
+---
+
+Chatpack's default transport fans events out **inside one process**. That is
+correct for a single server and silently wrong for two:
+
+```
+                    ┌─ node A ── Alice's /stream connection
+load balancer ──────┤
+                    └─ node B ── Bob's POST /messages
+```
+
+Bob's message is stored (both nodes share one database), and node B publishes it
+to node B's listeners. Alice is on node A. She sees nothing until she
+reconnects.
+
+`@chatpack/transport-redis` relays every published event through a Redis channel,
+so all nodes see all events.
+
+## Install
+
+```sh
+npm install @chatpack/transport-redis ioredis
+```
+
+`ioredis` (or `node-redis`) is yours to choose - Chatpack has no Redis
+dependency of its own.
+
+## Use it
+
+```ts
+import { chatpack } from "@chatpack/core";
+import { drizzleAdapter } from "@chatpack/adapter-drizzle";
+import { redisTransport } from "@chatpack/transport-redis";
+import Redis from "ioredis";
+
+export const chat = chatpack({
+  storage: drizzleAdapter(db),
+  auth: async (req) => getSessionUser(req),
+  transport: redisTransport({
+    publisher: new Redis(process.env.REDIS_URL!),
+    subscriber: new Redis(process.env.REDIS_URL!),
+  }),
+});
+```
+
+That's the whole change. `Transport` is the seam core was built around, so every
+route, event, and client stays identical.
+
+<Callout type="warn">
+  **Two separate connections are required.** A Redis connection that has issued `SUBSCRIBE` enters
+  subscriber mode and refuses `PUBLISH`. Passing the same client as both `publisher` and
+  `subscriber` throws at startup rather than failing on the first message.
+</Callout>
+
+### With node-redis
+
+```ts
+import { createClient } from "redis";
+
+const publisher = createClient({ url: process.env.REDIS_URL });
+const subscriber = publisher.duplicate();
+await Promise.all([publisher.connect(), subscriber.connect()]);
+
+const transport = redisTransport({ publisher, subscriber });
+```
+
+Chatpack has **no Redis dependency** - `redisTransport` accepts anything with the
+right shape, so there is no driver version to keep compatible.
+
+## Options
+
+| Option       | Default           | Notes                                                                     |
+| ------------ | ----------------- | ------------------------------------------------------------------------- |
+| `publisher`  | _(required)_      | Client used to `PUBLISH`.                                                 |
+| `subscriber` | _(required)_      | A **second** client, used to `SUBSCRIBE`.                                 |
+| `channel`    | `chatpack:events` | Override to isolate staging from production on a shared Redis.            |
+| `nodeId`     | random            | This process's id, used to drop its own echoed events. Override in tests. |
+| `onError`    | `console.error`   | `(error, "publish" \| "receive" \| "subscribe")`. Wire to your tracker.   |
+
+The return value is a standard `Transport` plus `nodeId` and `close()`.
+`close()` unsubscribes and drops local listeners; closing the Redis connections
+is yours to do, since this package didn't open them.
+
+## What goes multi-node - and what doesn't
+
+| Feature                                            | Multi-node? |
+| -------------------------------------------------- | ----------- |
+| `message.created` / `message.updated` / `.deleted` | ✅ Yes      |
+| `typing()` indicators                              | ✅ Yes      |
+| `receipts()` delivered/read ticks                  | ✅ Yes      |
+| `presence()` online/offline                        | ❌ Per-node |
+
+<Callout type="warn">
+  **`presence()` stays per-node.** It counts live SSE connections in an in-process `Map`, so
+  relaying events doesn't teach node A about node B's connections. `GET /presence` answers for
+  locally-connected users only, and online/offline transitions fire per node. Multi-node presence
+  needs shared connection state (e.g. a Redis key per connection with a TTL) - it's a presence
+  change, not a transport one, and isn't solved by this package.
+</Callout>
+
+## When Redis goes down
+
+A Redis outage degrades live delivery; it never fails a send.
+
+`publish()` is synchronous and never throws - the `Transport` contract requires
+it, because the message is already in storage before anyone is notified
+(durable-first). Local subscribers are notified inline, before Redis is
+involved at all.
+
+During an outage:
+
+- senders still succeed (their write is durable),
+- history stays correct,
+- clients on the **publishing** node stay live,
+- clients on **other** nodes miss events until they reconnect - at which point
+  `Last-Event-ID` gap-fill replays the gap from storage.
+
+Failures surface through `onError` instead of the request path.
+
+Redis pub/sub itself is at-most-once - there's no replay buffer, which is exactly
+why durable events remain replayable from storage and ephemeral ones are defined
+as droppable.
+
+## Notes
+
+- **No sticky sessions needed.** Any node can serve any stream.
+- **Ordering** is per-publisher: two nodes publishing concurrently can
+  interleave on the wire. Clients sort by `seq`, so message order is unaffected.
+- **Serverless is still not a fit for SSE**, whatever the transport - the
+  function lifetime is the blocker, not the fan-out. Poll there instead.
+- **One database, many app servers.** All nodes must share storage; the transport
+  only relays live events, it isn't a substitute for shared persistence.
+
+## Verify it
+
+Start two servers on different ports against the same Postgres and Redis, open a
+stream on the first, and send through the second:
+
+```sh
+# terminal 1 - stream from node A
+curl -sN localhost:3000/api/chat/stream -H 'cookie: demo_user=alice'
+
+# terminal 2 - send through node B
+curl -si -X POST localhost:3001/api/chat/conversations/$CONV/messages \
+  -H 'cookie: demo_user=bob' -H 'content-type: application/json' \
+  -d '{"body":"across nodes"}'
+```
+
+The `message.created` event should appear on node A's stream. Without the Redis
+transport, it won't.
+
+Design rationale:
+[ADR 0012](https://github.com/chddaniel/chatpack/blob/main/docs/decisions/0012-redis-transport.md).

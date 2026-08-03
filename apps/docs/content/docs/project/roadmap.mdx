@@ -18,6 +18,7 @@ description: What shipped in v0, what's deliberately out of scope, and where Cha
 | Launch polish + npm release             | ✅ Done (M5)      |
 | Typing / presence / read-tick plugins   | ✅ Done (v0.next) |
 | Unread counts (`unreadCount`)           | ✅ Done (v0.next) |
+| Redis transport (multi-node SSE)        | ✅ Done (v0.next) |
 
 ## Deliberately not in scope yet
 
@@ -26,8 +27,10 @@ description: What shipped in v0, what's deliberately out of scope, and where Cha
 - **File uploads / attachments** - use `metadata` to point at files you host.
 - **Push notifications** - your app's job for now.
 - **React UI components** - Chatpack is headless; bring your own frontend.
-- **Distributed transport** (Redis pub/sub for multi-node SSE) - planned as a
-  swap-in `Transport` with the same public API, no code change.
+- **Multi-node `presence()`** - durable events and typing/receipts relay across
+  nodes via [`@chatpack/transport-redis`](/docs/realtime/multi-node), but
+  presence counts live SSE connections in an in-process `Map`. Shared
+  connection state is a presence change, not a transport one.
 
 Full scope and reasoning in
 [docs/MVP.md](https://github.com/chddaniel/chatpack/blob/main/docs/MVP.md).

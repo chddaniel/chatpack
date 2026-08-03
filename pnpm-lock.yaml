@@ -325,6 +325,28 @@ importers:
         specifier: ^3.0.0
         version: 3.2.7(@types/debug@4.1.13)(@types/node@25.9.5)(jiti@2.7.0)(lightningcss@1.32.0)(yaml@2.9.0)
 
+  packages/transport-redis:
+    dependencies:
+      '@chatpack/core':
+        specifier: workspace:^
+        version: link:../core
+    devDependencies:
+      '@chatpack/adapter-memory':
+        specifier: workspace:^
+        version: link:../adapter-memory
+      '@types/node':
+        specifier: ^26.1.1
+        version: 26.1.2
+      tsup:
+        specifier: ^8.3.5
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.25)(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@26.1.2)(jiti@2.7.0)(lightningcss@1.32.0)(yaml@2.9.0)
+
 packages:
 
   '@alloc/quick-lru@5.2.0':

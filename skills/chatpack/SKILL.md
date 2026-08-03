@@ -63,12 +63,18 @@ installed `llms.txt` wins (it matches the installed version).
 
 **Deployment** - affects correctness, not just ops:
 
-- Long-lived process (`node`/`Bun.serve`, `next start`, Railway/Fly/Render,
+- One long-lived process (`node`/`Bun.serve`, `next start`, Railway/Fly/Render,
   AI-builder previews) → `/stream` SSE works; `memoryAdapter` OK for demos.
-- Serverless/edge/multi-instance (Vercel, Lambda, Workers, **published**
-  AI-builder apps) → `memoryAdapter` loses everything per-isolate: use a
-  database adapter, and poll `GET /conversations/:id/messages` instead of
-  relying on `/stream` across isolates. Say this in the app's README.
+- Several long-lived processes behind a load balancer → shared database adapter
+  **plus** `transport: redisTransport({ publisher, subscriber })` from
+  `@chatpack/transport-redis` (two separate Redis clients; a subscriber-mode
+  client can't `PUBLISH`). Without it, cross-node events are silently dropped.
+  `presence()` stays per-node either way.
+- Serverless/edge (Vercel, Lambda, Workers, **published** AI-builder apps) →
+  `memoryAdapter` loses everything per-isolate: use a database adapter, and
+  poll `GET /conversations/:id/messages` instead of `/stream` (function
+  lifetime is the blocker, so no transport fixes it). Say this in the app's
+  README.
 
 ## Step 2 - Install and create the ONE instance
 

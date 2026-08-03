@@ -401,10 +401,14 @@ Two things to know before going live:
   [`@chatpack/core`'s README](./packages/core#real-time-sse). If the app runs
   inside an embedded preview iframe (AI-builder editors), the cookie needs
   `SameSite=None; Secure` - see the quickstart note in step 2.
-- **SSE + `memoryAdapter` need one long-lived process.** On serverless/edge
-  (Workers, Lambda) each isolate has its own memory - use a
-  [database adapter](./packages/adapter-drizzle) there and poll for new
-  messages until a distributed transport ships. Details in
+- **SSE + `memoryAdapter` need one long-lived process.** The default transport
+  fans out inside a single process, so with 2+ app servers a message sent on one
+  node never reaches a stream on another - drop in
+  [`@chatpack/transport-redis`](./packages/transport-redis) (one line) to relay
+  events between nodes. On serverless/edge (Workers, Lambda) each isolate has
+  its own memory - use a [database adapter](./packages/adapter-drizzle) there and
+  poll for new messages; SSE is a poor fit regardless of transport, since the
+  function lifetime is the blocker. Details in
   [`@chatpack/core`'s README](./packages/core#real-time-sse).
 
 ### 7. Or call it straight from server code
@@ -575,6 +579,7 @@ reasoning.
 | [`@chatpack/next`](./packages/next)                       | Next.js App Router integration                   |
 | [`@chatpack/client`](./packages/client)                   | Typed REST, SSE, React hooks, and client plugins |
 | [`@chatpack/cli`](./packages/cli)                         | Safe project setup CLI (`chatpack init`)         |
+| [`@chatpack/transport-redis`](./packages/transport-redis) | Redis pub/sub transport (multi-node SSE)         |
 
 ## Examples
 

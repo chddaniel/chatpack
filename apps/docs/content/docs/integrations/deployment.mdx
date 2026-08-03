@@ -12,12 +12,17 @@ Two Chatpack defaults assume **one long-lived server process**:
 That's correct for a Node server, `next start`, `Bun.serve`, or a single
 Railway/Fly/Render container. It's wrong on serverless.
 
+Scaling to 2+ long-lived processes is a transport swap, not a rewrite: drop in
+[`@chatpack/transport-redis`](/docs/realtime/multi-node) and events published on
+any node reach streams held by every node.
+
 ## Decision table
 
-| Environment                                                                                                                                                                | Storage                                                                                                                                    | Real-time                                                                                                           |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
-| One long-lived process: `node`/`Bun.serve`, `next start`, Railway / Fly / Render, Replit Reserved VM, **AI-builder previews** (preview sandboxes behave like a dev server) | `memoryAdapter` (demo) or [Drizzle](/docs/storage/drizzle)                                                                                 | `/stream` SSE works                                                                                                 |
-| Serverless / edge / multi-instance: Vercel & AWS Lambda, Cloudflare Workers, **published AI-builder apps**, Replit Autoscale                                               | [Drizzle](/docs/storage/drizzle) or a [custom adapter](/docs/storage/custom-adapter) - `memoryAdapter` is per-isolate and loses everything | Poll `GET /conversations/:id/messages`; don't rely on `/stream` across isolates until a distributed transport ships |
+| Environment                                                                                                                                                                | Storage                                                                                                                                    | Real-time                                                                                                                                     |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| One long-lived process: `node`/`Bun.serve`, `next start`, Railway / Fly / Render, Replit Reserved VM, **AI-builder previews** (preview sandboxes behave like a dev server) | `memoryAdapter` (demo) or [Drizzle](/docs/storage/drizzle)                                                                                 | `/stream` SSE works                                                                                                                           |
+| Several long-lived processes behind a load balancer: 2+ containers, `pm2 -i`, an autoscaling always-on service                                                             | [Drizzle](/docs/storage/drizzle) or a custom adapter - all nodes must share one database                                                   | `/stream` SSE works **with [`@chatpack/transport-redis`](/docs/realtime/multi-node)**; the default transport silently drops cross-node events |
+| Serverless / edge: Vercel & AWS Lambda, Cloudflare Workers, **published AI-builder apps**, Replit Autoscale                                                                | [Drizzle](/docs/storage/drizzle) or a [custom adapter](/docs/storage/custom-adapter) - `memoryAdapter` is per-isolate and loses everything | Poll `GET /conversations/:id/messages` - SSE is a poor fit whatever the transport, because function lifetime is the blocker                   |
 
 <Callout type="warn">
   A demo on `memoryAdapter` + `/stream` is **correct in a preview and wrong in a serverless
@@ -26,8 +31,9 @@ Railway/Fly/Render container. It's wrong on serverless.
 
 ## Polling fallback for serverless
 
-Until a distributed transport ships (e.g. Redis - a swap-in with the same
-public API, no code change), poll the list endpoint on serverless platforms:
+On serverless platforms, a transport swap doesn't help - the function stops
+running, so there is no connection to fan out to. Poll the list endpoint
+instead:
 
 ```ts
 // naive but correct: newest-first page, dedupe by message.id
@@ -45,10 +51,10 @@ async function poll(conversationId: string, everyMs = 3000) {
 }
 ```
 
-Plugin signals (typing, presence, receipts) are in-memory and single-node too
-
-- they simply won't fire across isolates; the durable state
-  (`lastReadMessageId`) still works everywhere.
+Plugin signals (typing, presence, receipts) are in-memory, so they won't fire
+across isolates either; the durable state (`lastReadMessageId`) still works
+everywhere. On multi-node long-lived servers the Redis transport relays typing
+and receipts, but `presence()` remains per-node.
 
 ## Databases on edge runtimes
 
@@ -77,6 +83,7 @@ path (`proxy_buffering off;`) so events aren't held back.
    `/stream` ([Authentication](/docs/concepts/authentication))?
 3. **Tables** - migrations run
    ([Creating the tables](/docs/storage/drizzle#creating-the-tables))?
-4. **Platform** - long-lived process (SSE fine) or serverless (poll)?
+4. **Platform** - one long-lived process (SSE fine), several
+   ([Redis transport](/docs/realtime/multi-node)), or serverless (poll)?
 5. **Recipient validation** - your app checks `otherUserId` against your
    users table?

@@ -19,6 +19,7 @@ Packages (all on npm):
 | `@chatpack/next`           | Next.js App Router mount helper (`toNextRouteHandlers`)|
 | `@chatpack/client`         | Framework-agnostic REST + SSE client (+ React hooks)   |
 | `@chatpack/cli`            | Safe project setup CLI (`chatpack init`)              |
+| `@chatpack/transport-redis`| Redis pub/sub transport - multi-node SSE fan-out       |
 
 ## Chatpack CLI
 
@@ -369,11 +370,46 @@ events.onerror = () => {
 | Environment                                                                                          | Storage                          | Real-time                                     |
 | ---------------------------------------------------------------------------------------------------- | -------------------------------- | --------------------------------------------- |
 | One long-lived process: `node`/`Bun.serve`, `next start`, Railway/Fly/Render, Replit Reserved VM, **AI-builder previews** (Lovable/v0 preview sandboxes behave like a dev server) | `memoryAdapter` (demo) or Drizzle | `/stream` SSE works                           |
-| Serverless / edge / multi-instance: Vercel & AWS Lambda, Cloudflare Workers, **published AI-builder apps**, Replit Autoscale | Drizzle (or custom adapter) - `memoryAdapter` is per-isolate and loses everything | Poll `GET /conversations/:id/messages`; don't rely on `/stream` across isolates until a distributed transport ships |
+| Several long-lived processes behind a load balancer (2+ containers/dynos, `pm2 -i`, autoscaled VMs) | Drizzle (or custom adapter) | `/stream` works **only** with `@chatpack/transport-redis` - the default transport is per-process |
+| Serverless / edge / multi-instance: Vercel & AWS Lambda, Cloudflare Workers, **published AI-builder apps**, Replit Autoscale | Drizzle (or custom adapter) - `memoryAdapter` is per-isolate and loses everything | Poll `GET /conversations/:id/messages`; SSE is unsuitable here whatever the transport (function lifetime, not fan-out, is the blocker) |
 
 The default transport and plugin state (typing/presence/receipts) are
 in-process, single-node. A demo on `memoryAdapter` + `/stream` is correct in
 a preview and wrong in a serverless deploy - say so in the app's README.
+
+**Multi-node SSE (2+ long-lived processes).** Swap in the Redis transport -
+one line, no other API change:
+
+```ts
+import { redisTransport } from "@chatpack/transport-redis";
+import Redis from "ioredis";
+
+// Two connections: a client in subscriber mode cannot PUBLISH.
+export const chat = chatpack({
+  storage,
+  auth,
+  transport: redisTransport({
+    publisher: new Redis(process.env.REDIS_URL!),
+    subscriber: new Redis(process.env.REDIS_URL!),
+  }),
+});
+```
+
+Hard rules for the Redis transport:
+
+- **Two separate Redis connections are required** (`publisher` + `subscriber`);
+  passing one client twice throws at startup.
+- Bring your own client - `ioredis` or `node-redis` v4+ both work; Chatpack has
+  no Redis dependency. Options: `channel` (default `chatpack:events`), `nodeId`,
+  `onError`.
+- Messages, typing, and receipts go multi-node. **`presence()` does not** - it
+  counts connections in a per-process Map, so `GET /presence` still answers for
+  locally-connected users only.
+- A Redis outage degrades live delivery, never the send: `publish` stays
+  synchronous and never throws, senders succeed, and other-node clients
+  gap-fill from storage on reconnect.
+- Sticky sessions are NOT needed - any node can serve any stream.
+  Rationale: `docs/decisions/0012`.
 
 ## Verify the integration (before declaring success)
 
@@ -756,6 +792,15 @@ SSE stream - never stored, never replayed - so custom storage adapters need
 note `publish`/`subscribe` carry `TransportEvent = ChatEvent |
 EphemeralEvent` since core 0.2.0 (discriminate with `isEphemeralEvent`).
 Rationale: `docs/decisions/0008`.
+
+For multi-node fan-out, use `@chatpack/transport-redis` rather than writing
+your own (see the deployment table above). If you do write a custom
+`Transport`, match its two rules: `publish` must be synchronous and must never
+throw (the message is already stored - a fan-out failure must not fail the
+sender), and any event crossing a process boundary must have its `Message`
+date fields (`createdAt`/`editedAt`/`deletedAt`) revived into real `Date`
+instances, since `JSON.stringify` turns them into strings and core does not
+coerce. Rationale: `docs/decisions/0012`.
 
 ---
 

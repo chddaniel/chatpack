@@ -98,9 +98,15 @@ Common causes:
 
 <Accordion title="Does real-time work on Vercel / Lambda / Cloudflare Workers?">
 
-Not across isolates - the default transport is in-process. Use a database
-adapter and poll `GET /conversations/:id/messages` on serverless platforms; a
-distributed transport (Redis) is planned as a swap-in with no API change. See
+No - and a transport swap doesn't fix it. The blocker on serverless is function
+lifetime, not fan-out: the isolate stops running, so there's no connection left
+to push to. Use a database adapter and poll
+`GET /conversations/:id/messages` there.
+
+On **several long-lived** servers (2+ containers behind a load balancer), SSE
+does work once you swap in
+[`@chatpack/transport-redis`](/docs/realtime/multi-node) - same public API, no
+code change beyond the `transport` option. See
 [Deployment](/docs/integrations/deployment).
 
 </Accordion>

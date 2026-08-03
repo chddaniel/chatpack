@@ -11,8 +11,9 @@ Two interfaces carry the whole design:
   read-state). Core depends on the interface, never on a specific database.
 - **`Transport`** - publish/subscribe of live events to connected SSE clients.
   The engine publishes only _after_ the storage write succeeds
-  (durable-first); v0 ships a single-node in-process transport, and the SSE
-  endpoint recovers missed messages on reconnect from storage via
+  (durable-first). The default is in-process (one node); swap in
+  [`@chatpack/transport-redis`](/docs/realtime/multi-node) for several. Either
+  way the SSE endpoint recovers missed messages on reconnect from storage via
   `Last-Event-ID`.
 
 The core engine (`@chatpack/core`) contains all domain logic: 1:1
@@ -90,7 +91,7 @@ const chat = chatpack({
   permissions: { canRead, canWrite }, // default: participants only
   hooks: { beforeMessageSend, afterMessageSend }, // default: none
   plugins: [typing(), presence(), receipts()], // default: none
-  transport: inProcessTransport(), // default: in-process, single node
+  transport: inProcessTransport(), // default: in-process; redisTransport() for multi-node
   telemetry: true, // default: true (opt-out)
 });
 ```
@@ -118,7 +119,8 @@ const chat = chatpack({
       type: "MessageHooks",
     },
     transport: {
-      description: "Live event fan-out. Default: single-node in-process transport.",
+      description:
+        "Live event fan-out. Default: single-node in-process transport. Use redisTransport() from @chatpack/transport-redis across several nodes.",
       type: "Transport",
     },
     plugins: {
@@ -152,3 +154,4 @@ Non-obvious decisions are recorded as short ADRs in
 | 0009 | Unread counts computed from read-state at query time      |
 | 0010 | First-party client package (`@chatpack/client`)           |
 | 0011 | Message hooks: in-process before/after, not webhooks      |
+| 0012 | Redis transport: separate package, bring your own client  |

@@ -424,12 +424,15 @@ interface (extra routes via `handleRequest`, live signals via
 > **⚠️ Deployment reality check:** the default transport is **in-process** and
 > `memoryAdapter` is **per-process** - both assume one long-lived server
 > (a Node server, a single Fly/Railway container, `next start`, `Bun.serve`).
+> Running 2+ app servers behind a load balancer? Events published on one node
+> never reach streams held by another - drop in
+> [`@chatpack/transport-redis`](../transport-redis), a one-line change with the
+> same public API (`presence()` still stays per-node).
 > On serverless/edge platforms (Cloudflare Workers, Vercel/AWS Lambda), each
-> isolate has its own memory: SSE events won't reach connections held by other
-> isolates, and in-memory history isn't shared at all. For those platforms use
-> a database adapter ([`@chatpack/adapter-drizzle`](../adapter-drizzle)) and,
-> until a distributed `Transport` ships (e.g. Redis - same public API), prefer
-> polling `GET /conversations/:id/messages` over `/stream`.
+> isolate has its own memory and a bounded lifetime, so SSE is a poor fit
+> whatever the transport: use a database adapter
+> ([`@chatpack/adapter-drizzle`](../adapter-drizzle)) and poll
+> `GET /conversations/:id/messages` instead of `/stream`.
 
 ## Telemetry (anonymous, opt-out)
 

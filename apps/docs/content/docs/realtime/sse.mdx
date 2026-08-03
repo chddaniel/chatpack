@@ -70,11 +70,12 @@ cookies for embedded previews) in
 
 <Callout type="warn">
   The default transport is **in-process** and `memoryAdapter` is **per-process** - both assume one
-  long-lived server (a Node server, a single Fly/Railway container, `next start`, `Bun.serve`). On
-  serverless/edge platforms (Cloudflare Workers, Vercel/AWS Lambda), each isolate has its own
-  memory: SSE events won't reach connections held by other isolates. Use a database adapter there
-  and poll `GET /conversations/:id/messages` until a distributed transport ships (e.g. Redis - same
-  public API, no code change). Details in [Deployment](/docs/integrations/deployment).
+  long-lived server (a Node server, a single Fly/Railway container, `next start`, `Bun.serve`).
+  Running 2+ app servers? Events published on one node never reach streams held by another - drop in
+  [`@chatpack/transport-redis`](/docs/realtime/multi-node), a one-line change with the same public
+  API. On serverless/edge platforms (Cloudflare Workers, Vercel/AWS Lambda), SSE is a poor fit
+  whatever the transport, because the function lifetime is the blocker: use a database adapter and
+  poll `GET /conversations/:id/messages`. Details in [Deployment](/docs/integrations/deployment).
 </Callout>
 
 ## Heartbeats
