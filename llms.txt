@@ -459,7 +459,7 @@ Hard rules for the Redis transport:
   synchronous and never throws, senders succeed, and other-node clients
   gap-fill from storage on reconnect.
 - Sticky sessions are NOT needed - any node can serve any stream.
-  Rationale: `docs/decisions/0012`.
+  Rationale: `docs/decisions/0013`.
 
 ## Verify the integration (before declaring success)
 
@@ -974,7 +974,7 @@ throw (the message is already stored - a fan-out failure must not fail the
 sender), and any event crossing a process boundary must have its `Message`
 date fields (`createdAt`/`editedAt`/`deletedAt`) revived into real `Date`
 instances, since `JSON.stringify` turns them into strings and core does not
-coerce. Rationale: `docs/decisions/0012`.
+coerce. Rationale: `docs/decisions/0013`.
 
 ---
 

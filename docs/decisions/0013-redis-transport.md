@@ -1,4 +1,4 @@
-# ADR 0012: Redis pub/sub transport as a separate package
+# ADR 0013: Redis pub/sub transport as a separate package
 
 - **Status:** accepted
 - **Date:** 2026-08-03

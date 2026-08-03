@@ -93,7 +93,7 @@ WhatsApp-style extras feel related to 1:1 because consumer apps bundle them. Cha
   reply is one nullable pointer column plus a per-request hydrated preview.
   Threads stay a non-goal - they need a thread identity, per-thread counts, and
   nested pagination, which is a different data model, not a column.
-- **Horizontal multi-node fan-out _in core_** - core ships single-node only. The `Transport` seam held: multi-node fan-out shipped as the optional `@chatpack/transport-redis` package (ADR 0012) with **zero changes to core** and no public API change. Multi-node `presence()` is still a non-goal - it needs shared connection state, not a transport.
+- **Horizontal multi-node fan-out _in core_** - core ships single-node only. The `Transport` seam held: multi-node fan-out shipped as the optional `@chatpack/transport-redis` package (ADR 0013) with **zero changes to core** and no public API change. Multi-node `presence()` is still a non-goal - it needs shared connection state, not a transport.
 
 ## 6. Architecture (backend-only, adapter-driven)
 

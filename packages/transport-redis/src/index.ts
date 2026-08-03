@@ -34,7 +34,7 @@
  * `presence()` is different: it counts live connections in a per-process `Map`
  * (`docs/decisions/0008`), so each node still only knows about its own
  * connections. Multi-node presence needs shared state and is not solved by this
- * package - see `docs/decisions/0012`.
+ * package - see `docs/decisions/0013`.
  *
  * @module
  */

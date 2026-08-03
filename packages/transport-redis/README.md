@@ -73,7 +73,7 @@ three, reviving the `Date` fields on the message each event carries.
 in-process `Map`, so each node only knows its own. `GET /presence` answers for
 locally-connected users only, and online/offline transitions fire per node.
 Multi-node presence needs shared connection state and isn't solved here - see
-[ADR 0012](../../docs/decisions/0012-redis-transport.md).
+[ADR 0013](../../docs/decisions/0013-redis-transport.md).
 
 ## Failure behavior
 
@@ -108,7 +108,7 @@ shows up on the next refetch of that thread
 ## Links
 
 - [Chatpack docs](https://docs.chatpack.dev)
-- [ADR 0012 - Redis transport](../../docs/decisions/0012-redis-transport.md)
+- [ADR 0013 - Redis transport](../../docs/decisions/0013-redis-transport.md)
 - [ADR 0006 - SSE gap-fill](../../docs/decisions/0006-sse-gap-fill.md)
 
 MIT
