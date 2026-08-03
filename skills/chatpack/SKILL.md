@@ -153,8 +153,11 @@ body (that's what makes SSE work) - copy the recipe from `llms.txt`
 **Prefer the first-party client** when the frontend is browser JS/TS or React:
 `npm install @chatpack/client` → `createChatClient()` (React apps import it
 from `@chatpack/client/react` for hooks). It handles envelopes, the single
-EventSource, reconnects, and dedupe for you - see "First-party client" in
-`llms.txt`. The raw-fetch recipe below is the fallback for everything else:
+EventSource, reconnects, and dedupe for you, and keeps the conversations list
+live (reorder + `unreadCount`) without any refetch-on-event code - see
+"First-party client" in `llms.txt`. Pass the signed-in user's id as
+`userId` (a cache hint, never auth) so their own messages don't count as
+unread. The raw-fetch recipe below is the fallback for everything else:
 
 ```ts
 // 1. demo sign-in: iframe-proof attributes (works on localhost too)

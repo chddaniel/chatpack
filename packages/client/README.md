@@ -78,7 +78,20 @@ The framework-agnostic client mirrors the server routes from `@chatpack/core`:
 | `realtime`               | `GET /stream` with native reconnect and deduplication |
 
 Every request returns `{ data, error }`. The client passes browser credentials
-to the server; it does not replace the server's auth hook or accept a user id.
+to the server and never replaces the server's auth hook. The optional `userId`
+option is a cache hint, not a credential: it keeps the viewer's own messages
+from counting as unread. Omit it and the client infers the id from the first
+message it sends.
+
+## Realtime cache updates
+
+Durable events keep both the open thread and the conversations list current. On
+`message.created` the conversation moves to the front of the cached list and its
+`unreadCount` increments (never for the viewer's own messages); a conversation
+missing from the list is fetched once and prepended. `message.updated` and
+`message.deleted` do not reorder, matching server-side activity ordering, and
+redelivered events never double-count. `conversations.markRead` clears
+`unreadCount` locally when the marked message is the newest one cached.
 
 ## Plugins
 

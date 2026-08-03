@@ -93,6 +93,9 @@ export function useConversations(
   useEffect(() => {
     void refetch();
   }, [refetch]);
+  // The list reorders and updates unread counts from stream events, so it needs
+  // the connection open even when no thread is mounted.
+  useRealtimeEffect(client);
   return useQuery(query, refetch, emptyConversationPage);
 }
 
@@ -143,6 +146,7 @@ export function useMessages(client: ChatClient, input: MessageListInput): Messag
   useEffect(() => {
     void refetch();
   }, [refetch]);
+  useRealtimeEffect(client);
   const loadMore = useCallback(async () => {
     const current = client.$store.getSnapshot().messagesByConversation[requestInput.conversationId];
     if (current?.data === undefined || current.data === null) return refetch();

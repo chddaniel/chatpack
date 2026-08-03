@@ -40,5 +40,27 @@ Available hooks are `useConversations`, `useConversation`, `useMessages`, and
 matching client plugin state. Hooks use React's `useSyncExternalStore`, so
 React 18 and React 19 share the same cache and stream behavior.
 
+`useConversations` opens the stream and re-renders on incoming messages: the
+list reorders most-recently-active-first and unread badges update on their own,
+so a conversation list needs no event subscription of its own.
+
+```tsx
+export function ConversationList() {
+  const { data } = chatClient.useConversations();
+  return (
+    <ul>
+      {data?.conversations.map((conversation) => (
+        <li key={conversation.id}>
+          {conversation.id} {conversation.unreadCount > 0 && <b>{conversation.unreadCount}</b>}
+        </li>
+      ))}
+    </ul>
+  );
+}
+```
+
+Pass `userId` to `createChatClient` so the viewer's own messages never count as
+unread. See [Client realtime](/docs/client/realtime) for the full cache rules.
+
 SSR does not open an SSE connection. The connection starts after a browser
-subscriber or realtime-status hook mounts.
+subscriber or any data hook mounts.

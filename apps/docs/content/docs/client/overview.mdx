@@ -37,6 +37,12 @@ cross-origin cookie sessions need `credentials: "include"`. Native
 the stream URL.
 
 The client keeps a small per-instance cache. REST results and durable SSE
-events update that cache. A single lazy realtime connection covers all
-conversations. Ephemeral plugin events are dispatched but never persisted in
-message history.
+events update that cache — both the open thread and the conversations list,
+which reorders and updates `unreadCount` on incoming messages (see
+[Client realtime](/docs/client/realtime)). A single lazy realtime connection
+covers all conversations. Ephemeral plugin events are dispatched but never
+persisted in message history.
+
+Pass `userId` if you know the signed-in user's id. It is an optional cache hint
+that stops the viewer's own messages from counting as unread; it is never used
+for authentication.

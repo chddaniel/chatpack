@@ -39,7 +39,13 @@ export type {
   ChatRealtimeStatus,
 } from "./realtime";
 export type { ReadonlyStore, Store } from "./store";
-export type { ChatpackCache, ChatpackCacheSnapshot, QueryState } from "./store-cache";
+export type {
+  ApplyEventOptions,
+  ChatpackCache,
+  ChatpackCacheOptions,
+  ChatpackCacheSnapshot,
+  QueryState,
+} from "./store-cache";
 export type {
   ClientConversation,
   ClientConversationPage,

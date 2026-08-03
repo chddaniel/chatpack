@@ -39,4 +39,11 @@ export interface ChatClientOptions<
   fetch?: ChatpackFetch;
   eventSource?: EventSourceFactory;
   plugins?: Plugins;
+  /**
+   * The signed-in user's id. Optional and **not** authentication - Chatpack
+   * always trusts the server's auth hook. The cache uses it so the viewer's
+   * own messages never increment `unreadCount` on the conversations list.
+   * Without it, the client infers the id from the first message it sends.
+   */
+  userId?: string;
 }

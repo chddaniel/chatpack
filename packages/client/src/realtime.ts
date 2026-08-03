@@ -136,9 +136,26 @@ export function createRealtime(options: {
   const connect = (): void => {
     if (source !== null && source.readyState !== CLOSED) return;
     snapshot.set({ status: "connecting", error: null });
-    source = options.eventSource(options.url, {
-      withCredentials: options.credentials === "include",
-    });
+    try {
+      source = options.eventSource(options.url, {
+        withCredentials: options.credentials === "include",
+      });
+    } catch (cause) {
+      // Runtimes without a global `EventSource` (SSR, older test renderers,
+      // React Native) must not crash the component that mounted a hook -
+      // report it as a stream error and stay closed.
+      source = null;
+      snapshot.set({
+        status: "closed",
+        error: createClientError(
+          "NETWORK_ERROR",
+          "Chatpack could not open a realtime connection: EventSource is unavailable in this runtime.",
+          null,
+          cause,
+        ),
+      });
+      return;
+    }
     const currentSource = source;
     source.onopen = () => {
       if (source !== currentSource) return;

@@ -17,6 +17,38 @@ unsubscribe();
 Durable messages are reconciled by id and sequence and remain newest-first.
 `message.created`, `message.updated`, and `message.deleted` update the cache.
 
+## The conversations list stays live too
+
+A `message.created` event for any conversation updates the cached list, not just
+the open thread:
+
+- the conversation moves to the front, matching the server's
+  most-recently-active ordering;
+- its `unreadCount` increments, unless the sender is the viewer;
+- a conversation the list has not seen yet is fetched once and prepended, so a
+  brand-new thread started by the other user appears immediately.
+
+`message.updated` and `message.deleted` never reorder the list, because editing
+or deleting a message does not change server-side activity ordering. Redelivered
+events (at-least-once delivery, `Last-Event-ID` gap-fill) never double-count:
+only a strictly higher `seq` than anything already cached bumps a count.
+
+`conversations.markRead` clears `unreadCount` locally when the marked message is
+the newest one the client knows about, mirroring the server's monotonic
+read-state.
+
+Pass `userId` when creating the client so the viewer's own messages are never
+counted as unread. It is a cache hint, never authentication — the server's auth
+hook remains the only source of identity. Without it, the client infers the id
+from the first message it sends.
+
+```ts
+const chatClient = createChatClient({ userId: currentUser.id });
+```
+
+You do not need to refetch the conversation list on every event. If you wrote
+that workaround against client `0.1.x`, remove it.
+
 Ephemeral events such as typing and presence are delivered to subscribers and
 plugins, but are never inserted into message history. Stream status is
 `idle`, `connecting`, `open`, or `closed`, with a typed network error when a

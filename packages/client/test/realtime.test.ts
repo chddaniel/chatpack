@@ -80,4 +80,24 @@ describe("realtime", () => {
     realtime.disconnect();
     expect(realtime.getSnapshot().status).toBe("closed");
   });
+
+  it("reports a stream error instead of throwing when EventSource is unavailable", () => {
+    const realtime = createRealtime({
+      url: "/api/chat/stream",
+      credentials: "same-origin",
+      eventSource: () => {
+        throw new ReferenceError("EventSource is not defined");
+      },
+      eventTypes: ["message.created"],
+      onEvent: () => undefined,
+    });
+
+    // Data hooks call connect() from an effect, so a throw here would crash the
+    // mounting component in SSR/React Native runtimes.
+    expect(() => realtime.connect()).not.toThrow();
+    expect(realtime.getSnapshot()).toMatchObject({
+      status: "closed",
+      error: { code: "NETWORK_ERROR" },
+    });
+  });
 });

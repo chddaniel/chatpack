@@ -160,19 +160,54 @@ export function createChatClient<
     ...(options.fetch === undefined ? {} : { fetch: options.fetch }),
   };
   const requester: ChatpackRequester = createRequester(requesterOptions);
-  const cache = createChatpackCache();
+  const cache = createChatpackCache(options.userId === undefined ? {} : { userId: options.userId });
   const eventTypes = [
     "message.created",
     "message.updated",
     "message.deleted",
     ...plugins.flatMap((plugin) => plugin.eventTypes),
   ];
+  /**
+   * Conversations whose first message arrived over the stream before the list
+   * knew about them; guards against firing the same backfill twice.
+   */
+  const backfilling = new Set<string>();
+
+  /**
+   * A brand-new conversation started by the other user has no row in the
+   * loaded list, so there is nothing to reorder. Fetch it once and prepend it
+   * (with the server's authoritative `unreadCount`) instead of silently
+   * dropping the update.
+   */
+  async function backfillConversation(conversationId: string): Promise<void> {
+    if (backfilling.has(conversationId)) return;
+    backfilling.add(conversationId);
+    try {
+      const result = await requester.request<unknown>(
+        "/conversations/" + encodeURIComponent(conversationId),
+      );
+      const conversation = unwrapResult<ClientConversation>(result, "conversation");
+      if (conversation.error === null) cache.prependConversation(conversation.data);
+    } finally {
+      backfilling.delete(conversationId);
+    }
+  }
+
   const realtime = createRealtime({
     url: (options.baseURL?.replace(/\/+$/g, "") ?? "") + basePath + "/stream",
     credentials,
     eventSource: options.eventSource ?? ((url, init) => new EventSource(url, init)),
     eventTypes: [...new Set(eventTypes)],
-    onEvent: (event) => cache.applyEvent(event),
+    onEvent: (event) => {
+      cache.applyEvent(event);
+      if (
+        !("ephemeral" in event) &&
+        event.type === "message.created" &&
+        cache.isMissingFromConversations(event.conversationId)
+      ) {
+        void backfillConversation(event.conversationId);
+      }
+    },
   });
   const pluginContext = createPluginContext(requester, realtime);
   const pluginSurfaces: Record<string, object> = {};
@@ -220,7 +255,7 @@ export function createChatClient<
       return conversation;
     },
     async markRead(input, optionsForRequest) {
-      return requester.request<{ ok: true }>(
+      const result = await requester.request<{ ok: true }>(
         "/conversations/" + encodeURIComponent(input.conversationId) + "/read",
         {
           method: "POST",
@@ -228,6 +263,8 @@ export function createChatClient<
           ...requestOptions(optionsForRequest),
         },
       );
+      if (result.error === null) cache.applyRead(input.conversationId, input.messageId);
+      return result;
     },
   };
 
@@ -256,11 +293,14 @@ export function createChatClient<
       );
       const message = unwrapResult<ClientMessage>(result, "message");
       if (message.error === null) {
-        cache.applyEvent({
-          type: "message.created",
-          conversationId: message.data.conversationId,
-          message: message.data,
-        });
+        cache.applyEvent(
+          {
+            type: "message.created",
+            conversationId: message.data.conversationId,
+            message: message.data,
+          },
+          { local: true },
+        );
       }
       return message;
     },

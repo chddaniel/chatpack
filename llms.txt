@@ -54,6 +54,7 @@ import { typingClient, presenceClient, receiptsClient } from "@chatpack/client/p
 export const chatClient = createChatClient({
   baseURL: "http://localhost:3000",
   credentials: "include",
+  userId: currentUser.id, // optional cache hint, NOT auth - see below
   plugins: [typingClient(), presenceClient(), receiptsClient()],
 });
 
@@ -67,6 +68,20 @@ sessions, or places bearer tokens in the SSE URL. Native `EventSource` uses
 browser cookies and handles `Last-Event-ID` reconnects. One client instance
 owns one lazy stream and a small in-memory cache. The React adapter uses
 `useSyncExternalStore` and has no state-library dependency.
+
+Realtime events update the cache automatically - both the open thread's
+messages AND the conversations list, which reorders most-recently-active-first
+and bumps `unreadCount` exactly like a refetch would. A conversation created
+after the list loaded is fetched once and prepended. `conversations.markRead`
+clears the viewer's `unreadCount` locally on success. **Do not refetch the list
+on every `message.created` event** - that workaround is obsolete as of client
+0.2.0.
+
+The optional `userId` option is a cache hint only, never authentication: it
+keeps the viewer's own messages from counting as unread. Omit it and the client
+infers the id from the first message this client sends. Only `message.created`
+reorders the list (edits and deletes do not change server-side activity
+order), and redelivered events never double-count.
 
 ## Hard rules (violating any of these is the #1 cause of broken integrations)
 

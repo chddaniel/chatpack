@@ -28,6 +28,26 @@ function emptyQuery<T>(): QueryState<T> {
   return { data: null, error: null, isPending: true, isRefetching: false };
 }
 
+/** Options controlling how the cache interprets incoming events. */
+export interface ChatpackCacheOptions {
+  /**
+   * The signed-in user's id, used only so the viewer's own messages never
+   * inflate `unreadCount`. Purely a cache hint - Chatpack never authenticates
+   * with it. When omitted, the cache learns it from the first message this
+   * client sends.
+   */
+  userId?: string;
+}
+
+/** How one durable event reached the cache. */
+export interface ApplyEventOptions {
+  /**
+   * `true` when the event is the local echo of this client's own write, so it
+   * must never count as unread. Remote stream events leave this unset.
+   */
+  local?: boolean;
+}
+
 /** Observable cache used by REST actions and React hooks. */
 export interface ChatpackCache extends ReadonlyStore<ChatpackCacheSnapshot> {
   setConversationsLoading(): void;
@@ -40,7 +60,13 @@ export interface ChatpackCache extends ReadonlyStore<ChatpackCacheSnapshot> {
     result: ChatClientResult<ClientMessagePage>,
     append: boolean,
   ): void;
-  applyEvent(event: ChatpackEvent): void;
+  applyEvent(event: ChatpackEvent, options?: ApplyEventOptions): void;
+  /** Clears the viewer's unread count after a successful `markRead`. */
+  applyRead(conversationId: string, messageId: string): void;
+  /** Adds a conversation the list has not seen yet at the most-recent end. */
+  prependConversation(conversation: ClientConversation): void;
+  /** True when the conversation list is loaded but missing this id. */
+  isMissingFromConversations(conversationId: string): boolean;
 }
 
 function replaceMessage(messages: ClientMessage[], message: ClientMessage): ClientMessage[] {
@@ -73,13 +99,46 @@ function applyDurableEvent(
   };
 }
 
+function highestSeq(messages: readonly ClientMessage[]): number {
+  let highest = 0;
+  for (const message of messages) if (message.seq > highest) highest = message.seq;
+  return highest;
+}
+
+/**
+ * Move `conversationId` to the front of the list and apply `bumpUnread`, which
+ * mirrors the server's most-recently-active ordering. Returns the same array
+ * when the id is not in the loaded pages, so callers can detect a stale list.
+ */
+function touchConversations(
+  conversations: readonly ClientConversation[],
+  conversationId: string,
+  bumpUnread: boolean,
+): ClientConversation[] | null {
+  const index = conversations.findIndex((item) => item.id === conversationId);
+  if (index === -1) return null;
+  const current = conversations[index]!;
+  const next = bumpUnread ? { ...current, unreadCount: current.unreadCount + 1 } : current;
+  if (index === 0 && next === current) return null;
+  const rest = conversations.filter((_, itemIndex) => itemIndex !== index);
+  return [next, ...rest];
+}
+
 /** Creates an empty isolated Chatpack cache. */
-export function createChatpackCache(): ChatpackCache {
+export function createChatpackCache(options: ChatpackCacheOptions = {}): ChatpackCache {
   const store: Store<ChatpackCacheSnapshot> = createStore({
     conversations: emptyQuery<ClientConversationPage>(),
     conversationsById: {},
     messagesByConversation: {},
   });
+  /**
+   * Highest message seq seen per conversation, from REST pages and stream
+   * events alike. Delivery is at-least-once (ADR 0006 gap-fill re-sends
+   * events the server already counted), so only a strictly higher seq may
+   * bump `unreadCount`.
+   */
+  const seenSeq = new Map<string, number>();
+  let viewerId = options.userId;
 
   return {
     getSnapshot: store.getSnapshot,
@@ -174,6 +233,12 @@ export function createChatpackCache(): ChatpackCache {
       }));
     },
     setMessages(conversationId, result, append) {
+      if (result.error === null) {
+        // Fetched history counts as "already seen": a stream event replaying a
+        // message that is in this page must not bump `unreadCount` again.
+        const newest = highestSeq(result.data.messages);
+        if (newest > (seenSeq.get(conversationId) ?? 0)) seenSeq.set(conversationId, newest);
+      }
       store.update((current) => {
         const previous = current.messagesByConversation[conversationId];
         const query =
@@ -202,19 +267,131 @@ export function createChatpackCache(): ChatpackCache {
         };
       });
     },
-    applyEvent(event) {
+    applyEvent(event, eventOptions = {}) {
       if ("ephemeral" in event) return;
+
+      // Only `message.created` bumps server-side activity (adapters touch
+      // `lastActivityAt` in `addMessage` only), so edits and deletes must not
+      // reorder the list or the client would disagree with the next refetch.
+      const previousSeq = seenSeq.get(event.conversationId) ?? 0;
+      const isNew = event.type === "message.created" && event.message.seq > previousSeq;
+      if (event.message.seq > previousSeq) seenSeq.set(event.conversationId, event.message.seq);
+
+      // The sender's own message reaches them twice - once as the local echo
+      // of the write, once over their own stream - and neither is unread.
+      if (eventOptions.local === true) viewerId ??= event.message.senderId;
+      const isOwn = eventOptions.local === true || event.message.senderId === viewerId;
+      const bumpUnread = isNew && !isOwn;
+
       store.update((current) => {
+        let next = current;
+
         const existing = current.messagesByConversation[event.conversationId];
-        if (existing === undefined) return current;
+        if (existing !== undefined) {
+          next = {
+            ...next,
+            messagesByConversation: {
+              ...next.messagesByConversation,
+              [event.conversationId]: applyDurableEvent(existing, event),
+            },
+          };
+        }
+
+        if (!isNew) return next;
+
+        const list = next.conversations.data;
+        if (list !== null) {
+          const reordered = touchConversations(
+            list.conversations,
+            event.conversationId,
+            bumpUnread,
+          );
+          if (reordered !== null) {
+            next = {
+              ...next,
+              conversations: { ...next.conversations, data: { ...list, conversations: reordered } },
+            };
+          }
+        }
+
+        const one = next.conversationsById[event.conversationId];
+        if (bumpUnread && one?.data != null) {
+          next = {
+            ...next,
+            conversationsById: {
+              ...next.conversationsById,
+              [event.conversationId]: {
+                ...one,
+                data: { ...one.data, unreadCount: one.data.unreadCount + 1 },
+              },
+            },
+          };
+        }
+
+        return next;
+      });
+    },
+    applyRead(conversationId, messageId) {
+      store.update((current) => {
+        // Read-state is monotonic server-side, but the client cannot compare a
+        // message id to a seq without a lookup, so only clear the count when
+        // the marked message is the newest one this client knows about.
+        const thread = current.messagesByConversation[conversationId]?.data;
+        const marked = thread?.messages.find((message) => message.id === messageId);
+        if (marked !== undefined && marked.seq < highestSeq(thread?.messages ?? [])) return current;
+
+        let next = current;
+        const list = next.conversations.data;
+        const index = list?.conversations.findIndex((item) => item.id === conversationId) ?? -1;
+        if (list !== null && list !== undefined && index !== -1) {
+          const target = list.conversations[index]!;
+          if (target.unreadCount !== 0) {
+            next = {
+              ...next,
+              conversations: {
+                ...next.conversations,
+                data: {
+                  ...list,
+                  conversations: list.conversations.map((item, itemIndex) =>
+                    itemIndex === index ? { ...item, unreadCount: 0 } : item,
+                  ),
+                },
+              },
+            };
+          }
+        }
+
+        const one = next.conversationsById[conversationId];
+        if (one?.data != null && one.data.unreadCount !== 0) {
+          next = {
+            ...next,
+            conversationsById: {
+              ...next.conversationsById,
+              [conversationId]: { ...one, data: { ...one.data, unreadCount: 0 } },
+            },
+          };
+        }
+        return next;
+      });
+    },
+    prependConversation(conversation) {
+      store.update((current) => {
+        const list = current.conversations.data;
+        if (list === null) return current;
+        if (list.conversations.some((item) => item.id === conversation.id)) return current;
         return {
           ...current,
-          messagesByConversation: {
-            ...current.messagesByConversation,
-            [event.conversationId]: applyDurableEvent(existing, event),
+          conversations: {
+            ...current.conversations,
+            data: { ...list, conversations: [conversation, ...list.conversations] },
           },
         };
       });
+    },
+    isMissingFromConversations(conversationId) {
+      const list = store.getSnapshot().conversations.data;
+      if (list === null) return false;
+      return !list.conversations.some((item) => item.id === conversationId);
     },
   };
 }
