@@ -1,0 +1,27 @@
+{
+  "name": "@chatpack/demo-api",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Public demo Chatpack backend for AI-builder UI work - demo-api.chatpack.dev",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --port 3344",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@chatpack/adapter-memory": "0.2.1",
+    "@chatpack/core": "0.4.0",
+    "next": "16.2.12",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  },
+  "devDependencies": {
+    "@types/node": "^26.1.2",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "typescript": "^6.0.3"
+  }
+}

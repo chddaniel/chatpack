@@ -30,6 +30,37 @@ importers:
         specifier: ^8.18.1
         version: 8.65.0(eslint@9.39.5(jiti@2.7.0))(typescript@5.9.3)
 
+  apps/demo-api:
+    dependencies:
+      '@chatpack/adapter-memory':
+        specifier: 0.2.1
+        version: 0.2.1
+      '@chatpack/core':
+        specifier: 0.4.0
+        version: 0.4.0
+      next:
+        specifier: 16.2.12
+        version: 16.2.12(@babel/core@7.29.7)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
+      react:
+        specifier: ^19.2.8
+        version: 19.2.8
+      react-dom:
+        specifier: ^19.2.8
+        version: 19.2.8(react@19.2.8)
+    devDependencies:
+      '@types/node':
+        specifier: ^26.1.2
+        version: 26.1.2
+      '@types/react':
+        specifier: ^19.2.17
+        version: 19.2.17
+      '@types/react-dom':
+        specifier: ^19.2.3
+        version: 19.2.3(@types/react@19.2.17)
+      typescript:
+        specifier: ^6.0.3
+        version: 6.0.3
+
   apps/docs:
     dependencies:
       cnfast:
@@ -213,6 +244,22 @@ importers:
         specifier: ^3.0.0
         version: 3.2.7(@types/debug@4.1.13)(@types/node@26.1.1)(jiti@2.7.0)(lightningcss@1.32.0)(yaml@2.9.0)
 
+  packages/cli:
+    dependencies:
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+    devDependencies:
+      '@types/node':
+        specifier: ^26.1.1
+        version: 26.1.2
+      tsup:
+        specifier: ^8.3.5
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.25)(typescript@5.9.3)(yaml@2.9.0)
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@26.1.2)(jiti@2.7.0)(lightningcss@1.32.0)(yaml@2.9.0)
+
   packages/client:
     dependencies:
       '@chatpack/core':
@@ -240,22 +287,6 @@ importers:
       typescript:
         specifier: ^5.7.2
         version: 5.9.3
-      vitest:
-        specifier: ^3.0.0
-        version: 3.2.7(@types/debug@4.1.13)(@types/node@26.1.2)(jiti@2.7.0)(lightningcss@1.32.0)(yaml@2.9.0)
-
-  packages/cli:
-    dependencies:
-      typescript:
-        specifier: ^5.7.2
-        version: 5.9.3
-    devDependencies:
-      '@types/node':
-        specifier: ^26.1.1
-        version: 26.1.2
-      tsup:
-        specifier: ^8.3.5
-        version: 8.5.1(jiti@2.7.0)(postcss@8.5.25)(typescript@5.9.3)(yaml@2.9.0)
       vitest:
         specifier: ^3.0.0
         version: 3.2.7(@types/debug@4.1.13)(@types/node@26.1.2)(jiti@2.7.0)(lightningcss@1.32.0)(yaml@2.9.0)
@@ -452,6 +483,12 @@ packages:
 
   '@changesets/write@0.4.0':
     resolution: {integrity: sha512-CdTLvIOPiCNuH71pyDu3rA+Q0n65cmAbXnwWH84rKGiFumFzkmHNT8KHTMEchcxN+Kl8I54xGUhJ7l3E7X396Q==}
+
+  '@chatpack/adapter-memory@0.2.1':
+    resolution: {integrity: sha512-W1UhVCaH0RXLjDhEAQU5kdjA/Q8UfwEl5mm52qzMKDbWQJh1gybn+CXhSO0oqSNgFzgNJZC+eC9otDMoMwvwMA==}
+
+  '@chatpack/core@0.4.0':
+    resolution: {integrity: sha512-zP41a7Buxgseu1EqCogJKR6iQ6f4e2JA/X20v93f/gaVzSS/wnZp09T4NcQpMrGE65+WynAu0IJNQVARUemTSA==}
 
   '@electric-sql/pglite@0.5.4':
     resolution: {integrity: sha512-yYZUyyXrHU7tPlCjwZQJ6hIG9DscdCCn7Uk0mYKwC1FeHX286AbcmFveMiRBEak8e9iPupjsoVImN3yJZVed2g==}
@@ -4714,6 +4751,12 @@ snapshots:
       fs-extra: 7.0.1
       human-id: 4.2.0
       prettier: 2.8.8
+
+  '@chatpack/adapter-memory@0.2.1':
+    dependencies:
+      '@chatpack/core': 0.4.0
+
+  '@chatpack/core@0.4.0': {}
 
   '@electric-sql/pglite@0.5.4': {}
 
