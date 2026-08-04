@@ -123,8 +123,8 @@ export function chatFor(identity: DemoIdentity): ChatpackInstance {
  * A UI block is useless against an empty backend - a vibe coder would see an
  * empty state and assume they wired it wrong. So the first time a sandbox is
  * touched we plant two conversations with a short scripted history, including
- * an edited message and a deleted one (tombstone) so blocks can be checked
- * against the awkward states, not just the happy path.
+ * an edited message, a deleted one (tombstone), reactions, and a quote-reply
+ * so blocks can be checked against the awkward states, not just the happy path.
  */
 const seeded = new Set<string>();
 
@@ -150,16 +150,22 @@ export async function ensureSeeded(identity: DemoIdentity): Promise<void> {
 
   const chat = chatFor(identity);
   try {
+    // Remember one early message per conversation so the reply below has a
+    // parent that is NOT the newest message - that is the case a quote bar has
+    // to look right in (reply far from its parent in the transcript).
+    let firstBobLine: string | undefined;
+
     for (const line of SEED_SCRIPT) {
       const conversation = await chat.api.getOrCreateConversation({
         userId: line.from,
         otherUserId: line.to,
       });
-      await chat.api.sendMessage({
+      const sent = await chat.api.sendMessage({
         userId: line.from,
         conversationId: conversation.id,
         body: line.body,
       });
+      firstBobLine ??= sent.id;
     }
 
     // One edited + one deleted message so tombstone and "edited" styling are
@@ -181,6 +187,23 @@ export async function ensureSeeded(identity: DemoIdentity): Promise<void> {
       body: "this one gets deleted",
     });
     await chat.api.deleteMessage({ userId: "alice", messageId: doomed.id });
+
+    // Reactions and a quote-reply (ADR 0013), so reaction pills and reply
+    // quote bars are reachable in fresh seed data too. Two users react with
+    // the same emoji on purpose: that is the only way to see a count above 1
+    // and a two-entry `userIds` array in a 1:1 conversation.
+    if (firstBobLine !== undefined) {
+      await chat.api.addReaction({ userId: "alice", messageId: firstBobLine, emoji: "👍" });
+      await chat.api.addReaction({ userId: "bob", messageId: firstBobLine, emoji: "👍" });
+      await chat.api.addReaction({ userId: "alice", messageId: firstBobLine, emoji: "🎉" });
+
+      await chat.api.sendMessage({
+        userId: "alice",
+        conversationId: aliceBob.id,
+        body: "replying to your first message here",
+        replyToMessageId: firstBobLine,
+      });
+    }
   } catch (error) {
     // Seeding is a convenience, never a reason to fail a request.
     seeded.delete(key);
