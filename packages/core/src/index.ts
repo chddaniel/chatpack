@@ -38,7 +38,9 @@ export type {
   MessageHooks,
   BeforeMessageSendContext,
   BeforeMessageSendResult,
+  AfterMessageMutationContext,
   AfterMessageSendContext,
+  MessageMutationAction,
 } from "./config";
 
 // Domain types

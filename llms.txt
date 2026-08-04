@@ -506,8 +506,7 @@ final text, or edit a placeholder as chunks arrive).
 
 ## Message hooks (content rules and side-effects)
 
-Optional `hooks` on `chatpack()` - both run for **sends and edits**
-(`ctx.action` is `"send" | "edit"`), after auth and permission checks:
+Optional `hooks` on `chatpack()` run after auth and permission checks:
 
 ```ts
 chatpack({
@@ -518,10 +517,11 @@ chatpack({
       if (body.length > 2000) throw new Error("Max 2000 characters."); // → 422 MESSAGE_REJECTED
       return { body: censor(body) };  // persisted + broadcast rewritten
     },                                // return nothing → unchanged
-    // AFTER persistence + broadcast - side-effects only (queue an AI reply,
-    // analytics). Cannot block or change the message; a throw is logged
-    // server-side, never fails the request.
-    afterMessageSend: async ({ message, conversation }) => { ... },
+    // AFTER persistence + broadcast - side-effects only. `action` is
+    // "send" | "edit" | "delete"; filter it for push or queue work.
+    afterMessageMutation: async ({
+      action, message, conversation, otherParticipantId,
+    }) => { ... },
   },
 })
 ```
@@ -530,8 +530,14 @@ chatpack({
   `422 MESSAGE_REJECTED` with the thrown error's message. Throw a
   `ChatpackError` to use a different code.
 - `beforeMessageSend` returning `{ metadata }` applies on sends only.
+- `afterMessageMutation` receives the raw persisted message, conversation,
+  `otherParticipantId`, and `action` (`send`, `edit`, or `delete`). Chatpack
+  still emits its internal `message.created`, `message.updated`, and
+  `message.deleted` events for UI clients.
+- `afterMessageSend` remains as a deprecated send/edit-only compatibility hook.
 - Hooks are in-process functions, not webhooks - no retries or delivery
-  guarantees. Keep heavy work in your own queue.
+  guarantees. Applications own device tokens and provider delivery. Keep
+  heavy work in your own queue.
 
 # Part 2 - Writing a custom storage adapter
 

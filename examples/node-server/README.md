@@ -7,6 +7,25 @@ curl. Runs on in-memory storage by default, or real Postgres with one env var.
 > Auth here trusts an `x-user-id` header. **Demo only.** In a real app your
 > `auth` hook verifies a session or JWT.
 
+## Push notification hook
+
+`server.ts` includes a provider-neutral `afterMessageMutation` example. It
+filters to new messages, then receives the persisted message and the other
+participant's id:
+
+```ts
+hooks: {
+  afterMessageMutation: async ({ action, message, otherParticipantId }) => {
+    if (action !== "send") return;
+    await sendPushNotification(otherParticipantId, message);
+  },
+}
+```
+
+Replace the demo function with FCM, Web Push, or your own job queue. Your
+application owns device-token storage and user lookup. Chatpack only provides
+message and participant ids. Hook failures are logged and do not fail the send.
+
 ## Run
 
 ```sh

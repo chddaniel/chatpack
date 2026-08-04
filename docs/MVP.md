@@ -85,7 +85,8 @@ WhatsApp-style extras feel related to 1:1 because consumer apps bundle them. Cha
 ## 5. Explicit non-goals (say no loudly)
 
 - **Attachments / file uploads** as a first-class API - storage/CDN opinions; huge scope
-- **Push / email notifications**
+- **Push / email notification delivery** - the post-persistence hook is only
+  an integration seam; applications own providers, tokens, retries, and delivery
 - **AI features** - leave `metadata` / `role` escape hatches only; do not design for AI
 - **Threads, search, moderation, multi-tenant admin** - reactions and
   quote-replies shipped post-MVP (ADR 0012) because they fit the existing seams:

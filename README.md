@@ -475,8 +475,8 @@ await chat.api.removeReaction({ userId: "bob", messageId: messages[0].id, emoji:
 That's it. Only the two participants can read or write - enforced by default,
 customizable via the `permissions` hooks. Need content rules (length caps,
 profanity filters) or post-send side-effects? Add
-`hooks: { beforeMessageSend, afterMessageSend }` - block or rewrite a message
-before it persists, react after it does (see [`@chatpack/core`'s
+`hooks: { beforeMessageSend, afterMessageMutation }` - block or rewrite a
+message before it persists, react after send/edit/delete persistence (see [`@chatpack/core`'s
 README](./packages/core#message-hooks)).
 
 ### 8. Bonus: chat with an AI assistant
@@ -604,8 +604,8 @@ Want to write your own plugin? The seam is public - see `ChatpackPlugin` in
 | Browser client + React hooks            | ✅ Done (v0.next) |
 | Reactions + quote-replies               | ✅ Done (v0.next) |
 
-Deliberately **not** in scope yet: groups, file uploads, push notifications,
-UI components, message threads (replies are flat pointers, not threads). See
+Deliberately **not** in scope yet: groups, file uploads, push notification
+delivery, UI components, message threads (replies are flat pointers, not threads). See
 [docs/MVP.md](./docs/MVP.md) for the full scope and reasoning.
 
 ## Packages

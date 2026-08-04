@@ -112,12 +112,14 @@ Optional `permissions: { canRead, canWrite }` hooks receive
 `{ user, conversation }` (with `conversation.participantIds`); default is
 participants-only, which is usually right.
 
-Optional `hooks: { beforeMessageSend, afterMessageSend }` for content rules
-and side-effects - both run on sends AND edits. `beforeMessageSend` can
-throw to reject (sender gets 422 `MESSAGE_REJECTED`) or return
-`{ body }`/`{ metadata }` to rewrite before persisting; `afterMessageSend`
-runs post-persistence (queue AI replies here - it can't block or fail the
-request). In-process functions, not webhooks.
+Optional `hooks: { beforeMessageSend, afterMessageMutation }` for content rules
+and side-effects. `beforeMessageSend` can throw to reject (sender gets 422
+`MESSAGE_REJECTED`) or return `{ body }`/`{ metadata }` to rewrite before
+persisting. `afterMessageMutation` runs after persistence and internal
+broadcast for `send`, `edit`, or `delete`; filter `ctx.action` for push or
+queue work. It cannot block or fail the request. `afterMessageSend` remains a
+deprecated send/edit-only compatibility hook. In-process functions, not
+webhooks.
 
 ## Step 3 - Mount the catch-all route (pick your framework)
 

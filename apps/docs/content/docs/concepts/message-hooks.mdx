@@ -1,15 +1,15 @@
 ---
 title: Message hooks
-description: Block or rewrite messages before they persist, react after they do.
+description: Block or rewrite messages before persistence, react after mutations succeed.
 ---
 
 Permissions answer "may this user write here?" - they never see message
 _content_. Message hooks are where content rules live: length caps, profanity
 filters, spam checks, and post-send side-effects like triggering an AI reply.
 
-Both hooks are optional, run **after** auth and permission checks, and fire
-for **sends and edits** (so a filter can't be dodged by editing a message
-afterwards) - `ctx.action` is `"send"` or `"edit"`.
+Both hooks are optional and run **after** auth and permission checks. The
+before hook handles sends and edits. The after hook handles every durable
+message mutation - `send`, `edit`, or `delete`.
 
 ```ts
 import { chatpack } from "@chatpack/core";
@@ -27,11 +27,10 @@ const chat = chatpack({
       // ...or return nothing to accept the message unchanged.
     },
 
-    // Runs AFTER the message is persisted and broadcast.
-    afterMessageSend: async ({ message, conversation, action }) => {
-      if (conversation.participantIds.includes("ai:assistant")) {
-        await queueAssistantReply(message);
-      }
+    // Runs AFTER persistence and the internal live broadcast.
+    afterMessageMutation: async ({ action, message, otherParticipantId }) => {
+      if (action !== "send") return;
+      await sendPushNotification(otherParticipantId, message);
     },
   },
 });
@@ -59,20 +58,33 @@ Two guard rails:
 - On **edits**, only a returned `body` applies; `metadata` rewrites are
   ignored (edits never change metadata).
 
-## `afterMessageSend` - the notification
+## `afterMessageMutation` - post-persistence side-effects
 
 Receives the message **exactly as persisted** (rewritten body, assigned `id`
-and `seq`) plus the conversation and `action`. It runs after the storage
-write _and_ the live broadcast - durable-first - so it **cannot block or
-change** the message. It also cannot fail the request: if it throws, the
-error is logged server-side and the sender still gets their success response,
-because the message already durably exists.
+and `seq`), the conversation, `otherParticipantId`, and the completed action.
+It runs after the storage write and the internal live broadcast. It cannot
+change the message or fail the request. If it throws, Chatpack logs the error
+and the request still succeeds.
 
-Use it for side-effects: queue the [AI assistant reply](/docs/ai/ai-assistant),
-notify your analytics, kick off moderation review.
+| `action` | Meaning               | Internal event    |
+| -------- | --------------------- | ----------------- |
+| `send`   | New message persisted | `message.created` |
+| `edit`   | Message body updated  | `message.updated` |
+| `delete` | Message soft-deleted  | `message.deleted` |
+
+Use it for side-effects: FCM, Web Push, queue the [AI assistant reply](/docs/ai/ai-assistant),
+notify analytics, or start moderation review. Filter by `action` when a
+provider should receive only new-message notifications.
+
+Chatpack always emits its internal live events. This hook does not replace or
+control UI broadcasts. Your application owns device tokens, users, provider
+calls, retries, and delivery guarantees.
+
+`afterMessageSend` remains available as a deprecated compatibility hook. It
+receives `send` and `edit` only. Use `afterMessageMutation` for new code.
 
 <Callout type="warn">
-  Hooks are **in-process functions, not webhooks** - there are no retries or delivery guarantees,
-  and both hooks add latency to every send. Keep them fast; put heavy or must-not-be-lost work into
-  your own job queue and return. (Scope rationale: ADR 0011.)
+  Hooks are **in-process functions, not webhooks** - there are no retries or delivery guarantees.
+  Keep them fast; put heavy or must-not-be-lost work into your own job queue and return. (Scope
+  rationale: ADR 0014.)
 </Callout>

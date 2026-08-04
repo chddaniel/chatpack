@@ -89,7 +89,7 @@ const chat = chatpack({
   storage: memoryAdapter(), // required - the only required option
   auth: async (req) => resolveUser(req), // required for HTTP; api.* takes explicit ids
   permissions: { canRead, canWrite }, // default: participants only
-  hooks: { beforeMessageSend, afterMessageSend }, // default: none
+  hooks: { beforeMessageSend, afterMessageMutation }, // default: none
   plugins: [typing(), presence(), receipts()], // default: none
   transport: inProcessTransport(), // default: in-process; redisTransport() for multi-node
   telemetry: true, // default: true (opt-out)
@@ -115,7 +115,7 @@ const chat = chatpack({
     },
     hooks: {
       description:
-        "Message lifecycle hooks: beforeMessageSend (block/rewrite) and afterMessageSend (side-effects).",
+        "Message lifecycle hooks: beforeMessageSend (block/rewrite) and afterMessageMutation (post-persistence side-effects).",
       type: "MessageHooks",
     },
     transport: {
