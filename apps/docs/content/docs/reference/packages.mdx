@@ -52,14 +52,15 @@ const result = await chatClient.conversations.list();
 `useMessages`, `useRealtimeStatus`, and first-party plugin hooks. It uses
 `useSyncExternalStore` and has no state-library dependency.
 
-| Export                       | What it is                                                             |
-| ---------------------------- | ---------------------------------------------------------------------- |
-| `createChatClient(options?)` | One per-application client instance                                    |
-| `conversations` / `messages` | Typed REST namespaces with `{ data, error }` results                   |
-| `messages.react` / `unreact` | Idempotent reaction writes; return the message's complete reaction set |
-| `realtime`                   | One lazy EventSource with durable deduplication                        |
-| `isReactionChatEvent(event)` | Narrowing helper for `reaction.added` / `reaction.removed`             |
-| `@chatpack/client/plugins`   | Typing, presence, and receipts client adapters                         |
+| Export                       | What it is                                                                                                          |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `createChatClient(options?)` | One per-application client instance                                                                                 |
+| `conversations` / `messages` | Typed REST namespaces with `{ data, error }` results                                                                |
+| `messages.react` / `unreact` | Idempotent reaction writes; return the message's complete reaction set                                              |
+| `realtime`                   | One lazy EventSource with durable deduplication                                                                     |
+| `realtime` config            | `mode: "auto" \| "sse" \| "poll"` - [polling fallback](/docs/client/realtime#polling-fallback) where SSE can't work |
+| `isReactionChatEvent(event)` | Narrowing helper for `reaction.added` / `reaction.removed`                                                          |
+| `@chatpack/client/plugins`   | Typing, presence, and receipts client adapters                                                                      |
 
 ## `@chatpack/adapter-memory`
 

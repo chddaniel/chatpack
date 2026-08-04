@@ -136,6 +136,39 @@ appears on the next refetch. Narrow with the exported
 literal `type` values, which TypeScript can't use to eliminate a member, so an
 inline `event.type === "reaction.added"` check does not narrow.
 
+## Polling fallback
+
+Some platforms can't hold a long-lived connection: serverless functions time out
+mid-response, proxies buffer `text/event-stream`, React Native has no
+`EventSource`. Rather than reporting `closed` and going stale, the client
+refetches on an interval - **on by default, so don't hand-roll one**.
+
+```ts
+const chatClient = createChatClient({
+  realtime: {
+    mode: "auto", // "auto" (default) | "sse" | "poll"
+    intervalMs: 5000, // default 5000, clamped to a 1000ms floor
+  },
+});
+```
+
+`auto` opens the stream and polls only if it can't open or drops, stopping the
+moment it reopens. `sse` never polls (the pre-0.4.0 behaviour); `poll` never
+attempts a stream. While polling, status is `"polling"` - connected-but-degraded,
+not an error. `realtime.pollNow()` runs one refresh immediately.
+
+A tick refetches page one of the conversations list **and** the 3 most recently
+used threads, at the same `limit` you last requested, and only for surfaces
+already loaded. It re-reads the list routes rather than asking for messages after
+a `seq`, because only sending allocates a `seq` - an edit, a delete and every
+reaction change would be invisible to an incremental poll. Ticks never overlap, a
+hidden tab doesn't poll, a failed tick changes nothing and never touches
+`isPending`, and pages merge rather than replace, so an idle interval notifies no
+subscribers and causes no re-renders.
+
+Typing, presence and receipts don't work while polling: they're ephemeral and
+never stored, so there is no endpoint to poll. `useTyping()` stays `null`.
+
 ## Plugins
 
 First-party client counterparts are available from `@chatpack/client/plugins`:
@@ -156,9 +189,9 @@ server plugin route discovery remain outside this package.
 
 ## Scope
 
-The package covers the public 1:1 REST API, SSE message reconciliation,
-ephemeral event subscriptions, and React hooks. It does not provide auth,
-uploads, groups, polling fallback, optimistic state, persistence, or WebSocket
+The package covers the public 1:1 REST API, SSE message reconciliation with a
+polling fallback, ephemeral event subscriptions, and React hooks. It does not
+provide auth, uploads, groups, optimistic state, persistence, or WebSocket
 transport.
 
 ## Source layout
@@ -169,7 +202,9 @@ transport.
 - `src/request.ts` builds URLs, sends JSON, and maps response envelopes/errors.
 - `src/errors.ts` defines the `{ data, error }` result and stable client errors.
 - `src/wire.ts` defines the JSON-facing domain types used by REST and SSE.
-- `src/realtime.ts` owns the lazy EventSource and event dispatch.
+- `src/realtime.ts` owns the lazy EventSource, event dispatch, and the fallback
+  between streaming and polling.
+- `src/polling.ts` provides the non-overlapping, visibility-aware interval timer.
 - `src/store.ts` provides the small platform-only observable store.
 - `src/store-cache.ts` reconciles REST and durable SSE data per client.
 - `src/plugin.ts` composes typed plugin actions and state.

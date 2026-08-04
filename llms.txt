@@ -95,6 +95,40 @@ so a reaction event's payload can never clobber a body or `replyTo` the cache
 already holds. Reactions on a message outside the loaded page are dropped
 rather than spliced in.
 
+**Polling fallback (client 0.4.0+).** Where SSE cannot work - serverless
+function timeouts, buffering proxies, React Native with no `EventSource` - the
+client keeps data live by refetching on an interval instead. On by default;
+**never hand-roll an interval yourself.**
+
+```ts
+createChatClient({
+  realtime: { mode: "auto", intervalMs: 5000 }, // "auto" (default) | "sse" | "poll"
+});
+```
+
+- `auto` - open the stream; poll only if it cannot open or drops, and stop
+  polling the moment it reopens. A serverless deploy works unconfigured.
+- `sse` - stream only, never poll (pre-0.4 behaviour).
+- `poll` - never attempt a stream; skips the failed attempt on a platform you
+  know cannot hold one.
+- `intervalMs` defaults to `5000`, floor `1000`.
+
+`useRealtimeStatus()` reports **`"polling"`** (a fifth status alongside `idle` /
+`connecting` / `open` / `closed`), keeping the error that caused the fallback so
+a "reconnecting…" hint still works, and clearing it on recovery. Treat
+`"polling"` as connected-but-degraded, not as an error.
+
+Each tick refetches the conversations list plus the **3 most recently used**
+threads - only surfaces already loaded, at the same `limit` you last requested.
+Ticks never overlap, a hidden tab does not poll, and a failed tick leaves the
+last good data on screen without touching `isPending`/`isRefetching`.
+
+**Typing, presence and receipts do not work while polling.** They are ephemeral
+and never stored (nothing to poll for), so `useTyping()` stays `null`. Design
+the UI so their absence degrades quietly.
+
+Also available: `realtime.pollNow()` for a manual "check for new messages".
+
 ## Hard rules (violating any of these is the #1 cause of broken integrations)
 
 1. **Mount the ONE handler on a catch-all route. Never hand-write your own
@@ -421,7 +455,7 @@ events.onerror = () => {
 | ---------------------------------------------------------------------------------------------------- | -------------------------------- | --------------------------------------------- |
 | One long-lived process: `node`/`Bun.serve`, `next start`, Railway/Fly/Render, Replit Reserved VM, **AI-builder previews** (Lovable/v0 preview sandboxes behave like a dev server) | `memoryAdapter` (demo) or Drizzle | `/stream` SSE works                           |
 | Several long-lived processes behind a load balancer (2+ containers/dynos, `pm2 -i`, autoscaled VMs) | Drizzle (or custom adapter) | `/stream` works **only** with `@chatpack/transport-redis` - the default transport is per-process |
-| Serverless / edge / multi-instance: Vercel & AWS Lambda, Cloudflare Workers, **published AI-builder apps**, Replit Autoscale | Drizzle (or custom adapter) - `memoryAdapter` is per-isolate and loses everything | Poll `GET /conversations/:id/messages`; SSE is unsuitable here whatever the transport (function lifetime, not fan-out, is the blocker) |
+| Serverless / edge / multi-instance: Vercel & AWS Lambda, Cloudflare Workers, **published AI-builder apps**, Replit Autoscale | Drizzle (or custom adapter) - `memoryAdapter` is per-isolate and loses everything | SSE is unsuitable here whatever the transport (function lifetime, not fan-out, is the blocker). Use `@chatpack/client` with `realtime: { mode: "poll" }` - or `auto`, the default, which falls back on its own. Typing/presence/receipts are unavailable; do not hand-roll an interval |
 
 The default transport and plugin state (typing/presence/receipts) are
 in-process, single-node. A demo on `memoryAdapter` + `/stream` is correct in

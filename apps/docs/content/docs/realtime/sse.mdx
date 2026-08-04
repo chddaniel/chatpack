@@ -12,8 +12,9 @@ No WebSocket server, no Socket.IO, no reconnect code to write.
 
 The optional `@chatpack/client` package owns this `EventSource`, reconnects
 through the browser's native `Last-Event-ID` behavior, and deduplicates durable
-messages in its per-client cache. It does not poll or put bearer tokens in the
-stream URL.
+messages in its per-client cache. Where a stream can't be held at all it falls
+back to [interval refetch](/docs/client/realtime#polling-fallback). It never puts
+bearer tokens in the stream URL.
 
 ## Connect
 
@@ -105,7 +106,8 @@ cookies for embedded previews) in
   [`@chatpack/transport-redis`](/docs/realtime/multi-node), a one-line change with the same public
   API. On serverless/edge platforms (Cloudflare Workers, Vercel/AWS Lambda), SSE is a poor fit
   whatever the transport, because the function lifetime is the blocker: use a database adapter and
-  poll `GET /conversations/:id/messages`. Details in [Deployment](/docs/integrations/deployment).
+  poll instead - `@chatpack/client` falls back on its own, so a serverless deploy needs no
+  configuration. Details in [Deployment](/docs/integrations/deployment).
 </Callout>
 
 ## Heartbeats

@@ -480,8 +480,9 @@ exported `isMessageEvent(event)` when you need the `seq`/`id:` frame. Plugin
 > On serverless/edge platforms (Cloudflare Workers, Vercel/AWS Lambda), each
 > isolate has its own memory and a bounded lifetime, so SSE is a poor fit
 > whatever the transport: use a database adapter
-> ([`@chatpack/adapter-drizzle`](../adapter-drizzle)) and poll
-> `GET /conversations/:id/messages` instead of `/stream`.
+> ([`@chatpack/adapter-drizzle`](../adapter-drizzle)) and poll instead of
+> `/stream`. [`@chatpack/client`](../client#polling-fallback) does that on its
+> own, so a serverless deploy needs no frontend change.
 
 ## Telemetry (anonymous, opt-out)
 

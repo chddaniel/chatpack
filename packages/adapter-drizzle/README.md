@@ -109,9 +109,9 @@ export default { fetch: chat.handler().fetch };
 The same pattern works with `drizzle-orm/vercel-postgres` on Vercel Edge.
 
 > **Real-time on serverless:** the default SSE transport is in-process, so on
-> Workers/Lambda-style platforms poll `GET /conversations/:id/messages`
-> instead of `/stream` - see the
-> [deployment reality check](../core#real-time-sse) in `@chatpack/core`.
+> Workers/Lambda-style platforms poll instead of `/stream` -
+> [`@chatpack/client`](../client#polling-fallback) falls back automatically. See
+> the [deployment reality check](../core#real-time-sse) in `@chatpack/core`.
 
 ## Correctness guarantees
 
