@@ -573,26 +573,42 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
    * Run the post-persistence hook once the message is persisted and broadcast.
    * The deprecated hook receives only send/edit actions for compatibility.
    */
-  async function runAfterMessageMutation(ctx: AfterMessageMutationContext): Promise<void> {
+  async function runAfterMessageMutation(
+    ctx: Omit<AfterMessageMutationContext, "otherParticipantId">,
+  ): Promise<void> {
     const hook = options.hooks?.afterMessageMutation;
+    const deprecatedHook = ctx.action === "delete" ? undefined : options.hooks?.afterMessageSend;
+    if (!hook && !deprecatedHook) return;
+
+    let otherParticipantId: string;
+    try {
+      otherParticipantId = getOtherParticipantId(ctx.conversation, ctx.message.senderId);
+    } catch (err) {
+      console.error(
+        hook
+          ? "chatpack: afterMessageMutation hook failed"
+          : "chatpack: afterMessageSend hook failed",
+        err,
+      );
+      return;
+    }
+
     if (hook) {
       try {
-        await hook(ctx);
+        await hook({ ...ctx, otherParticipantId });
       } catch (err) {
         console.error("chatpack: afterMessageMutation hook failed", err);
       }
       return;
     }
 
-    if (ctx.action === "delete") return;
-    const deprecatedHook = options.hooks?.afterMessageSend;
-    if (!deprecatedHook) return;
+    if (ctx.action === "delete" || !deprecatedHook) return;
 
     try {
       await deprecatedHook({
         message: ctx.message,
         conversation: ctx.conversation,
-        otherParticipantId: ctx.otherParticipantId,
+        otherParticipantId,
         action: ctx.action,
       });
     } catch (err) {
@@ -671,7 +687,6 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
         ...conversation,
         participantIds: conversation.participants.map((p) => p.userId),
       };
-      const otherParticipantId = getOtherParticipantId(conversation, input.userId);
       const accepted = await runBeforeMessageSend({
         user: { id: input.userId },
         conversation: hookConversation,
@@ -697,7 +712,6 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
       await runAfterMessageMutation({
         message,
         conversation: hookConversation,
-        otherParticipantId,
         action: "send",
       });
       return decorated;
@@ -742,7 +756,6 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
         ...conversation,
         participantIds: conversation.participants.map((p) => p.userId),
       };
-      const otherParticipantId = getOtherParticipantId(conversation, input.userId);
       const accepted = await runBeforeMessageSend({
         user: { id: input.userId },
         conversation: hookConversation,
@@ -762,7 +775,6 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
       await runAfterMessageMutation({
         message: updated,
         conversation: hookConversation,
-        otherParticipantId,
         action: "edit",
       });
       return decorated;
@@ -786,7 +798,6 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
         ...conversation,
         participantIds: conversation.participants.map((p) => p.userId),
       };
-      const otherParticipantId = getOtherParticipantId(conversation, input.userId);
 
       const updated = await storage.updateMessage({
         messageId: existing.id,
@@ -800,7 +811,6 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
       await runAfterMessageMutation({
         message: updated,
         conversation: hookConversation,
-        otherParticipantId,
         action: "delete",
       });
       return decorated;

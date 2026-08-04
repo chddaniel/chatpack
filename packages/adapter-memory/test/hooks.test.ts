@@ -1,7 +1,7 @@
 /**
- * Message lifecycle hooks (docs/decisions/0011): `beforeMessageSend` can
- * block or rewrite a message before it persists; `afterMessageMutation` reacts
- * after persistence for sends, edits, and deletes.
+ * Message lifecycle hooks (docs/decisions/0011 and 0014):
+ * `beforeMessageSend` can block or rewrite a message before it persists;
+ * `afterMessageMutation` reacts after persistence for sends, edits, and deletes.
  */
 import { describe, expect, it, vi } from "vitest";
 
@@ -353,7 +353,7 @@ describe("afterMessageMutation", () => {
   it("fires after send, edit, and delete with the persisted message and recipient", async () => {
     const seen: Array<{
       action: string;
-      message: { id: string; body: string; deletedAt: Date | null };
+      message: { id: string; seq: number; body: string; deletedAt: Date | null };
       otherParticipantId: string;
     }> = [];
     const events: TransportEvent[] = [];
@@ -420,6 +420,67 @@ describe("afterMessageMutation", () => {
     });
 
     expect(recipients).toEqual(["alice"]);
+  });
+
+  it("preserves mutations when no after hook is configured", async () => {
+    const storage = memoryAdapter();
+    const { conversation } = await storage.getOrCreateDirectConversation({
+      pairKey: "alice:bob",
+      userIds: ["alice", "bob"],
+      metadata: {},
+    });
+    vi.spyOn(storage, "getConversation").mockResolvedValue({
+      ...conversation,
+      participants: [conversation.participants[0]!],
+    });
+    const chat = chatpack({ storage, telemetry: false });
+
+    const message = await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "single participant adapter",
+    });
+    await chat.api.editMessage({ userId: "alice", messageId: message.id, body: "edited" });
+    await chat.api.deleteMessage({ userId: "alice", messageId: message.id });
+  });
+
+  it("logs and swallows recipient lookup failures after persistence", async () => {
+    const storage = memoryAdapter();
+    const { conversation } = await storage.getOrCreateDirectConversation({
+      pairKey: "alice:bob",
+      userIds: ["alice", "bob"],
+      metadata: {},
+    });
+    vi.spyOn(storage, "getConversation").mockResolvedValue({
+      ...conversation,
+      participants: [conversation.participants[0]!],
+    });
+    const after = vi.fn();
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const chat = chatpack({
+        storage,
+        telemetry: false,
+        hooks: { afterMessageMutation: after },
+      });
+
+      const message = await chat.api.sendMessage({
+        userId: "alice",
+        conversationId: conversation.id,
+        body: "still durable",
+      });
+
+      expect(after).not.toHaveBeenCalled();
+      expect(errorLog).toHaveBeenCalledWith(
+        "chatpack: afterMessageMutation hook failed",
+        expect.objectContaining({ code: "INVALID_INPUT" }),
+      );
+      await expect(
+        chat.api.listMessages({ userId: "alice", conversationId: conversation.id }),
+      ).resolves.toMatchObject({ messages: [{ id: message.id }] });
+    } finally {
+      errorLog.mockRestore();
+    }
   });
 
   it("runs after persistence and transport publish", async () => {

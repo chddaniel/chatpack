@@ -104,7 +104,7 @@ export interface AfterMessageMutationContext {
     /** Convenience: the two participant user ids. */
     participantIds: string[];
   };
-  /** The participant who did not cause this message mutation. */
+  /** The participant who is not the persisted message sender. */
   otherParticipantId: string;
   /** The durable message mutation that completed. */
   action: MessageMutationAction;
@@ -119,16 +119,16 @@ export interface AfterMessageSendContext {
     /** Convenience: the two participant user ids. */
     participantIds: string[];
   };
-  /** The participant who did not send or edit this message. */
+  /** The participant who is not the persisted message sender. */
   otherParticipantId: string;
   /** `"send"` for new messages, `"edit"` for body rewrites. */
   action: "send" | "edit";
 }
 
 /**
- * Message lifecycle hooks (`docs/decisions/0011`). The before hook runs for
- * sends and edits. The after hook runs for every durable message mutation;
- * `ctx.action` tells them apart.
+ * Message lifecycle hooks (`docs/decisions/0011` and `0014`). The before hook
+ * runs for sends and edits. The after hook runs for every durable message
+ * mutation; `ctx.action` tells them apart.
  */
 export interface MessageHooks {
   /**
@@ -171,8 +171,8 @@ export interface ChatpackOptions {
   /** Permission overrides. Default: only the two participants can read/write. */
   permissions?: PermissionHooks;
   /**
-   * Message lifecycle hooks (`docs/decisions/0011`): block or rewrite
-   * messages before they persist, react after they do. Default: none.
+   * Message lifecycle hooks (`docs/decisions/0011` and `0014`): block or
+   * rewrite messages before they persist, react after they do. Default: none.
    */
   hooks?: MessageHooks;
   /**
