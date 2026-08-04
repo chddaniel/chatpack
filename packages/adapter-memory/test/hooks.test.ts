@@ -1,7 +1,7 @@
 /**
- * Message lifecycle hooks (docs/decisions/0011): `beforeMessageSend` can
- * block or rewrite a message before it persists; `afterMessageSend` reacts
- * after persistence. Both run for sends AND edits.
+ * Message lifecycle hooks (docs/decisions/0011 and 0014):
+ * `beforeMessageSend` can block or rewrite a message before it persists;
+ * `afterMessageMutation` reacts after persistence for sends, edits, and deletes.
  */
 import { describe, expect, it, vi } from "vitest";
 
@@ -346,5 +346,291 @@ describe("afterMessageSend", () => {
     await chat.api.editMessage({ userId: "alice", messageId: message.id, body: "bye" });
 
     expect(actions).toEqual(["send", "edit"]);
+  });
+});
+
+describe("afterMessageMutation", () => {
+  it("fires after send, edit, and delete with the persisted message and recipient", async () => {
+    const seen: Array<{
+      action: string;
+      message: { id: string; seq: number; body: string; deletedAt: Date | null };
+      otherParticipantId: string;
+    }> = [];
+    const events: TransportEvent[] = [];
+    const chat = createChat({
+      hooks: {
+        afterMessageMutation: (ctx) => {
+          seen.push({
+            action: ctx.action,
+            message: ctx.message,
+            otherParticipantId: ctx.otherParticipantId,
+          });
+        },
+      },
+    });
+    chat.transport.subscribe((event) => events.push(event));
+    const conversation = await conversationBetween(chat);
+
+    const message = await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "hi",
+    });
+    await chat.api.editMessage({ userId: "alice", messageId: message.id, body: "edited" });
+    await chat.api.deleteMessage({ userId: "alice", messageId: message.id });
+
+    expect(seen.map(({ action }) => action)).toEqual(["send", "edit", "delete"]);
+    expect(seen[0]).toMatchObject({
+      action: "send",
+      message: { id: message.id, seq: message.seq, body: "hi", deletedAt: null },
+      otherParticipantId: "bob",
+    });
+    expect(seen[1]).toMatchObject({
+      action: "edit",
+      message: { id: message.id, body: "edited" },
+      otherParticipantId: "bob",
+    });
+    expect(seen[2]).toMatchObject({
+      action: "delete",
+      message: { id: message.id, body: "", deletedAt: expect.any(Date) },
+      otherParticipantId: "bob",
+    });
+    expect(events.map(({ type }) => type)).toEqual([
+      "message.created",
+      "message.updated",
+      "message.deleted",
+    ]);
+  });
+
+  it("derives the other participant from the persisted message sender", async () => {
+    const recipients: string[] = [];
+    const chat = createChat({
+      hooks: {
+        afterMessageMutation: ({ otherParticipantId }) => {
+          recipients.push(otherParticipantId);
+        },
+      },
+    });
+    const conversation = await conversationBetween(chat);
+
+    await chat.api.sendMessage({
+      userId: "bob",
+      conversationId: conversation.id,
+      body: "hi alice",
+    });
+
+    expect(recipients).toEqual(["alice"]);
+  });
+
+  it("preserves mutations when no after hook is configured", async () => {
+    const storage = memoryAdapter();
+    const { conversation } = await storage.getOrCreateDirectConversation({
+      pairKey: "alice:bob",
+      userIds: ["alice", "bob"],
+      metadata: {},
+    });
+    vi.spyOn(storage, "getConversation").mockResolvedValue({
+      ...conversation,
+      participants: [conversation.participants[0]!],
+    });
+    const chat = chatpack({ storage, telemetry: false });
+
+    const message = await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "single participant adapter",
+    });
+    await chat.api.editMessage({ userId: "alice", messageId: message.id, body: "edited" });
+    await chat.api.deleteMessage({ userId: "alice", messageId: message.id });
+  });
+
+  it("logs and swallows recipient lookup failures after persistence", async () => {
+    const storage = memoryAdapter();
+    const { conversation } = await storage.getOrCreateDirectConversation({
+      pairKey: "alice:bob",
+      userIds: ["alice", "bob"],
+      metadata: {},
+    });
+    vi.spyOn(storage, "getConversation").mockResolvedValue({
+      ...conversation,
+      participants: [conversation.participants[0]!],
+    });
+    const after = vi.fn();
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const chat = chatpack({
+        storage,
+        telemetry: false,
+        hooks: { afterMessageMutation: after },
+      });
+
+      const message = await chat.api.sendMessage({
+        userId: "alice",
+        conversationId: conversation.id,
+        body: "still durable",
+      });
+
+      expect(after).not.toHaveBeenCalled();
+      expect(errorLog).toHaveBeenCalledWith(
+        "chatpack: afterMessageMutation hook failed",
+        expect.objectContaining({ code: "INVALID_INPUT" }),
+      );
+      await expect(
+        chat.api.listMessages({ userId: "alice", conversationId: conversation.id }),
+      ).resolves.toMatchObject({ messages: [{ id: message.id }] });
+    } finally {
+      errorLog.mockRestore();
+    }
+  });
+
+  it("runs after persistence and transport publish", async () => {
+    const storage = memoryAdapter();
+    const events: TransportEvent[] = [];
+    const persisted: string[] = [];
+    const chat = chatpack({
+      storage,
+      telemetry: false,
+      hooks: {
+        afterMessageMutation: async ({ message }) => {
+          expect(await storage.getMessage(message.id)).toEqual(message);
+          expect(events).toHaveLength(1);
+          persisted.push(message.id);
+        },
+      },
+    });
+    chat.transport.subscribe((event) => events.push(event));
+    const conversation = await conversationBetween(chat);
+
+    const message = await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "durable first",
+    });
+
+    expect(persisted).toEqual([message.id]);
+  });
+
+  it("does not fire when the before hook rejects", async () => {
+    const after = vi.fn();
+    const chat = createChat({
+      hooks: {
+        beforeMessageSend: () => {
+          throw new Error("no");
+        },
+        afterMessageMutation: after,
+      },
+    });
+    const conversation = await conversationBetween(chat);
+
+    await expect(
+      chat.api.sendMessage({ userId: "alice", conversationId: conversation.id, body: "hi" }),
+    ).rejects.toBeInstanceOf(ChatpackError);
+    expect(after).not.toHaveBeenCalled();
+  });
+
+  it("does not fire when message persistence fails", async () => {
+    const storage = memoryAdapter();
+    const addMessage = vi.spyOn(storage, "addMessage").mockRejectedValue(new Error("db down"));
+    const after = vi.fn();
+    const chat = chatpack({
+      storage,
+      telemetry: false,
+      hooks: { afterMessageMutation: after },
+    });
+    const conversation = await conversationBetween(chat);
+
+    await expect(
+      chat.api.sendMessage({ userId: "alice", conversationId: conversation.id, body: "hi" }),
+    ).rejects.toThrow("db down");
+    expect(after).not.toHaveBeenCalled();
+    addMessage.mockRestore();
+  });
+
+  it("does not fire for an idempotent repeated delete", async () => {
+    const actions: string[] = [];
+    const chat = createChat({
+      hooks: {
+        afterMessageMutation: ({ action }) => {
+          actions.push(action);
+        },
+      },
+    });
+    const conversation = await conversationBetween(chat);
+    const message = await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "delete once",
+    });
+
+    await chat.api.deleteMessage({ userId: "alice", messageId: message.id });
+    await chat.api.deleteMessage({ userId: "alice", messageId: message.id });
+
+    expect(actions).toEqual(["send", "delete"]);
+  });
+
+  it("logs mutation-hook failures and still returns a persisted message", async () => {
+    const errorLog = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const chat = createChat({
+        hooks: {
+          afterMessageMutation: () => {
+            throw new Error("push provider unavailable");
+          },
+        },
+      });
+      const conversation = await conversationBetween(chat);
+
+      const message = await chat.api.sendMessage({
+        userId: "alice",
+        conversationId: conversation.id,
+        body: "still durable",
+      });
+
+      expect(message.body).toBe("still durable");
+      expect(errorLog).toHaveBeenCalledWith(
+        "chatpack: afterMessageMutation hook failed",
+        expect.any(Error),
+      );
+      await expect(
+        chat.api.listMessages({ userId: "alice", conversationId: conversation.id }),
+      ).resolves.toMatchObject({ messages: [{ id: message.id }] });
+    } finally {
+      errorLog.mockRestore();
+    }
+  });
+
+  it("keeps the deprecated hook for send and edit, but not delete", async () => {
+    const actions: string[] = [];
+    const recipients: string[] = [];
+    const chat = createChat({
+      hooks: {
+        afterMessageSend: ({ action, otherParticipantId }) => {
+          actions.push(action);
+          recipients.push(otherParticipantId);
+        },
+      },
+    });
+    const conversation = await conversationBetween(chat);
+    const message = await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "legacy",
+    });
+    await chat.api.editMessage({ userId: "alice", messageId: message.id, body: "legacy edit" });
+    await chat.api.deleteMessage({ userId: "alice", messageId: message.id });
+
+    expect(actions).toEqual(["send", "edit"]);
+    expect(recipients).toEqual(["bob", "bob"]);
+  });
+
+  it("rejects configuring both hook names", () => {
+    expect(() =>
+      createChat({
+        hooks: {
+          afterMessageMutation: () => undefined,
+          afterMessageSend: () => undefined,
+        },
+      }),
+    ).toThrow("Configure either hooks.afterMessageMutation");
   });
 });

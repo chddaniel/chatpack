@@ -16,7 +16,7 @@
  */
 import { createServer } from "node:http";
 
-import { chatpack, type StorageAdapter } from "@chatpack/core";
+import { chatpack, type Message, type StorageAdapter } from "@chatpack/core";
 import { memoryAdapter } from "@chatpack/adapter-memory";
 import { drizzleAdapter, migrationSql } from "@chatpack/adapter-drizzle";
 import { drizzle } from "drizzle-orm/node-postgres";
@@ -35,12 +35,24 @@ async function createStorage(): Promise<StorageAdapter> {
   return drizzleAdapter(drizzle(pool));
 }
 
+// DEMO ONLY: replace this with your FCM, Web Push, or queue integration.
+// Chatpack does not store device tokens. Your application owns token lookup.
+async function sendPushNotification(userId: string, message: Message): Promise<void> {
+  console.log(`push notification (demo): ${userId} <- ${message.id}`);
+}
+
 const chat = chatpack({
   storage: await createStorage(),
   // DEMO ONLY: trust an x-user-id header. Real apps verify a session here.
   auth: (request) => {
     const userId = request.headers.get("x-user-id");
     return userId ? { id: userId } : null;
+  },
+  hooks: {
+    afterMessageMutation: async ({ action, message, otherParticipantId }) => {
+      if (action !== "send") return;
+      await sendPushNotification(otherParticipantId, message);
+    },
   },
 });
 

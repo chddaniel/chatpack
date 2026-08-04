@@ -297,8 +297,7 @@ code:
 
 ## Message hooks
 
-Content rules and side-effects, via the optional `hooks` option - both run
-for **sends and edits** (`ctx.action` tells them apart), after auth and
+Content rules and side-effects, via the optional `hooks` option, after auth and
 permission checks:
 
 ```ts
@@ -312,22 +311,21 @@ const chat = chatpack({
       if (body.length > 2000) throw new Error("Max 2000 characters.");
       return { body: censorProfanity(body) };
     },
-    // AFTER persistence + broadcast: side-effects only (queue an AI reply,
-    // analytics). Cannot block or change the message; a throw is logged
-    // server-side and never fails the request.
-    afterMessageSend: async ({ message, conversation }) => {
-      if (conversation.participantIds.includes("ai:assistant")) {
-        await queueAssistantReply(message);
-      }
+    // AFTER persistence + broadcast: side-effects only. Filter by action.
+    afterMessageMutation: async ({ action, message, otherParticipantId }) => {
+      if (action !== "send") return;
+      await sendPushNotification(otherParticipantId, message);
     },
   },
 });
 ```
 
 A rejected message is never stored and never broadcast. Rewriting to an
-empty body is `INVALID_INPUT` (rejecting must be explicit). Hooks are
-in-process functions, not webhooks - no retries, no delivery guarantees;
-keep heavy work in your own queue (design: `docs/decisions/0011`).
+empty body is `INVALID_INPUT` (rejecting must be explicit). The mutation hook
+receives `send`, `edit`, and `delete`, plus the other participant's id. Hooks
+are in-process functions, not webhooks - no retries or delivery guarantees;
+keep heavy work in your own queue (design: `docs/decisions/0014`).
+`afterMessageSend` remains as a deprecated send/edit-only compatibility hook.
 
 ## Real-time (SSE)
 

@@ -92,7 +92,25 @@ export interface BeforeMessageSendResult {
   metadata?: Metadata;
 }
 
-/** Context passed to {@link MessageHooks.afterMessageSend}. */
+/** The durable mutation that caused an after-message hook to run. */
+export type MessageMutationAction = "send" | "edit" | "delete";
+
+/** Context passed to {@link MessageHooks.afterMessageMutation}. */
+export interface AfterMessageMutationContext {
+  /** The message exactly as persisted, including its id and sequence. */
+  message: Message;
+  /** The conversation containing the message. */
+  conversation: Conversation & {
+    /** Convenience: the two participant user ids. */
+    participantIds: string[];
+  };
+  /** The participant who is not the persisted message sender. */
+  otherParticipantId: string;
+  /** The durable message mutation that completed. */
+  action: MessageMutationAction;
+}
+
+/** Context passed to the deprecated {@link MessageHooks.afterMessageSend}. */
 export interface AfterMessageSendContext {
   /** The message exactly as persisted (post-rewrite, with id and seq). */
   message: Message;
@@ -101,14 +119,16 @@ export interface AfterMessageSendContext {
     /** Convenience: the two participant user ids. */
     participantIds: string[];
   };
+  /** The participant who is not the persisted message sender. */
+  otherParticipantId: string;
   /** `"send"` for new messages, `"edit"` for body rewrites. */
   action: "send" | "edit";
 }
 
 /**
- * Message lifecycle hooks (`docs/decisions/0011`). Both run for `sendMessage`
- * **and** `editMessage` (so content rules can't be dodged by editing);
- * `ctx.action` tells them apart.
+ * Message lifecycle hooks (`docs/decisions/0011` and `0014`). The before hook
+ * runs for sends and edits. The after hook runs for every durable message
+ * mutation; `ctx.action` tells them apart.
  */
 export interface MessageHooks {
   /**
@@ -125,12 +145,16 @@ export interface MessageHooks {
     ctx: BeforeMessageSendContext,
   ) => Promise<BeforeMessageSendResult | void> | BeforeMessageSendResult | void;
   /**
-   * Runs **after the message is persisted and broadcast** (durable-first,
-   * MVP §9) - a notification, not a gate: it cannot block or change the
-   * message. Use it for side-effects: queue an AI reply, analytics, ...
-   * The API call awaits it (so `sendMessage` resolving means the hook ran),
-   * but a throwing hook is logged server-side and never fails the request -
-   * the message already exists. Keep heavy work in a queue.
+   * Runs after a message is persisted and broadcast (durable-first, MVP §9).
+   * It receives `send`, `edit`, and `delete` actions. This is a side-effect
+   * hook, not a gate: it cannot block or change the message. The API call
+   * awaits it, but a throwing hook is logged server-side and never fails the
+   * request because the message already exists. Keep heavy work in a queue.
+   */
+  afterMessageMutation?: (ctx: AfterMessageMutationContext) => Promise<void> | void;
+  /**
+   * @deprecated Use `afterMessageMutation`. This compatibility hook keeps its
+   * original send/edit-only behavior and does not run for deletes.
    */
   afterMessageSend?: (ctx: AfterMessageSendContext) => Promise<void> | void;
 }
@@ -147,8 +171,8 @@ export interface ChatpackOptions {
   /** Permission overrides. Default: only the two participants can read/write. */
   permissions?: PermissionHooks;
   /**
-   * Message lifecycle hooks (`docs/decisions/0011`): block or rewrite
-   * messages before they persist, react after they do. Default: none.
+   * Message lifecycle hooks (`docs/decisions/0011` and `0014`): block or
+   * rewrite messages before they persist, react after they do. Default: none.
    */
   hooks?: MessageHooks;
   /**
