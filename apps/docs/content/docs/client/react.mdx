@@ -62,5 +62,12 @@ export function ConversationList() {
 Pass `userId` to `createChatClient` so the viewer's own messages never count as
 unread. See [Client realtime](/docs/client/realtime) for the full cache rules.
 
+`useRealtimeStatus()` returns `{ status, error }` with no `data` wrapper.
+`status` is `idle`, `connecting`, `open`, `closed`, or `polling` — the last
+meaning the stream is unavailable and data is being kept live by
+[interval refetch](/docs/client/realtime#polling-fallback) instead. Treat it as
+connected-but-degraded: the list and open thread update, but `useTyping`,
+`usePresence` and `useReceipts` stay empty.
+
 SSR does not open an SSE connection. The connection starts after a browser
 subscriber or any data hook mounts.

@@ -1,6 +1,7 @@
 /** EventSource-backed realtime transport and event contracts. */
-import type { ChatpackEventSource, EventSourceFactory } from "./config";
+import type { ChatRealtimeMode, ChatpackEventSource, EventSourceFactory } from "./config";
 import { createClientError, type ChatpackClientError } from "./errors";
+import { createPoller, DEFAULT_POLL_INTERVAL_MS } from "./polling";
 import { createStore, type ReadonlyStore, type Store } from "./store";
 import type { ClientMessage } from "./wire";
 
@@ -50,8 +51,15 @@ export type ChatpackEvent = DurableChatEvent | ReactionChatEvent | EphemeralChat
 export function isReactionChatEvent(event: ChatpackEvent): event is ReactionChatEvent {
   return event.type === "reaction.added" || event.type === "reaction.removed";
 }
-/** Lifecycle states for the realtime stream. */
-export type ChatRealtimeStatus = "idle" | "connecting" | "open" | "closed";
+/**
+ * Lifecycle states for the realtime connection.
+ *
+ * `polling` means durable data is being kept fresh by interval refetch instead
+ * of a stream (`docs/decisions/0016`) - the data is live, but typing/presence/
+ * receipts are unavailable, so it deserves a distinct state rather than being
+ * reported as `open` or `closed`.
+ */
+export type ChatRealtimeStatus = "idle" | "connecting" | "open" | "closed" | "polling";
 
 /** Observable realtime connection state. */
 export interface ChatRealtimeSnapshot {
@@ -66,6 +74,12 @@ export interface ChatRealtime extends ReadonlyStore<ChatRealtimeSnapshot> {
   subscribe(listener: (event: ChatpackEvent) => void): () => void;
   subscribeStatus(listener: () => void): () => void;
   on(type: string, listener: (event: ChatpackEvent) => void): () => void;
+  /**
+   * Run one polling refresh now, regardless of mode or interval. Exposed for
+   * tests and for hosts that want a manual "check for new messages" action;
+   * a no-op when no `onPoll` was supplied.
+   */
+  pollNow(): Promise<void>;
 }
 
 const OPEN = 1;
@@ -163,11 +177,31 @@ export function createRealtime(options: {
   eventSource: EventSourceFactory;
   eventTypes: readonly string[];
   onEvent: (event: ChatpackEvent) => void;
+  /**
+   * Mode from `ChatClientOptions.realtime` (`docs/decisions/0016`). `sse` is
+   * the default here so a directly-constructed controller keeps its old
+   * behaviour; `createChatClient` passes the user's choice through.
+   */
+  mode?: ChatRealtimeMode;
+  /**
+   * Refetches everything the stream would have delivered. Supplied by
+   * `createChatClient`; when omitted this controller is stream-only whatever
+   * the mode says, because there is nothing to poll.
+   *
+   * Must never reject - the poller has no way to report an error, and a
+   * rejection would take the timer down with it.
+   */
+  onPoll?: () => Promise<void>;
+  /** Poll interval in ms. Clamped to `MIN_POLL_INTERVAL_MS`. */
+  pollIntervalMs?: number;
 }): ChatRealtime {
+  const mode = options.mode ?? "sse";
   const snapshot: Store<ChatRealtimeSnapshot> = createStore({ status: "idle", error: null });
   const listeners = new Set<(event: ChatpackEvent) => void>();
   const typedListeners = new Map<string, Set<(event: ChatpackEvent) => void>>();
   let source: ChatpackEventSource | null = null;
+  /** `false` until `disconnect()`, so a late poll tick cannot revive a closed client. */
+  let wanted = false;
 
   const emit = (event: ChatpackEvent): void => {
     options.onEvent(event);
@@ -178,7 +212,39 @@ export function createRealtime(options: {
     const event = parseEvent(rawEvent);
     if (event !== null) emit(event);
   };
+
+  const onPoll = options.onPoll;
+  const canPoll = onPoll !== undefined && mode !== "sse";
+  const poller =
+    onPoll === undefined
+      ? null
+      : createPoller({
+          intervalMs: options.pollIntervalMs ?? DEFAULT_POLL_INTERVAL_MS,
+          onTick: onPoll,
+        });
+
+  /**
+   * Take over from the stream. Polling reports its own status so a host can
+   * tell the user typing indicators are unavailable rather than broken - but it
+   * keeps whatever error put us here, because that error is why.
+   */
+  const startPolling = (error: ChatpackClientError | null): void => {
+    if (!canPoll || !wanted) return;
+    poller?.start();
+    snapshot.set({ status: "polling", error });
+  };
+  const stopPolling = (): void => {
+    poller?.stop();
+  };
+
   const connect = (): void => {
+    wanted = true;
+    // `poll` mode never opens a stream, so the failed attempt - and the seconds
+    // of staleness it costs on a platform that cannot hold one - is skipped.
+    if (mode === "poll") {
+      startPolling(null);
+      return;
+    }
     if (source !== null && source.readyState !== CLOSED) return;
     snapshot.set({ status: "connecting", error: null });
     try {
@@ -188,22 +254,24 @@ export function createRealtime(options: {
     } catch (cause) {
       // Runtimes without a global `EventSource` (SSR, older test renderers,
       // React Native) must not crash the component that mounted a hook -
-      // report it as a stream error and stay closed.
+      // report it as a stream error and, where allowed, poll instead.
       source = null;
-      snapshot.set({
-        status: "closed",
-        error: createClientError(
-          "NETWORK_ERROR",
-          "Chatpack could not open a realtime connection: EventSource is unavailable in this runtime.",
-          null,
-          cause,
-        ),
-      });
+      const error = createClientError(
+        "NETWORK_ERROR",
+        "Chatpack could not open a realtime connection: EventSource is unavailable in this runtime.",
+        null,
+        cause,
+      );
+      snapshot.set({ status: "closed", error });
+      startPolling(error);
       return;
     }
     const currentSource = source;
     source.onopen = () => {
       if (source !== currentSource) return;
+      // The stream is authoritative again: stop paying for polls, and drop the
+      // error that caused the fallback so a host's "reconnecting" hint clears.
+      stopPolling();
       snapshot.set({ status: "open", error: null });
     };
     source.onerror = () => {
@@ -214,6 +282,10 @@ export function createRealtime(options: {
         null,
       );
       snapshot.set({ status: streamStatus(currentSource), error });
+      // `EventSource` retries a dropped connection itself, so this is not
+      // necessarily terminal - but the gap in delivery is real either way, and
+      // `onopen` stands the poller back down the moment the retry lands.
+      startPolling(error);
     };
     for (const type of options.eventTypes) source.addEventListener(type, handleEvent);
   };
@@ -239,9 +311,14 @@ export function createRealtime(options: {
     },
     connect,
     disconnect() {
+      wanted = false;
+      stopPolling();
       source?.close();
       source = null;
       snapshot.set({ status: "closed", error: null });
+    },
+    async pollNow() {
+      await onPoll?.();
     },
   };
 }

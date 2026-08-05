@@ -18,6 +18,8 @@ export type {
 } from "./client";
 export type {
   ChatClientOptions,
+  ChatRealtimeMode,
+  ChatRealtimeOptions,
   ChatpackFetch,
   ChatpackHeaders,
   EventSourceFactory,

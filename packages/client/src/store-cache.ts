@@ -62,6 +62,28 @@ export interface ChatpackCache extends ReadonlyStore<ChatpackCacheSnapshot> {
   ): void;
   applyEvent(event: ChatpackEvent, options?: ApplyEventOptions): void;
   /**
+   * Fold a polled conversations page into the loaded list (`docs/decisions/0016`).
+   *
+   * Not `setConversations`: a poll refetches only the newest page, so replacing
+   * would drop older pages the host had loaded and rewind `nextCursor` to the
+   * end of page one. Instead the polled page takes the front (the server orders
+   * by activity and its `unreadCount` is authoritative) and anything the host
+   * knows about but the page did not mention keeps its place behind it.
+   *
+   * A no-op until the list has loaded once, and when the result is unchanged -
+   * an interval that notified subscribers every tick would re-render every
+   * mounted component on a timer.
+   */
+  applyPolledConversations(page: ClientConversationPage): void;
+  /**
+   * Fold a polled message page into one loaded thread (`docs/decisions/0016`).
+   *
+   * Merges by id, so edits, tombstones and reaction changes all land, and keeps
+   * the loaded `nextCursor` so a thread the host had paged backwards through is
+   * not rewound. A no-op when the thread has never loaded or nothing changed.
+   */
+  applyPolledMessages(conversationId: string, page: ClientMessagePage): void;
+  /**
    * Replace the reaction set of one cached message (ADR 0013).
    *
    * Takes a whole message because both sources - a `reaction.*` stream event
@@ -110,6 +132,123 @@ function mergeMessages(current: ClientMessage[], incoming: ClientMessage[]): Cli
   let merged = current;
   for (const message of incoming) merged = replaceMessage(merged, message);
   return merged;
+}
+
+function sameReactions(
+  left: readonly ClientMessage["reactions"][number][],
+  right: readonly ClientMessage["reactions"][number][],
+): boolean {
+  if (left.length !== right.length) return false;
+  return left.every((entry, index) => {
+    const other = right[index]!;
+    return (
+      entry.emoji === other.emoji &&
+      entry.count === other.count &&
+      entry.userIds.length === other.userIds.length &&
+      entry.userIds.every((userId, position) => userId === other.userIds[position])
+    );
+  });
+}
+
+/**
+ * True when two renderings of the same message would look identical.
+ *
+ * Only the fields a poll can actually observe changing: an edit (`body`,
+ * `editedAt`), a delete (`deletedAt`, and `body` emptied), a reaction, and the
+ * parent of a reply being deleted. `metadata`, `senderId`, `role` and
+ * `replyToMessageId` are immutable after send, so they are not compared.
+ *
+ * Both adapters return reactions in a deterministic order (earliest-first), so
+ * comparing the summaries positionally is stable rather than flapping.
+ */
+function sameMessage(left: ClientMessage, right: ClientMessage): boolean {
+  return (
+    left.seq === right.seq &&
+    left.body === right.body &&
+    left.editedAt === right.editedAt &&
+    left.deletedAt === right.deletedAt &&
+    (left.replyTo?.excerpt ?? null) === (right.replyTo?.excerpt ?? null) &&
+    (left.replyTo?.deleted ?? null) === (right.replyTo?.deleted ?? null) &&
+    sameReactions(left.reactions, right.reactions)
+  );
+}
+
+/**
+ * True when the loaded read-state of two renderings of a conversation match.
+ * `unreadCount` and `lastReadMessageId` are the only mutable fields on the API
+ * shape - `pairKey`, `createdAt` and the participant set never change.
+ */
+function sameConversation(left: ClientConversation, right: ClientConversation): boolean {
+  if (left.unreadCount !== right.unreadCount) return false;
+  if (left.participants.length !== right.participants.length) return false;
+  return left.participants.every((participant, index) => {
+    const other = right.participants[index]!;
+    return (
+      participant.userId === other.userId &&
+      participant.lastReadMessageId === other.lastReadMessageId
+    );
+  });
+}
+
+/**
+ * Fold a freshly polled page into a loaded thread, or return `null` when
+ * nothing a renderer can see has changed (`docs/decisions/0016`).
+ *
+ * Cannot reuse `mergeMessages`: it re-sorts on every call, so the result is
+ * always a fresh array and an identity check would report a change on every
+ * tick - re-rendering every mounted thread on a timer.
+ *
+ * Polled messages are only *replaced* into place, never inserted mid-page: an
+ * older message the poll happens to include is already in the loaded page if
+ * the host paged back to it, and splicing it in otherwise would produce a
+ * thread with a hole in it.
+ */
+function mergePolledMessages(
+  current: readonly ClientMessage[],
+  incoming: readonly ClientMessage[],
+): ClientMessage[] | null {
+  const byId = new Map(current.map((message) => [message.id, message]));
+  let changed = false;
+  for (const message of incoming) {
+    const existing = byId.get(message.id);
+    if (existing === undefined) {
+      // A message newer than everything loaded - the whole point of the poll.
+      if (message.seq > highestSeq(current)) {
+        byId.set(message.id, message);
+        changed = true;
+      }
+      continue;
+    }
+    if (sameMessage(existing, message)) continue;
+    byId.set(message.id, message);
+    changed = true;
+  }
+  if (!changed) return null;
+  return [...byId.values()].sort((left, right) => right.seq - left.seq);
+}
+
+/**
+ * Fold a freshly polled page into a loaded conversation list, or return `null`
+ * when the result would be identical (`docs/decisions/0016`).
+ *
+ * The polled page wins on both order and content, because the server orders by
+ * activity and owns `unreadCount`. Conversations the host had paged in but the
+ * page did not mention keep their relative order behind it - a poll fetches
+ * page one, and must not truncate history the host already loaded.
+ */
+function mergeConversations(
+  current: readonly ClientConversation[],
+  incoming: readonly ClientConversation[],
+): ClientConversation[] | null {
+  const polled = new Set(incoming.map((item) => item.id));
+  const next = [...incoming, ...current.filter((item) => !polled.has(item.id))];
+  const unchanged =
+    next.length === current.length &&
+    next.every((item, index) => {
+      const previous = current[index]!;
+      return item.id === previous.id && sameConversation(item, previous);
+    });
+  return unchanged ? null : next;
 }
 
 function applyDurableEvent(
@@ -188,6 +327,37 @@ export function createChatpackCache(options: ChatpackCacheOptions = {}): Chatpac
     applyReactions,
     getSnapshot: store.getSnapshot,
     subscribe: store.subscribe,
+    applyPolledConversations(page) {
+      store.update((current) => {
+        const list = current.conversations.data;
+        if (list === null) return current;
+        const merged = mergeConversations(list.conversations, page.conversations);
+        if (merged === null) return current;
+        return {
+          ...current,
+          conversations: { ...current.conversations, data: { ...list, conversations: merged } },
+        };
+      });
+    },
+    applyPolledMessages(conversationId, page) {
+      // Same baseline advance as a fetched page: a stream event (or a later
+      // poll) replaying a message in this page must not bump `unreadCount`.
+      const newest = highestSeq(page.messages);
+      if (newest > (seenSeq.get(conversationId) ?? 0)) seenSeq.set(conversationId, newest);
+      store.update((current) => {
+        const existing = current.messagesByConversation[conversationId];
+        if (existing?.data == null) return current;
+        const messages = mergePolledMessages(existing.data.messages, page.messages);
+        if (messages === null) return current;
+        return {
+          ...current,
+          messagesByConversation: {
+            ...current.messagesByConversation,
+            [conversationId]: { ...existing, data: { ...existing.data, messages } },
+          },
+        };
+      });
+    },
     setConversationsLoading() {
       store.update((current) => ({
         ...current,

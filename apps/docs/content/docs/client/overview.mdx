@@ -71,6 +71,19 @@ which reorders and updates `unreadCount` on incoming messages (see
 covers all conversations. Ephemeral plugin events are dispatched but never
 persisted in message history.
 
+Where SSE can't work — serverless function timeouts, buffering proxies, React
+Native — the client falls back to polling on its own, so a serverless deploy
+works unconfigured. Tune or opt out with `realtime`:
+
+```ts
+createChatClient({
+  realtime: { mode: "auto", intervalMs: 5000 }, // "auto" (default) | "sse" | "poll"
+});
+```
+
+Typing, presence and receipts are unavailable while polling — see
+[Polling fallback](/docs/client/realtime#polling-fallback).
+
 Pass `userId` if you know the signed-in user's id. It is an optional cache hint
 that stops the viewer's own messages from counting as unread; it is never used
 for authentication.

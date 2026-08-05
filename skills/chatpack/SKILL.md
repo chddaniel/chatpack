@@ -72,10 +72,11 @@ installed `llms.txt` wins (it matches the installed version).
   client can't `PUBLISH`). Without it, cross-node events are silently dropped.
   `presence()` stays per-node either way.
 - Serverless/edge (Vercel, Lambda, Workers, **published** AI-builder apps) →
-  `memoryAdapter` loses everything per-isolate: use a database adapter, and
-  poll `GET /conversations/:id/messages` instead of `/stream` (function
-  lifetime is the blocker, so no transport fixes it). Say this in the app's
-  README.
+  `memoryAdapter` loses everything per-isolate: use a database adapter, and poll
+  instead of `/stream` (function lifetime is the blocker, so no transport fixes
+  it). With `@chatpack/client` this is automatic - `realtime: { mode: "poll" }`
+  only skips the doomed attempt. Never hand-roll an interval. Say this in the
+  app's README.
 
 ## Step 2 - Install and create the ONE instance
 
@@ -166,7 +167,10 @@ EventSource, reconnects, and dedupe for you, and keeps the conversations list
 live (reorder + `unreadCount`) without any refetch-on-event code - see
 "First-party client" in `llms.txt`. Pass the signed-in user's id as
 `userId` (a cache hint, never auth) so their own messages don't count as
-unread. The raw-fetch recipe below is the fallback for everything else:
+unread. Where a stream can't be held (serverless, buffering proxies, React
+Native) it falls back to interval refetch on its own - status `"polling"`,
+typing/presence/receipts unavailable. The raw-fetch recipe below is the fallback
+for everything else:
 
 ```ts
 // 1. demo sign-in: iframe-proof attributes (works on localhost too)

@@ -98,10 +98,15 @@ Common causes:
 
 <Accordion title="Does real-time work on Vercel / Lambda / Cloudflare Workers?">
 
-No - and a transport swap doesn't fix it. The blocker on serverless is function
-lifetime, not fan-out: the isolate stops running, so there's no connection left
-to push to. Use a database adapter and poll
-`GET /conversations/:id/messages` there.
+Not the stream - and a transport swap doesn't fix it. The blocker on serverless
+is function lifetime, not fan-out: the isolate stops running, so there's no
+connection left to push to. Use a database adapter and poll there.
+
+Live-ish updates still work with no frontend change:
+[`@chatpack/client` falls back to polling](/docs/client/realtime#polling-fallback)
+when the stream can't be held. Typing, presence and receipts are the part you
+genuinely lose - they're ephemeral and never stored, so there is nothing to poll
+for.
 
 On **several long-lived** servers (2+ containers behind a load balancer), SSE
 does work once you swap in

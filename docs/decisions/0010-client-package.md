@@ -48,3 +48,9 @@ core.
 SSR hydration, optimistic rollback, offline persistence, cross-tab sync,
 polling fallback, abort/retry policies, generated server-plugin clients,
 groups, attachments, and WebSockets are explicitly out of scope.
+
+> **Amended by [ADR 0016](./0016-client-polling-fallback.md) (client 0.4.0):**
+> the polling fallback is no longer deferred. It shipped because "no polling"
+> meant "no client at all on serverless, buffering proxies, or React Native" -
+> the deferral cost the platforms Chatpack most wanted to reach. Everything else
+> on this list still stands.

@@ -74,8 +74,10 @@ Full explanation in
 
 AI-builder **previews** behave like a dev server (one long-lived process) -
 `memoryAdapter` + `/stream` SSE work fine. **Published** AI-builder apps are
-usually serverless - use a database adapter and poll. The full decision table
-is in [Deployment](/docs/integrations/deployment).
+usually serverless - use a database adapter and poll, which
+[`@chatpack/client` does on its own](/docs/client/realtime#polling-fallback), so
+the same frontend works in both. The full decision table is in
+[Deployment](/docs/integrations/deployment).
 
 Platforms that only expose a database client (e.g. Supabase JS on
 Lovable/Bolt) can't use the Drizzle adapter directly - the

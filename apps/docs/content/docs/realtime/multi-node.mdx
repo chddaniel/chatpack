@@ -134,7 +134,8 @@ outage appears on the next refetch of that thread
 - **Ordering** is per-publisher: two nodes publishing concurrently can
   interleave on the wire. Clients sort by `seq`, so message order is unaffected.
 - **Serverless is still not a fit for SSE**, whatever the transport - the
-  function lifetime is the blocker, not the fan-out. Poll there instead.
+  function lifetime is the blocker, not the fan-out.
+  [Poll there instead](/docs/client/realtime#polling-fallback).
 - **One database, many app servers.** All nodes must share storage; the transport
   only relays live events, it isn't a substitute for shared persistence.
 

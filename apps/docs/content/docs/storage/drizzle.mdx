@@ -118,7 +118,8 @@ The same pattern works with `drizzle-orm/vercel-postgres` on Vercel Edge.
 
 <Callout type="warn">
   **Real-time on serverless:** the default SSE transport is in-process, so on Workers/Lambda-style
-  platforms poll `GET /conversations/:id/messages` instead of `/stream` - see
+  platforms poll instead of `/stream` - `@chatpack/client` does that
+  [automatically](/docs/client/realtime#polling-fallback). See
   [Deployment](/docs/integrations/deployment).
 </Callout>
 

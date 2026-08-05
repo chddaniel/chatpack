@@ -78,9 +78,10 @@ export const { GET, POST, PATCH, DELETE } = chat.handler({
 - `next start` on a long-lived server (Railway, Fly, Render, a VPS): SSE and
   even the memory adapter work as-is.
 - **Vercel / serverless:** each invocation may hit a different isolate - use
-  the [Drizzle adapter](/docs/storage/drizzle) and poll for new messages
-  instead of relying on `/stream`. Details in
-  [Deployment](/docs/integrations/deployment).
+  the [Drizzle adapter](/docs/storage/drizzle) and poll instead of relying on
+  `/stream`. `@chatpack/client` falls back to polling by itself, so the frontend
+  needs no change. Details in [Deployment](/docs/integrations/deployment) and
+  [Polling fallback](/docs/client/realtime#polling-fallback).
 
 ## Runnable example
 

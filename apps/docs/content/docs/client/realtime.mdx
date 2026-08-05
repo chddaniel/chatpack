@@ -79,8 +79,78 @@ that workaround against client `0.1.x`, remove it.
 
 Ephemeral events such as typing and presence are delivered to subscribers and
 plugins, but are never inserted into message history. Stream status is
-`idle`, `connecting`, `open`, or `closed`, with a typed network error when a
-connection fails.
+`idle`, `connecting`, `open`, `closed`, or `polling`, with a typed network error
+when a connection fails.
 
-There is no polling fallback, WebSocket transport, token-in-query behavior, or
-persistent browser storage in the first client release.
+## Polling fallback
+
+<Callout>Client 0.4.0+. On by default — you should not hand-roll an interval.</Callout>
+
+Some platforms cannot hold a long-lived connection: serverless functions time
+out mid-response, corporate proxies buffer `text/event-stream`, and React Native
+has no `EventSource` at all. Before 0.4.0 the client reported `closed` and simply
+stopped updating. Now it refetches on an interval instead.
+
+```ts
+const chatClient = createChatClient({
+  realtime: {
+    mode: "auto", // "auto" (default) | "sse" | "poll"
+    intervalMs: 5000, // default 5000, clamped to a 1000ms floor
+  },
+});
+```
+
+| Mode             | Behaviour                                                                                                                             |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `auto` (default) | Open the stream; poll only if it can't open or drops, and stop polling the moment it reopens. A serverless deploy works unconfigured. |
+| `sse`            | Stream only, never poll. The pre-0.4.0 behaviour — for hosts that would rather surface the failure than pay for polls.                |
+| `poll`           | Never attempt a stream. Use when you know the platform can't hold one; skips the failed attempt and the staleness it costs.           |
+
+### What a tick refetches
+
+The conversations list **and** the 3 most recently used threads — either alone
+leaves half the UI frozen. Only surfaces you have already loaded are polled, at
+the same `limit` you last requested for them.
+
+Polling re-reads page one of the existing list routes rather than asking for
+messages after a `seq`. It has to: only sending a message allocates a `seq`, so
+an edit, a delete and every reaction change would be invisible to an incremental
+poll — you'd see new messages and silently miss every correction and tombstone.
+
+Four things the loop does that a hand-rolled one usually doesn't:
+
+- **Ticks never overlap.** A slow response skips the next beat instead of
+  stacking requests on the connection least able to take them.
+- **A hidden tab doesn't poll**, and catches up immediately when shown again.
+- **A flapping stream doesn't stack timers** or buy an extra request per flap.
+- **A failed tick changes nothing** and retries on the next. Polls never touch
+  `isPending` or `isRefetching`, so components don't flash a spinner on a timer.
+
+Polled pages merge rather than replace: unchanged data notifies no subscribers
+(so an idle interval causes no re-renders), pagination you've loaded is never
+truncated, and a polled message never double-counts against `unreadCount`.
+
+### Typing, presence and receipts don't work while polling
+
+They are ephemeral and never stored, so there is no endpoint to poll and nothing
+to poll it for — `useTyping()` stays `null`. This isn't a gap to be closed later;
+persisting them would reverse
+[ADR 0008](/docs/realtime/plugins) for the platforms least able to afford the
+writes. If you need typing indicators, you need a runtime that holds a
+connection. Design the UI so their absence degrades quietly.
+
+### Reporting it to the user
+
+```tsx
+const { status, error } = chatClient.useRealtimeStatus();
+
+// "polling" is connected-but-degraded, not an error.
+if (status === "polling") return <span>Live updates every few seconds</span>;
+if (status === "closed" && error !== null) return <span>Reconnecting…</span>;
+```
+
+`realtime.pollNow()` runs one refresh immediately, for a manual "check for new
+messages" action.
+
+There is no WebSocket transport, token-in-query behavior, or persistent browser
+storage in the client.

@@ -52,9 +52,10 @@ export default {
   **Workers are isolates.** The default SSE transport is in-process - events won't reach connections
   held by other isolates, and the memory adapter shares nothing. A distributed transport doesn't
   rescue this: the isolate's bounded lifetime is the blocker, not the fan-out. Use a database
-  adapter (with an HTTP driver - TCP drivers like `pg` don't run on edge) and poll `GET
-  /conversations/:id/messages` instead of `/stream`. See
-  [Deployment](/docs/integrations/deployment).
+  adapter (with an HTTP driver - TCP drivers like `pg` don't run on edge) and poll instead of
+  `/stream` - `@chatpack/client` does that on its own, or set `realtime: { mode: "poll" }` to skip
+  the doomed attempt. See [Deployment](/docs/integrations/deployment) and
+  [Polling fallback](/docs/client/realtime#polling-fallback).
 </Callout>
 
 If your Chatpack instance only serves part of the app, route by prefix - the

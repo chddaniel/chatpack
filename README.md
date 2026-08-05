@@ -386,8 +386,13 @@ cookies work by default; use `credentials: "include"` for cross-origin cookie
 sessions. Native `EventSource` cannot send custom headers, so cookie auth is
 also required for browser realtime unless you provide a custom EventSource.
 
+Where SSE can't work - serverless function timeouts, buffering proxies, React
+Native - the client falls back to refetching on an interval by itself, so a
+serverless deploy needs no frontend change. Typing, presence and receipts are
+unavailable while polling, since ephemeral events are never stored.
+
 See [`@chatpack/client`](./packages/client) for the framework-agnostic API,
-React hooks, and client plugin usage.
+React hooks, the polling fallback, and client plugin usage.
 
 ### 6. Go live in the browser
 
@@ -442,7 +447,8 @@ Three things to know before going live:
   events between nodes. On serverless/edge (Workers, Lambda) each isolate has
   its own memory - use a [database adapter](./packages/adapter-drizzle) there and
   poll for new messages; SSE is a poor fit regardless of transport, since the
-  function lifetime is the blocker. Details in
+  function lifetime is the blocker. `@chatpack/client` falls back to polling on
+  its own, so a serverless deploy needs no frontend change. Details in
   [`@chatpack/core`'s README](./packages/core#real-time-sse).
 
 ### 7. Or call it straight from server code

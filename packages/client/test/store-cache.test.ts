@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { createChatpackCache } from "../src/store-cache";
+import { createChatpackCache, type ChatpackCache } from "../src/store-cache";
 import type { ClientConversation, ClientMessage, ClientMessagePage } from "../src/wire";
 
 const page: ClientMessagePage = {
@@ -380,5 +380,165 @@ describe("cache loading flags", () => {
       isPending: false,
       isRefetching: true,
     });
+  });
+});
+
+describe("polled page merges (ADR 0016)", () => {
+  const threadOf = (cache: ChatpackCache) =>
+    cache.getSnapshot().messagesByConversation["c1"]!.data!.messages;
+
+  it("ignores a polled page for a thread that has never loaded", () => {
+    const cache = createChatpackCache({ userId: "alice" });
+    // Nothing is mounted, so there is no page to merge into - and inserting one
+    // would fabricate a thread the host never asked for.
+    cache.applyPolledMessages("c1", page);
+    expect(cache.getSnapshot().messagesByConversation["c1"]).toBeUndefined();
+  });
+
+  it("notifies once for a real change and never for an unchanged page", () => {
+    const cache = createChatpackCache({ userId: "alice" });
+    cache.setMessages("c1", { data: page, error: null }, false);
+    let notifications = 0;
+    cache.subscribe(() => {
+      notifications += 1;
+    });
+
+    cache.applyPolledMessages("c1", page);
+    cache.applyPolledMessages("c1", { ...page, messages: [...page.messages] });
+    expect(notifications).toBe(0);
+
+    const arrived = makeMessage({ id: "m2", seq: 2, body: "new" });
+    cache.applyPolledMessages("c1", { messages: [arrived, ...page.messages], nextCursor: null });
+    expect(notifications).toBe(1);
+    expect(threadOf(cache).map((m) => m.id)).toEqual(["m2", "m1"]);
+  });
+
+  it("applies an edit, a delete and a reaction - none of which change seq", () => {
+    const cache = createChatpackCache({ userId: "alice" });
+    cache.setMessages("c1", { data: page, error: null }, false);
+    const changed: ClientMessage = {
+      ...page.messages[0]!,
+      body: "edited",
+      editedAt: "2026-01-01T00:01:00.000Z",
+      deletedAt: "2026-01-01T00:02:00.000Z",
+      reactions: [{ emoji: "👍", count: 1, userIds: ["bob"] }],
+    };
+    cache.applyPolledMessages("c1", { messages: [changed], nextCursor: null });
+    expect(threadOf(cache)[0]).toMatchObject({
+      body: "edited",
+      editedAt: "2026-01-01T00:01:00.000Z",
+      deletedAt: "2026-01-01T00:02:00.000Z",
+      reactions: [{ emoji: "👍", count: 1, userIds: ["bob"] }],
+    });
+  });
+
+  it("detects a reaction removed by another user without any other change", () => {
+    const cache = createChatpackCache({ userId: "alice" });
+    const reacted: ClientMessage = {
+      ...page.messages[0]!,
+      reactions: [{ emoji: "👍", count: 2, userIds: ["bob", "alice"] }],
+    };
+    cache.setMessages(
+      "c1",
+      { data: { messages: [reacted], nextCursor: null }, error: null },
+      false,
+    );
+    // Same emoji, same message, one fewer user: a naive length-only comparison
+    // would miss this and leave a stale count on screen.
+    const dropped: ClientMessage = {
+      ...reacted,
+      reactions: [{ emoji: "👍", count: 1, userIds: ["alice"] }],
+    };
+    cache.applyPolledMessages("c1", { messages: [dropped], nextCursor: null });
+    expect(threadOf(cache)[0]!.reactions).toEqual([{ emoji: "👍", count: 1, userIds: ["alice"] }]);
+  });
+
+  it("does not splice an older message into a page that was never paged back to", () => {
+    const cache = createChatpackCache({ userId: "alice" });
+    const newest = makeMessage({ id: "m5", seq: 5 });
+    cache.setMessages("c1", { data: { messages: [newest], nextCursor: "m5" }, error: null }, false);
+    // A poll page that reaches further back than the loaded page. Inserting the
+    // gap-fillers would produce a thread that looks complete but is not.
+    cache.applyPolledMessages("c1", {
+      messages: [newest, makeMessage({ id: "m4", seq: 4 }), makeMessage({ id: "m3", seq: 3 })],
+      nextCursor: null,
+    });
+    expect(threadOf(cache).map((m) => m.id)).toEqual(["m5"]);
+    // The loaded cursor survives: the host can still page backwards.
+    expect(cache.getSnapshot().messagesByConversation["c1"]!.data!.nextCursor).toBe("m5");
+  });
+
+  it("does not count a polled message as unread", () => {
+    const cache = createChatpackCache({ userId: "alice" });
+    cache.setConversations(
+      { data: { conversations: [makeConversation("c1", 0)], nextCursor: null }, error: null },
+      false,
+    );
+    cache.setMessages("c1", { data: page, error: null }, false);
+    const arrived = makeMessage({ id: "m2", seq: 2 });
+    cache.applyPolledMessages("c1", { messages: [arrived, ...page.messages], nextCursor: null });
+
+    // The polled list is authoritative for unread; the thread merge must not
+    // also bump it, or a polling client would double-count every message.
+    expect(listOf(cache)).toEqual([["c1", 0]]);
+    // And a stream event replaying the same message is already accounted for.
+    cache.applyEvent({ type: "message.created", conversationId: "c1", message: arrived });
+    expect(listOf(cache)).toEqual([["c1", 0]]);
+  });
+
+  it("takes the polled order and unread counts, keeping unmentioned conversations", () => {
+    const cache = cacheWithList([1, 3]);
+    let notifications = 0;
+    cache.subscribe(() => {
+      notifications += 1;
+    });
+
+    cache.applyPolledConversations({
+      conversations: [makeConversation("c2", 4)],
+      nextCursor: null,
+    });
+    // c2 leads on the server's ordering with the server's count; c1 - which the
+    // host had loaded but page one did not mention - keeps its place behind it.
+    expect(listOf(cache)).toEqual([
+      ["c2", 4],
+      ["c1", 1],
+    ]);
+    expect(notifications).toBe(1);
+
+    // An identical page is not a change.
+    cache.applyPolledConversations({
+      conversations: [makeConversation("c2", 4)],
+      nextCursor: null,
+    });
+    expect(notifications).toBe(1);
+  });
+
+  it("ignores a polled list before the host has loaded one", () => {
+    const cache = createChatpackCache({ userId: "alice" });
+    cache.applyPolledConversations({
+      conversations: [makeConversation("c1", 1)],
+      nextCursor: null,
+    });
+    expect(cache.getSnapshot().conversations.data).toBeNull();
+  });
+
+  it("notices a read-state change made in another tab", () => {
+    const cache = cacheWithList([0, 0]);
+    let notifications = 0;
+    cache.subscribe(() => {
+      notifications += 1;
+    });
+    const read: ClientConversation = {
+      ...makeConversation("c1", 0),
+      participants: [
+        { conversationId: "c1", userId: "alice", joinedAt: "x", lastReadMessageId: "m9" },
+      ],
+    };
+    // `unreadCount` is unchanged, so only the participant read-state reveals it.
+    cache.applyPolledConversations({
+      conversations: [read, makeConversation("c2", 0)],
+      nextCursor: null,
+    });
+    expect(notifications).toBe(1);
   });
 });
