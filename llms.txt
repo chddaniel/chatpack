@@ -583,10 +583,14 @@ Exact TypeScript signatures and per-method TSDoc ship in the package's
 `searchMessages` is an optional storage capability. Memory and Drizzle provide
 it. Existing custom adapters may omit it; core then throws `SEARCH_UNSUPPORTED`
 and the HTTP handler returns `501`. Adapters that provide search must return
-non-tombstone participant-scoped results. Matching, relevance, and cursor
-encoding and matching are adapter-defined. Punctuated tokens such as URLs,
-paths, emails, phone numbers, and versions are not portable between adapters;
-document the behavior of each adapter.
+non-tombstone participant-scoped results. First-party adapters use the core
+helpers `tokenizeSearch`, `getSearchTerms`, `countSearchTokens`, and
+`scoreSearchTerms`: Unicode NFKC normalization, lowercase matching, punctuation
+as a separator, all unique query terms required, no stemming or prefix
+matching, and occurrence-sum relevance. This makes URLs, paths, emails, phone
+numbers, versions, and underscored identifiers behave the same in memory and
+Postgres. Custom adapters should use these helpers to preserve the same
+contract; cursors remain opaque and adapter-defined.
 
 ### Entities your adapter stores
 
@@ -672,9 +676,11 @@ else is implementation detail.
     query time (SQL: LEFT JOIN the message row + `COALESCE(read.seq, 0)`).
 11. **Optional search is participant-scoped.** If implemented,
     `searchMessages` must filter by the supplied `userId`, exclude tombstones,
-    rank results deterministically, and return an opaque cursor. Matching,
-    case handling, stemming, and punctuation semantics are adapter-defined;
-    document them. Core applies `canRead` after retrieving candidates.
+    rank results deterministically, and return an opaque cursor. Use the core
+    search helpers for case-insensitive NFKC tokenization, punctuation
+    separation, all-term matching, and occurrence-sum relevance. Core applies
+    `canRead` after retrieving participant-scoped candidates. Dynamic access to
+    non-participant conversations is not supported by this initial design.
 12. **Reaction writes are idempotent and return the full set.** `addReaction`
     with the same `(messageId, userId, emoji)` twice must leave exactly one
     reaction - not two, not an error - so enforce uniqueness in the database

@@ -46,7 +46,13 @@ Exact TypeScript signatures and per-method TSDoc ship in the package's
 it. Existing custom adapters may omit it; `chat.api.searchMessages` and
 `GET /search/messages` then return `SEARCH_UNSUPPORTED` with HTTP status `501`.
 Adapters that provide search must return non-tombstone participant-scoped
-results, but matching, relevance, and cursor encoding are adapter-defined.
+results. Use `tokenizeSearch`, `getSearchTerms`, `countSearchTokens`, and
+`scoreSearchTerms` from `@chatpack/core` for the canonical contract: Unicode
+NFKC normalization, case-insensitive matching, punctuation as a separator, all
+unique query terms required, no stemming or prefix matching, and occurrence-sum
+relevance. Cursors remain adapter-defined and opaque. Core applies `canRead`
+after participant-scoped results; non-participant dynamic access is not
+supported by this initial design.
 
 The entities you store are described in
 [Conversations & Messages](/docs/concepts/conversations-messages#the-data-model).
@@ -125,12 +131,12 @@ does atomicity. Everything else is implementation detail.
     Note `lastReadMessageId` is a message **id**, not a seq: resolve it at
     query time (SQL: LEFT JOIN the message row + `COALESCE(read.seq, 0)`).
 11. **Optional search is participant-scoped.** If you implement
-    `searchMessages`, filter by the supplied `userId`, exclude tombstones, and
-    return an opaque cursor. Core applies `canRead` after retrieving
-    participant-scoped candidates. Matching, ranking, and punctuation
-    semantics are adapter-defined. URLs, paths, emails, phone numbers, and
-    versions can produce different matches across backends; document the
-    behavior of your adapter.
+    `searchMessages`, filter by the supplied `userId`, exclude tombstones,
+    rank deterministically, and return an opaque cursor. Use the core search
+    helpers to preserve the canonical case-insensitive token and relevance
+    semantics. Core applies `canRead` after retrieving participant-scoped
+    candidates; non-participant dynamic access is not supported by this initial
+    design.
 12. **Reaction writes are idempotent and return the full set.** `addReaction`
     with the same `(messageId, userId, emoji)` triple twice must leave exactly
     one reaction - not two, not an error - so enforce uniqueness in the
@@ -156,6 +162,9 @@ If your store speaks SQL, use the official schema as-is; if not, translate the
 shapes and satisfy the invariants instead. Also available programmatically:
 `import { migrationSql, chatpackSchema } from "@chatpack/adapter-drizzle"`
 (`migrationSql` is plain idempotent DDL - no Drizzle required to execute it).
+For an existing database, run `backfillMessageSearchTokens` once after applying
+the migration. New and edited messages are maintained automatically by the
+official Drizzle adapter.
 
 ```sql
 CREATE TABLE IF NOT EXISTS "chatpack_conversations" (
@@ -201,6 +210,15 @@ ALTER TABLE "chatpack_messages"
   ADD COLUMN IF NOT EXISTS "reply_to_message_id" text;
 CREATE UNIQUE INDEX IF NOT EXISTS "chatpack_messages_conv_seq_idx"
   ON "chatpack_messages" ("conversation_id", "seq");
+
+CREATE TABLE IF NOT EXISTS "chatpack_message_search_tokens" (
+  "message_id" text NOT NULL REFERENCES "chatpack_messages"("id") ON DELETE CASCADE,
+  "token" text NOT NULL,
+  "occurrences" integer NOT NULL,
+  PRIMARY KEY ("message_id", "token")
+);
+CREATE INDEX IF NOT EXISTS "chatpack_message_search_tokens_token_idx"
+  ON "chatpack_message_search_tokens" ("token", "message_id");
 
 CREATE TABLE IF NOT EXISTS "chatpack_message_reactions" (
   "message_id" text NOT NULL REFERENCES "chatpack_messages"("id") ON DELETE CASCADE,
@@ -335,9 +353,9 @@ export function myAdapter(client: MyDbClient): StorageAdapter {
       // return { [conversationId]: count };
     },
     async searchMessages({ userId, query, limit, cursor }) {
-      // Search only conversations where userId participates. Exclude
-      // tombstones, match case-insensitively, rank deterministically, and
-      // return an opaque cursor.
+      // Use getSearchTerms/countSearchTokens/scoreSearchTerms from @chatpack/core.
+      // Search only conversations where userId participates. Exclude tombstones,
+      // rank by score, createdAt, then id, and return an opaque cursor.
       // return { messages, nextCursor };
     },
     async addReaction({ messageId, userId, emoji }) {

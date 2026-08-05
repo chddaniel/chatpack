@@ -5,22 +5,23 @@ description: What shipped in v0, what's deliberately out of scope, and where Cha
 
 ## What's in v0
 
-| Feature                                 | Status            |
-| --------------------------------------- | ----------------- |
-| 1:1 conversations (find-or-create)      | ✅ Done (M1)      |
-| Text messages: send, list, edit, delete | ✅ Done (M1)      |
-| Participant-only permissions + hooks    | ✅ Done (M1)      |
-| Durable read-state (`last_read`)        | ✅ Done (M1)      |
-| In-memory storage adapter               | ✅ Done (M1)      |
-| HTTP handler (Next.js App Router)       | ✅ Done (M2)      |
-| Real-time delivery (SSE)                | ✅ Done (M3)      |
-| Drizzle/Postgres adapter                | ✅ Done (M4)      |
-| Launch polish + npm release             | ✅ Done (M5)      |
-| Typing / presence / read-tick plugins   | ✅ Done (v0.next) |
-| Unread counts (`unreadCount`)           | ✅ Done (v0.next) |
-| Redis transport (multi-node SSE)        | ✅ Done (v0.next) |
-| Browser client + React hooks            | ✅ Done (v0.next) |
-| Reactions + quote-replies               | ✅ Done (v0.next) |
+| Feature                                  | Status            |
+| ---------------------------------------- | ----------------- |
+| 1:1 conversations (find-or-create)       | ✅ Done (M1)      |
+| Text messages: send, list, edit, delete  | ✅ Done (M1)      |
+| Participant-only permissions + hooks     | ✅ Done (M1)      |
+| Durable read-state (`last_read`)         | ✅ Done (M1)      |
+| In-memory storage adapter                | ✅ Done (M1)      |
+| HTTP handler (Next.js App Router)        | ✅ Done (M2)      |
+| Real-time delivery (SSE)                 | ✅ Done (M3)      |
+| Drizzle/Postgres adapter                 | ✅ Done (M4)      |
+| Launch polish + npm release              | ✅ Done (M5)      |
+| Typing / presence / read-tick plugins    | ✅ Done (v0.next) |
+| Unread counts (`unreadCount`)            | ✅ Done (v0.next) |
+| Redis transport (multi-node SSE)         | ✅ Done (v0.next) |
+| Browser client + React hooks             | ✅ Done (v0.next) |
+| Reactions + quote-replies                | ✅ Done (v0.next) |
+| Participant-scoped ranked message search | ✅ Done (v0.next) |
 
 ## Deliberately not in scope yet
 
@@ -33,6 +34,9 @@ description: What shipped in v0, what's deliberately out of scope, and where Cha
 - **File uploads / attachments** - use `metadata` to point at files you host.
 - **Push notifications** - your app's job for now.
 - **React UI components** - Chatpack is headless; bring your own frontend.
+- **Non-participant search access** - the initial search implementation scopes
+  storage results to participant conversations; dynamic `canRead` access for
+  support/admin users needs a separate design.
 - **Multi-node `presence()`** - durable events and typing/receipts relay across
   nodes via [`@chatpack/transport-redis`](/docs/realtime/multi-node), but
   presence counts live SSE connections in an in-process `Map`. Shared

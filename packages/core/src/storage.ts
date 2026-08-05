@@ -225,9 +225,10 @@ export interface StorageAdapter {
    * body, case-insensitively, in ranked order. Core applies `canRead` to each
    * returned message's conversation.
    *
-   * This is an optional capability because matching and relevance semantics
-   * are storage-backend specific. First-party adapters implement it; custom
-   * adapters may omit it and core will report `SEARCH_UNSUPPORTED`.
+   * This is an optional capability so existing custom adapters remain valid.
+   * First-party adapters use the canonical tokenizer and score exported by
+   * `@chatpack/core`; custom adapters should use those helpers when they
+   * implement search. Core reports `SEARCH_UNSUPPORTED` when it is omitted.
    */
   searchMessages?(input: SearchMessagesInput): Promise<SearchMessagesResult>;
 

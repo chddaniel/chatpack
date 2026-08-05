@@ -76,6 +76,9 @@ export type {
   CountUnreadInput,
 } from "./storage";
 
+// Canonical message-search semantics for first-party adapters.
+export { countSearchTokens, getSearchTerms, scoreSearchTerms, tokenizeSearch } from "./search";
+
 // HTTP handler (M2) + SSE (M3)
 export { createHandler, type ChatpackHandler, type HandlerOptions } from "./handler";
 

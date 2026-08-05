@@ -33,17 +33,17 @@ export const chat = chatpack({
 
 ## Creating the tables
 
-Chatpack needs four tables (`chatpack_conversations`,
+Chatpack needs five tables (`chatpack_conversations`,
 `chatpack_conversation_participants`, `chatpack_messages`,
-`chatpack_message_reactions`). Users are referenced **by id only** - there is no
-foreign key into your users table.
+`chatpack_message_search_tokens`, `chatpack_message_reactions`). Users are
+referenced **by id only** - there is no foreign key into your users table.
 
 <Callout type="warn">
   **Upgrading an existing database?** Reactions and quote-replies added the
   `chatpack_message_reactions` table plus a `reply_to_message_id` column on `chatpack_messages`.
-  **Re-run the migration before deploying the upgrade.** Every statement is `IF NOT EXISTS` / `ADD
-  COLUMN IF NOT EXISTS`, so re-running the whole script is safe and preserves your data and `seq`
-  counters.
+  **Re-run the migration before deploying the upgrade.** Then run `backfillMessageSearchTokens` once
+  for existing messages. Every statement is `IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS`, so
+  re-running the whole script is safe and preserves your data and `seq` counters.
 </Callout>
 
 <Tabs items={['drizzle-kit (recommended)', 'Idempotent DDL at boot', 'One-statement drivers']}>

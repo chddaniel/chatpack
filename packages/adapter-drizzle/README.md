@@ -41,10 +41,10 @@ export const chat = chatpack({
 
 ## Creating the tables
 
-Chatpack needs four tables (`chatpack_conversations`,
+Chatpack needs five tables (`chatpack_conversations`,
 `chatpack_conversation_participants`, `chatpack_messages`,
-`chatpack_message_reactions`). Users are referenced **by id only** - there is no
-foreign key into your users table.
+`chatpack_message_search_tokens`, `chatpack_message_reactions`). Users are
+referenced **by id only** - there is no foreign key into your users table.
 
 > **⚠️ Upgrading an existing database?** Reactions and quote-replies added the
 > `chatpack_message_reactions` table plus a `reply_to_message_id` column on
@@ -71,6 +71,18 @@ drizzle-kit generate && drizzle-kit migrate
 import { migrationSql } from "@chatpack/adapter-drizzle";
 await pool.query(migrationSql); // node-postgres, postgres.js, PGlite
 ```
+
+If the database already contains messages, rebuild the canonical search token
+table once after the migration:
+
+```ts
+import { backfillMessageSearchTokens } from "@chatpack/adapter-drizzle";
+await backfillMessageSearchTokens(db);
+```
+
+Search uses the same case-insensitive, punctuation-separated token contract as
+the memory adapter. Results require every query term and rank by term
+occurrences, creation time, then message id. Tombstones are excluded.
 
 > **One-statement-per-call drivers** (Neon HTTP, Vercel Postgres, Cloudflare
 > D1) reject multi-statement queries - use `migrationStatements` instead,

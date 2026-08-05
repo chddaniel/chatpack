@@ -81,7 +81,7 @@ const reacted = await chat.api.addReaction({
 reacted.reactions; // [{ emoji: "👍", count: 1, userIds: ["bob"] }]
 await chat.api.removeReaction({ userId: "bob", messageId: message.id, emoji: "👍" });
 
-// search participant conversations (case-insensitive, ranked)
+// search participant conversations (case-insensitive, canonical token matching, ranked)
 const search = await chat.api.searchMessages({
   userId: "bob",
   query: "hello",
@@ -103,6 +103,12 @@ await chat.api.markRead({
   messageId: message.id,
 });
 ```
+
+First-party adapters use the same Unicode NFKC, case-insensitive,
+punctuation-separated token matching. All unique query terms must be present;
+term occurrence count determines relevance before `createdAt` and message id
+tie-breaks. Tombstones are excluded. Core still applies `canRead` after the
+participant scope, so non-participant dynamic access is not supported yet.
 
 ## Return shapes: bare objects, no envelopes
 

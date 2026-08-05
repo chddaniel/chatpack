@@ -1,7 +1,7 @@
 /**
  * The Chatpack Postgres schema (MVP §8), defined with Drizzle ORM.
  *
- * Four tables carry the whole durable domain:
+ * Five tables carry the whole durable domain:
  *
  * - `chatpack_conversations` - one row per 1:1 conversation, unique per
  *   `pair_key` (see `docs/decisions/0002-pair-key.md`). Also holds the
@@ -12,6 +12,8 @@
  * - `chatpack_messages` - messages with monotonic `seq`, soft-delete, the
  *   optional `reply_to_message_id` quote pointer (ADR 0013), and the
  *   `metadata` escape hatch.
+ * - `chatpack_message_search_tokens` - canonical case-insensitive search
+ *   tokens and occurrence counts maintained by the Drizzle adapter.
  * - `chatpack_message_reactions` - one row per (message, user, emoji), unique
  *   on the triple so reacting twice is idempotent (ADR 0013).
  *
@@ -26,12 +28,12 @@
  * @module
  */
 
-import { sql } from "drizzle-orm";
 import {
   bigint,
   index,
   integer,
   jsonb,
+  primaryKey,
   pgTable,
   text,
   timestamp,
@@ -106,12 +108,25 @@ export const messages = pgTable(
     replyToMessageId: text("reply_to_message_id"),
     metadata: jsonb("metadata").notNull().default({}),
   },
+  (table) => [uniqueIndex("chatpack_messages_conv_seq_idx").on(table.conversationId, table.seq)],
+);
+
+/** Canonical tokens used by the Postgres search implementation. */
+export const messageSearchTokens = pgTable(
+  "chatpack_message_search_tokens",
+  {
+    messageId: text("message_id")
+      .notNull()
+      .references(() => messages.id, { onDelete: "cascade" }),
+    token: text("token").notNull(),
+    occurrences: integer("occurrences").notNull(),
+  },
   (table) => [
-    uniqueIndex("chatpack_messages_conv_seq_idx").on(table.conversationId, table.seq),
-    index("chatpack_messages_body_search_idx").using(
-      "gin",
-      sql`to_tsvector('simple', ${table.body})`,
-    ),
+    primaryKey({
+      columns: [table.messageId, table.token],
+      name: "chatpack_message_search_tokens_pk",
+    }),
+    index("chatpack_message_search_tokens_token_idx").on(table.token, table.messageId),
   ],
 );
 
@@ -145,6 +160,7 @@ export const chatpackSchema = {
   conversations,
   conversationParticipants,
   messages,
+  messageSearchTokens,
   messageReactions,
 };
 
@@ -203,8 +219,15 @@ export const migrationStatements: readonly string[] = [
   ADD COLUMN IF NOT EXISTS "reply_to_message_id" text`,
   `CREATE UNIQUE INDEX IF NOT EXISTS "chatpack_messages_conv_seq_idx"
   ON "chatpack_messages" ("conversation_id", "seq")`,
-  `CREATE INDEX IF NOT EXISTS "chatpack_messages_body_search_idx"
-  ON "chatpack_messages" USING gin (to_tsvector('simple', "body"))`,
+  `DROP INDEX IF EXISTS "chatpack_messages_body_search_idx"`,
+  `CREATE TABLE IF NOT EXISTS "chatpack_message_search_tokens" (
+  "message_id" text NOT NULL REFERENCES "chatpack_messages"("id") ON DELETE CASCADE,
+  "token" text NOT NULL,
+  "occurrences" integer NOT NULL,
+  PRIMARY KEY ("message_id", "token")
+)`,
+  `CREATE INDEX IF NOT EXISTS "chatpack_message_search_tokens_token_idx"
+  ON "chatpack_message_search_tokens" ("token", "message_id")`,
   `CREATE TABLE IF NOT EXISTS "chatpack_message_reactions" (
   "message_id" text NOT NULL REFERENCES "chatpack_messages"("id") ON DELETE CASCADE,
   "user_id" text NOT NULL,

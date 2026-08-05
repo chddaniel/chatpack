@@ -32,6 +32,7 @@ import type {
   UpdateLastReadInput,
   UpdateMessageInput,
 } from "@chatpack/core";
+import { countSearchTokens, getSearchTerms, scoreSearchTerms } from "@chatpack/core";
 
 interface ConversationRecord {
   id: string;
@@ -50,27 +51,13 @@ interface SearchCandidate {
   score: number;
 }
 
-const SEARCH_TOKEN =
-  /[\p{L}\p{N}]+(?:[.@][\p{L}\p{N}]+)+|[\p{L}\p{N}]+(?:-[\p{L}\p{N}]+)+|[\p{L}\p{N}]+/gu;
-
-function searchTokens(value: string): string[] {
-  const tokens = value.toLowerCase().match(SEARCH_TOKEN) ?? [];
-  return tokens.flatMap((token) => (token.includes("-") ? [token, ...token.split("-")] : [token]));
-}
-
-function searchTerms(value: string): string[] {
-  return [...new Set(searchTokens(value))];
-}
-
 function searchCandidate(message: Message, terms: string[]): SearchCandidate | null {
   if (message.deletedAt) return null;
-  const tokens = searchTokens(message.body);
-  const counts = new Map<string, number>();
-  for (const token of tokens) counts.set(token, (counts.get(token) ?? 0) + 1);
-  if (!terms.every((term) => counts.has(term))) return null;
+  const score = scoreSearchTerms(countSearchTokens(message.body), terms);
+  if (score === null) return null;
   return {
     message,
-    score: terms.reduce((total, term) => total + (counts.get(term) ?? 0), 0),
+    score,
   };
 }
 
@@ -261,7 +248,7 @@ export function memoryAdapter(): StorageAdapter {
     },
 
     async searchMessages(input: SearchMessagesInput): Promise<SearchMessagesResult> {
-      const terms = searchTerms(input.query);
+      const terms = getSearchTerms(input.query);
       if (terms.length === 0) return { messages: [], nextCursor: null };
 
       const candidates: SearchCandidate[] = [];

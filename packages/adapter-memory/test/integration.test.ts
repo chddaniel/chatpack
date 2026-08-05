@@ -5,7 +5,7 @@
  * The first test is the M1 Definition of Done, verbatim from MVP §11:
  * "two users get a conversation and exchange messages via the core API in a test."
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { ChatpackError, chatpack } from "@chatpack/core";
 import { memoryAdapter } from "../src/index";
@@ -258,6 +258,34 @@ describe("message search", () => {
     expect(stranger.messages).toHaveLength(0);
   });
 
+  it("uses creation time as the tie-break after relevance", async () => {
+    vi.useFakeTimers();
+    try {
+      const chat = createChat();
+      const conversation = await chat.api.getOrCreateConversation({
+        userId: "alice",
+        otherUserId: "bob",
+      });
+      vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+      const older = await chat.api.sendMessage({
+        userId: "alice",
+        conversationId: conversation.id,
+        body: "same term",
+      });
+      vi.setSystemTime(new Date("2026-01-01T00:00:01.000Z"));
+      const newer = await chat.api.sendMessage({
+        userId: "alice",
+        conversationId: conversation.id,
+        body: "same term",
+      });
+
+      const result = await chat.api.searchMessages({ userId: "alice", query: "same" });
+      expect(result.messages.map((message) => message.id)).toEqual([newer.id, older.id]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("keeps filtered results reachable across pages", async () => {
     let deniedConversationId: string | undefined;
     const chat = createChat({
@@ -346,7 +374,7 @@ describe("message search", () => {
     expect(secondPage.messages[0]!.body).toBe("needle");
   });
 
-  it("documents memory punctuation token matching", async () => {
+  it("matches canonical punctuation-separated tokens", async () => {
     const chat = createChat();
     const conversation = await chat.api.getOrCreateConversation({
       userId: "alice",
@@ -368,19 +396,57 @@ describe("message search", () => {
       body: "see the deploy-preview link",
     });
 
-    expect((await chat.api.searchMessages({ userId: "alice", query: "example" })).messages).toEqual(
-      [],
-    );
+    expect(
+      (await chat.api.searchMessages({ userId: "alice", query: "example" })).messages,
+    ).toHaveLength(1);
     expect(
       (await chat.api.searchMessages({ userId: "alice", query: "user@example.com" })).messages,
     ).toHaveLength(1);
-    expect((await chat.api.searchMessages({ userId: "alice", query: "v1" })).messages).toEqual([]);
+    expect((await chat.api.searchMessages({ userId: "alice", query: "v1" })).messages).toHaveLength(
+      1,
+    );
     expect(
       (await chat.api.searchMessages({ userId: "alice", query: "v1.2.3" })).messages,
     ).toHaveLength(1);
     expect(
       (await chat.api.searchMessages({ userId: "alice", query: "deploy-preview" })).messages,
     ).toHaveLength(1);
+  });
+
+  it("matches the same URL, path, phone, host, and version corpus as Drizzle", async () => {
+    const chat = createChat();
+    const conversation = await chat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "bob",
+    });
+    const bodies = [
+      "path is src/index.ts here",
+      "call me on +1-555-0100",
+      "check https://chatpack.dev/docs/realtime for details",
+      "the repo is github.com/chddaniel/chatpack",
+      "read docs/decisions/0015-message-search.md",
+    ];
+    for (const body of bodies) {
+      await chat.api.sendMessage({ userId: "alice", conversationId: conversation.id, body });
+    }
+
+    const cases = [
+      ["src", [bodies[0]!]],
+      ["index.ts", [bodies[0]!]],
+      ["555", [bodies[1]!]],
+      ["1-555-0100", [bodies[1]!]],
+      ["chatpack", [bodies[2]!, bodies[3]!]],
+      ["docs", [bodies[2]!, bodies[4]!]],
+      ["realtime", [bodies[2]!]],
+      ["chddaniel", [bodies[3]!]],
+      ["decisions", [bodies[4]!]],
+      ["0015-message-search.md", [bodies[4]!]],
+    ] as const;
+
+    for (const [query, expected] of cases) {
+      const result = await chat.api.searchMessages({ userId: "alice", query });
+      expect(result.messages.map((message) => message.body).sort()).toEqual([...expected].sort());
+    }
   });
 
   it("hydrates reply previews and reactions", async () => {

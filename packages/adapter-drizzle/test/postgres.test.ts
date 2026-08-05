@@ -11,10 +11,11 @@
  */
 import { PGlite } from "@electric-sql/pglite";
 import { drizzle } from "drizzle-orm/pglite";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { chatpack, ChatpackError, type ChatpackInstance } from "@chatpack/core";
 import {
+  backfillMessageSearchTokens,
   drizzleAdapter,
   migrationSql,
   migrationStatements,
@@ -68,11 +69,13 @@ describe("migrationStatements (single-statement drivers, e.g. Neon HTTP)", () =>
     expect(migrationStatements.map((s) => `${s};`).join("\n\n") + "\n").toBe(migrationSql);
   });
 
-  it("creates the message-body GIN search index", async () => {
+  it("creates the canonical message-token search index", async () => {
     const result = await pglite.query<{ indexname: string }>(
-      `SELECT indexname FROM pg_indexes WHERE tablename = 'chatpack_messages'`,
+      `SELECT indexname FROM pg_indexes WHERE tablename = 'chatpack_message_search_tokens'`,
     );
-    expect(result.rows.map((row) => row.indexname)).toContain("chatpack_messages_body_search_idx");
+    expect(result.rows.map((row) => row.indexname)).toContain(
+      "chatpack_message_search_tokens_token_idx",
+    );
   });
 });
 
@@ -497,7 +500,7 @@ describe("message search on Postgres", () => {
     expect(deletedSearch.messages).toHaveLength(0);
   });
 
-  it("documents Postgres punctuation matching", async () => {
+  it("matches canonical punctuation-separated tokens", async () => {
     const conversation = await chat.api.getOrCreateConversation({
       userId: "alice",
       otherUserId: "bob",
@@ -518,19 +521,80 @@ describe("message search on Postgres", () => {
       body: "see the deploy-preview link",
     });
 
-    expect((await chat.api.searchMessages({ userId: "alice", query: "example" })).messages).toEqual(
-      [],
-    );
+    expect(
+      (await chat.api.searchMessages({ userId: "alice", query: "example" })).messages,
+    ).toHaveLength(1);
     expect(
       (await chat.api.searchMessages({ userId: "alice", query: "user@example.com" })).messages,
     ).toHaveLength(1);
-    expect((await chat.api.searchMessages({ userId: "alice", query: "v1" })).messages).toEqual([]);
+    expect((await chat.api.searchMessages({ userId: "alice", query: "v1" })).messages).toHaveLength(
+      1,
+    );
     expect(
       (await chat.api.searchMessages({ userId: "alice", query: "v1.2.3" })).messages,
     ).toHaveLength(1);
     expect(
       (await chat.api.searchMessages({ userId: "alice", query: "deploy-preview" })).messages,
     ).toHaveLength(1);
+  });
+
+  it("matches the same URL, path, phone, host, and version corpus as memory", async () => {
+    const conversation = await chat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "bob",
+    });
+    const bodies = [
+      "path is src/index.ts here",
+      "call me on +1-555-0100",
+      "check https://chatpack.dev/docs/realtime for details",
+      "the repo is github.com/chddaniel/chatpack",
+      "read docs/decisions/0015-message-search.md",
+    ];
+    for (const body of bodies) {
+      await chat.api.sendMessage({ userId: "alice", conversationId: conversation.id, body });
+    }
+
+    const cases = [
+      ["src", [bodies[0]!]],
+      ["index.ts", [bodies[0]!]],
+      ["555", [bodies[1]!]],
+      ["1-555-0100", [bodies[1]!]],
+      ["chatpack", [bodies[2]!, bodies[3]!]],
+      ["docs", [bodies[2]!, bodies[4]!]],
+      ["realtime", [bodies[2]!]],
+      ["chddaniel", [bodies[3]!]],
+      ["decisions", [bodies[4]!]],
+      ["0015-message-search.md", [bodies[4]!]],
+    ] as const;
+
+    for (const [query, expected] of cases) {
+      const result = await chat.api.searchMessages({ userId: "alice", query });
+      expect(result.messages.map((message) => message.body).sort()).toEqual([...expected].sort());
+    }
+  });
+
+  it("maintains tokens across edits and tombstones", async () => {
+    const conversation = await chat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "bob",
+    });
+    const message = await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "old canonical token",
+    });
+
+    expect(
+      (await chat.api.searchMessages({ userId: "alice", query: "old" })).messages,
+    ).toHaveLength(1);
+    await chat.api.editMessage({ userId: "alice", messageId: message.id, body: "new value" });
+    expect(
+      (await chat.api.searchMessages({ userId: "alice", query: "old" })).messages,
+    ).toHaveLength(0);
+    await chat.api.deleteMessage({ userId: "alice", messageId: message.id });
+    expect(
+      (await chat.api.searchMessages({ userId: "alice", query: "new" })).messages,
+    ).toHaveLength(0);
   });
 
   it("does not search non-participant conversations yet", async () => {
@@ -557,6 +621,33 @@ describe("message search on Postgres", () => {
       query: "searchable",
     });
     expect(support.messages).toHaveLength(0);
+  });
+
+  it("uses creation time as the tie-break after relevance", async () => {
+    vi.useFakeTimers();
+    try {
+      const conversation = await chat.api.getOrCreateConversation({
+        userId: "alice",
+        otherUserId: "bob",
+      });
+      vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+      const older = await chat.api.sendMessage({
+        userId: "alice",
+        conversationId: conversation.id,
+        body: "same term",
+      });
+      vi.setSystemTime(new Date("2026-01-01T00:00:01.000Z"));
+      const newer = await chat.api.sendMessage({
+        userId: "alice",
+        conversationId: conversation.id,
+        body: "same term",
+      });
+
+      const result = await chat.api.searchMessages({ userId: "alice", query: "same" });
+      expect(result.messages.map((message) => message.id)).toEqual([newer.id, older.id]);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -829,6 +920,7 @@ describe("upgrading a pre-ADR-0013 database", () => {
       // Re-running the migration is the whole upgrade: CREATE TABLE IF NOT
       // EXISTS no-ops on chatpack_messages, so the ALTER carries the column.
       await legacy.exec(migrationSql);
+      await backfillMessageSearchTokens(legacyDb);
 
       const upgraded = chatpack({ storage: drizzleAdapter(legacyDb), telemetry: false });
       const reply = await upgraded.api.sendMessage({
@@ -858,6 +950,9 @@ describe("upgrading a pre-ADR-0013 database", () => {
       const legacyMessage = messages.find((m) => m.id === "legacy_1")!;
       expect(legacyMessage.replyToMessageId).toBeNull();
       expect(legacyMessage.replyTo).toBeNull();
+      expect(
+        (await upgraded.api.searchMessages({ userId: "alice", query: "written" })).messages,
+      ).toHaveLength(1);
 
       // And the migration stays idempotent when run a third time.
       await legacy.exec(migrationSql);

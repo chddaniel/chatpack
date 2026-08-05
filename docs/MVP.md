@@ -87,10 +87,11 @@ WhatsApp-style extras feel related to 1:1 because consumer apps bundle them. Cha
 - **Attachments / file uploads** as a first-class API - storage/CDN opinions; huge scope
 - **Push / email notifications**
 - **AI features** - leave `metadata` / `role` escape hatches only; do not design for AI
-- **Threads, search, moderation, multi-tenant admin** - reactions and
-  quote-replies shipped post-MVP (ADR 0012) because they fit the existing seams:
-  reactions are a fourth table with no `seq` and no effect on ordering, and a
-  reply is one nullable pointer column plus a per-request hydrated preview.
+- **Threads, moderation, multi-tenant admin** - message search, reactions, and
+  quote-replies shipped post-MVP because they fit the existing seams: search is
+  participant-scoped, reactions are a separate table with no `seq` and no
+  effect on ordering, and a reply is one nullable pointer column plus a
+  per-request hydrated preview.
   Threads stay a non-goal - they need a thread identity, per-thread counts, and
   nested pagination, which is a different data model, not a column.
 - **Horizontal multi-node fan-out _in core_** - core ships single-node only. The `Transport` seam held: multi-node fan-out shipped as the optional `@chatpack/transport-redis` package (ADR 0012) with **zero changes to core** and no public API change. Multi-node `presence()` is still a non-goal - it needs shared connection state, not a transport.

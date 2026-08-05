@@ -54,7 +54,9 @@ These trip up hand-written and generated clients alike:
   tombstones, and checks `canRead` for each result. Non-participant search is
   not supported yet. Search is an optional storage capability; when the
   configured adapter does not provide it, this route returns `501` with
-  `SEARCH_UNSUPPORTED`.
+  `SEARCH_UNSUPPORTED`. First-party adapters normalize with Unicode NFKC,
+  lowercase, and treat punctuation as a separator; every unique query term is
+  required and term occurrences determine relevance.
 - **The message text field is `body`** (not `text` / `content`).
 - **Every message carries `reactions` and its reply fields.** `reactions` is
   grouped: `[{ emoji, count, userIds }]`, `userIds` earliest-first (at most two

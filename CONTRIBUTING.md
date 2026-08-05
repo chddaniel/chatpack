@@ -111,9 +111,10 @@ Rules of thumb:
   greater than the viewer's read seq (`null` = 0), excluding the viewer's
   own messages; tombstones count. One query per page, never one per id.
 - Optional `searchMessages` returns non-tombstone messages from the requesting
-  user's participant conversations in case-insensitive ranked order. Core
-  applies `canRead` to the participant-scoped results. Non-participant search
-  is not supported yet. Adapters without this capability return
+  user's participant conversations in canonical case-insensitive ranked order.
+  Use the search helpers exported by `@chatpack/core` for matching and scoring.
+  Core applies `canRead` to the participant-scoped results. Non-participant
+  search is not supported yet. Adapters without this capability return
   `SEARCH_UNSUPPORTED` from search requests.
 
 ## Code style
