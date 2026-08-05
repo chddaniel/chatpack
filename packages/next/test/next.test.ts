@@ -76,11 +76,12 @@ describe("toNextRouteHandlers", () => {
       },
     });
 
-    const { GET, POST, PATCH, DELETE } = toNextRouteHandlers(chat);
+    const { GET, POST, PATCH, DELETE, PUT } = toNextRouteHandlers(chat);
     expect(typeof GET).toBe("function");
     expect(typeof POST).toBe("function");
     expect(typeof PATCH).toBe("function");
     expect(typeof DELETE).toBe("function");
+    expect(typeof PUT).toBe("function");
 
     const res = await POST(
       new Request("http://test.local/api/chat/conversations", {

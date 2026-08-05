@@ -5,7 +5,7 @@
  */
 import { describe, expect, it, vi } from "vitest";
 
-import { ChatpackError, chatpack, type TransportEvent } from "@chatpack/core";
+import { ChatpackError, chatpack, type ChatpackPlugin, type TransportEvent } from "@chatpack/core";
 import { memoryAdapter } from "../src/index";
 
 function createChat(options: Partial<Parameters<typeof chatpack>[0]> = {}) {
@@ -234,6 +234,40 @@ describe("hooks on editMessage", () => {
       body: "bye",
     });
     expect(edited.body).toBe("BYE");
+  });
+});
+
+describe("plugin beforeMessageSend", () => {
+  it("runs after the application hook and blocks before persistence", async () => {
+    const calls: string[] = [];
+    const plugin: ChatpackPlugin = {
+      name: "filepack",
+      beforeMessageSend: ({ body }) => {
+        calls.push(`plugin:${body}`);
+        throw new Error("Attachment is not ready.");
+      },
+    };
+    const chat = createChat({
+      hooks: {
+        beforeMessageSend: ({ body }) => {
+          calls.push(`application:${body}`);
+          return { body: `${body}-checked` };
+        },
+      },
+      plugins: [plugin],
+    });
+    const conversation = await conversationBetween(chat);
+
+    await expect(
+      chat.api.sendMessage({ userId: "alice", conversationId: conversation.id, body: "hello" }),
+    ).rejects.toMatchObject({ code: "MESSAGE_REJECTED", message: "Attachment is not ready." });
+    expect(calls).toEqual(["application:hello", "plugin:hello-checked"]);
+
+    const history = await chat.api.listMessages({
+      userId: "alice",
+      conversationId: conversation.id,
+    });
+    expect(history.messages).toEqual([]);
   });
 });
 

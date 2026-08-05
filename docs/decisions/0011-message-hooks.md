@@ -75,9 +75,11 @@ request was well-formed (not 400) and the user is allowed to write (not
 - **Blocking `afterMessageSend` (failure fails the request)** - violates
   durable-first: the message is already stored and broadcast, so failing the
   request would lie to the sender. Rejected.
-- **Plugin-based hooks (ADR 0008 seam)** - plugins are for ephemeral
-  real-time features with their own routes; content gating is core message
-  flow. Rejected.
+- **Plugin-based application hooks (ADR 0008 seam)** - the application hook
+  remains the canonical content rule surface. The plugin seam also exposes a
+  blocking hook for nested integrations that must validate or rewrite after
+  application rules and before persistence; it does not replace the
+  application hook.
 
 ## Consequences
 

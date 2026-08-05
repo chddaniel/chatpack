@@ -18,6 +18,15 @@ export interface ChatpackPlugin {
   name: string;
 
   /**
+   * Handle an explicitly opted-in bearer-capability route before host auth.
+   * The read-only context contains only request, URL, method, segments, and
+   * basePath. This is for trusted in-process plugins.
+   */
+  handleCapabilityRequest?(
+    ctx: PluginCapabilityRequestContext,
+  ): Promise<Response | null> | Response | null;
+
+  /**
    * Handle an HTTP request under basePath that no core route matched.
    * Return a Response to answer it, or null to pass to the next plugin
    * (and ultimately the 404).
@@ -42,7 +51,7 @@ export interface ChatpackPlugin {
 }
 ```
 
-Every hook context extends `PluginContext`:
+Authenticated hook contexts extend `PluginContext`:
 
 <TypeTable
   type={{
@@ -63,10 +72,16 @@ Every hook context extends `PluginContext`:
 - **Notification hooks are fire-and-forget** - a throwing plugin never breaks
   the request that triggered it (core wraps every hook in a try/catch and
   logs).
-- **`handleRequest` is a real route handler**: it runs after core routes miss
-  and before the 404, with auth already resolved (`ctx.userId`). Thrown
-  `ChatpackError`s map to normal JSON error responses. First plugin response
-  wins.
+- **`handleCapabilityRequest` is for narrow bearer-capability routes only**: it
+  runs after path parsing and before auth. Its read-only context has no
+  `api`, `userId`, or `user`. Only trusted in-process plugins should opt in,
+  and the plugin must validate its opaque short-lived capability. Return `null`
+  to continue through normal auth. First response wins. A thrown hook returns
+  an opaque 500 and cannot bypass normal auth.
+- **`handleRequest` is an authenticated route handler**: it runs after core
+  routes miss and before the 404, with auth already resolved (`ctx.userId`).
+  Thrown `ChatpackError`s map to normal JSON error responses. First plugin
+  response wins.
 - **Plugins own their event namespace** - name events like
   `"myplugin.something"`.
 

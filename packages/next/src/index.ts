@@ -12,7 +12,7 @@
  * import { toNextRouteHandlers } from "@chatpack/next";
  * import { chat } from "@/lib/chat";
  *
- * export const { GET, POST, PATCH, DELETE } = toNextRouteHandlers(chat);
+ * export const { GET, POST, PATCH, DELETE, PUT } = toNextRouteHandlers(chat);
  * ```
  *
  * @module
@@ -24,7 +24,7 @@ import type { ChatpackHandler, ChatpackInstance, HandlerOptions } from "@chatpac
 export type NextRouteHandlerOptions = HandlerOptions;
 
 /**
- * Produce App Router route handlers (`GET`, `POST`, `PATCH`, `DELETE`) for a
+ * Produce App Router route handlers (`GET`, `POST`, `PATCH`, `DELETE`, `PUT`) for a
  * Chatpack instance.
  *
  * Mount them in a catch-all route so every Chatpack endpoint is served from

@@ -39,12 +39,23 @@ payload, at }`) is fire-and-forget: never persisted, never replayed. Its
    typing ping and it's gone - which is correct.
 
 2. **A minimal plugin seam lives in core.** `chatpack({ plugins: [...] })`
-   accepts `ChatpackPlugin` objects with exactly the hooks the trio needs and
-   nothing more: `handleRequest` (extra routes, tried after core routes miss,
-   before the 404), `onStreamOpen`/`onStreamClose` (SSE lifecycle),
-   `onMarkRead`, and `onEventDelivered`. Notification hooks are
-   fire-and-forget - a throwing plugin never breaks the request that
-   triggered it, the same rule transport listeners already follow.
+   accepts `ChatpackPlugin` objects with exactly the hooks the trio and nested
+   integrations need: `beforeMessageSend` (a blocking validation/rewrite hook
+   after the application before hook and before persistence),
+   `handleCapabilityRequest` (a trusted opt-in bearer-capability hook tried
+   after path parsing and before host auth), `handleRequest` (extra authenticated routes,
+   tried after core routes miss, before the 404), `onStreamOpen`/
+   `onStreamClose` (SSE lifecycle), `onMarkRead`, and `onEventDelivered`.
+   The capability hook context is read-only and contains only the request, URL,
+   method, parsed segments, and normalized base path. It exposes no Chatpack API,
+   authenticated user, or user id. It is a trusted in-process seam: a plugin
+   opting in must validate its own opaque, short-lived bearer capability.
+   Capability hooks run in registration order; the first response wins and
+   `null` continues to normal auth. A thrown capability hook returns an opaque
+   500 and never bypasses normal auth. A throwing notification hook never breaks
+   the request that triggered it, the same rule transport listeners already
+   follow. A non-`ChatpackError` from the blocking hook maps to
+   `MESSAGE_REJECTED`, matching the application hook.
 
 3. **First-party ephemeral plugins ship inside `@chatpack/core`** as a subpath
    export: `import { typing, presence, receipts } from "@chatpack/core/plugins"`.
@@ -89,3 +100,8 @@ payload, at }`) is fire-and-forget: never persisted, never replayed. Its
   Clients dedupe by `payload.messageId`; the durable truth is always in
   storage.
 - **Supersedes** the `@chatpack/plugin-*` package naming in MVP §4.
+- Plugin request contexts include the handler's normalized `basePath`, so
+  nested plugins can build routes for custom mounts.
+- Capability hooks are for opaque, short-lived bearer capabilities only. Plugins must keep
+  planning, completion, metadata, deletion, target creation, and other control
+  routes in authenticated `handleRequest`.

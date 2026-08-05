@@ -17,7 +17,7 @@ The HTTP layer lives in core as `createHandler()`
 (`packages/core/src/handler.ts`), speaking only WHATWG `Request`/`Response`.
 `chat.handler()` returns the same function under several names:
 
-- `GET` / `POST` / `PATCH` / `DELETE` - re-exportable verbatim from a Next.js
+- `GET` / `POST` / `PATCH` / `DELETE` / `PUT` - re-exportable verbatim from a Next.js
   App Router route file;
 - `fetch` - the generic entry point for `Bun.serve`, Deno, and Workers.
 

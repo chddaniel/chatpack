@@ -306,6 +306,34 @@ importers:
         specifier: ^3.0.0
         version: 3.2.7(@types/debug@4.1.13)(@types/node@26.1.1)(jiti@2.7.0)(lightningcss@1.32.0)(yaml@2.9.0)
 
+  packages/file:
+    dependencies:
+      '@filepack/client':
+        specifier: ^0.1.0
+        version: 0.1.0
+      '@filepack/core':
+        specifier: ^0.1.0
+        version: 0.1.0
+    devDependencies:
+      '@chatpack/core':
+        specifier: workspace:^
+        version: link:../core
+      '@filepack/adapter-memory':
+        specifier: ^0.1.0
+        version: 0.1.0
+      '@filepack/storage-local':
+        specifier: ^0.1.0
+        version: 0.1.0
+      tsup:
+        specifier: ^8.3.5
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.25)(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@26.1.2)(jiti@2.7.0)(lightningcss@1.32.0)(yaml@2.9.0)
+
   packages/next:
     dependencies:
       '@chatpack/core':
@@ -876,6 +904,22 @@ packages:
   '@eslint/plugin-kit@0.4.1':
     resolution: {integrity: sha512-43/qtrDUokr7LJqoF2c3+RInu/t4zfrpYdoSDfYyhg52rwLV6TnOvdG4fXm7IkSB3wErkcmJS9iEhjVtOSEjjA==}
     engines: {node: ^18.18.0 || ^20.9.0 || >=21.1.0}
+
+  '@filepack/adapter-memory@0.1.0':
+    resolution: {integrity: sha512-bnrQGq80PlepbTcyV0Jx8yYIx8Lhbke/hnQXVlcWoiL/pTAAvf52XvSYBdQC4Mj2AtsgLJh+OAmdfpbRwIxo9g==}
+    engines: {node: '>=20'}
+
+  '@filepack/client@0.1.0':
+    resolution: {integrity: sha512-wzONBDLX2BzG1+Dhm7x+R5KPHNLnEe+dCG12BDGAKOUS9/DxK1gEHaS56PQn38znMTAQjk4X98WfzN7tc2WPtA==}
+    engines: {node: '>=20'}
+
+  '@filepack/core@0.1.0':
+    resolution: {integrity: sha512-qkF0DmiTtDjWDUDF0rO6lWZKkE1rkGoPD/0Dq9idxGb3zVh+jzkOzHQncl/r7mRxLG+qHApSvvyLjdpSaTcV6w==}
+    engines: {node: '>=20'}
+
+  '@filepack/storage-local@0.1.0':
+    resolution: {integrity: sha512-s5OBIq3dXyBKrQvyGrNk5KGA/Nyqb6GLjrGMbi4lSXXMmAwdD3Pn5qYzK+2pvN9sKTOPe4O6BRAyLYxrWOI1rQ==}
+    engines: {node: '>=20'}
 
   '@floating-ui/core@1.8.0':
     resolution: {integrity: sha512-0CIZ5itps/8x7BG8dEIhs53BvCUH2PCoogtakwRTut+Arm58sJooJ0AuZhLw2HJYIR5cMLNPBSS728sPho2khQ==}
@@ -5004,6 +5048,22 @@ snapshots:
     dependencies:
       '@eslint/core': 0.17.0
       levn: 0.4.1
+
+  '@filepack/adapter-memory@0.1.0':
+    dependencies:
+      '@filepack/core': 0.1.0
+
+  '@filepack/client@0.1.0':
+    dependencies:
+      '@filepack/core': 0.1.0
+
+  '@filepack/core@0.1.0':
+    dependencies:
+      '@standard-schema/spec': 1.1.0
+
+  '@filepack/storage-local@0.1.0':
+    dependencies:
+      '@filepack/core': 0.1.0
 
   '@floating-ui/core@1.8.0':
     dependencies:

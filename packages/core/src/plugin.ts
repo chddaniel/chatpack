@@ -1,16 +1,19 @@
 /**
  * The in-core plugin seam (`docs/decisions/0008`).
  *
- * Plugins extend Chatpack with real-time behavior - extra HTTP routes and
- * reactions to core actions - without touching storage. The first-party trio
+ * Plugins extend Chatpack with real-time behavior, nested HTTP routes, and
+ * blocking message validation without touching storage. The first-party trio
  * (typing, presence, receipts) lives in `@chatpack/core/plugins`; the seam is
- * deliberately minimal: exactly the hooks those plugins need and nothing more.
+ * deliberately minimal: exactly the hooks those integrations need.
  *
  * Rules:
  *
  * - Notification hooks (`onStreamOpen`, `onStreamClose`, `onMarkRead`,
  *   `onEventDelivered`) are fire-and-forget: a throwing plugin never breaks
  *   the request that triggered it (same rule as transport listeners).
+ * - `handleCapabilityRequest` is a trusted opt-in bearer-capability route
+ *   handler. It runs after path parsing and before host auth. Its read-only
+ *   context contains no Chatpack API or authenticated user.
  * - `handleRequest` is a real route handler: it runs after core routes miss
  *   and before the 404. Thrown {@link ChatpackError}s map to normal JSON
  *   error responses.
@@ -19,6 +22,8 @@
  */
 
 import type { ChatpackApi } from "./chatpack";
+import { ChatpackError } from "./errors";
+import type { BeforeMessageSendContext, BeforeMessageSendResult, ChatpackUser } from "./config";
 import type { ChatEvent, EphemeralEvent, Transport } from "./transport";
 
 /** Input for {@link PluginContext.publishEphemeral}. */
@@ -48,6 +53,8 @@ export interface PluginContext {
 
 /** Context for {@link ChatpackPlugin.handleRequest}. */
 export interface PluginRequestContext extends PluginContext {
+  /** The handler path prefix that produced this context. */
+  basePath: string;
   /** The incoming request. */
   request: Request;
   /** Parsed request URL. */
@@ -58,7 +65,32 @@ export interface PluginRequestContext extends PluginContext {
   segments: string[];
   /** The authenticated user id (auth already ran). */
   userId: string;
+  /** The complete authenticated user returned by the host auth hook. */
+  user: ChatpackUser;
 }
+
+/**
+ * Read-only context for {@link ChatpackPlugin.handleCapabilityRequest}.
+ *
+ * This is a trusted opt-in pre-auth seam for opaque bearer-capability routes.
+ * It intentionally contains no authenticated user, Chatpack API, or domain
+ * state. Only a plugin that is trusted as in-process server code should use it.
+ */
+export interface PluginCapabilityRequestContext {
+  /** The handler path prefix that produced this context. */
+  readonly basePath: string;
+  /** The incoming request, unchanged. */
+  readonly request: Request;
+  /** Parsed request URL. */
+  readonly url: URL;
+  /** Uppercased HTTP method. */
+  readonly method: string;
+  /** Path segments after `basePath`. */
+  readonly segments: readonly string[];
+}
+
+/** Context for {@link ChatpackPlugin.beforeMessageSend}. */
+export interface PluginBeforeMessageSendContext extends PluginContext, BeforeMessageSendContext {}
 
 /** Context for {@link ChatpackPlugin.onStreamOpen} / {@link ChatpackPlugin.onStreamClose}. */
 export interface PluginStreamContext extends PluginContext {
@@ -104,11 +136,29 @@ export interface ChatpackPlugin {
   /** Unique plugin name, used in logs. */
   name: string;
   /**
+   * Runs after the application before hook and before message persistence.
+   * Return a rewrite, or nothing to accept the current message. A throwing
+   * non-Chatpack error becomes `MESSAGE_REJECTED`.
+   */
+  beforeMessageSend?(
+    ctx: PluginBeforeMessageSendContext,
+  ): Promise<BeforeMessageSendResult | void> | BeforeMessageSendResult | void;
+  /**
    * Handle an HTTP request under `basePath` that no core route matched.
    * Return a `Response` to answer it, or `null` to pass to the next plugin
    * (and ultimately the 404).
    */
   handleRequest?(ctx: PluginRequestContext): Promise<Response | null> | Response | null;
+  /**
+   * Handle an explicitly opted-in bearer-capability request before host auth.
+   * Return a `Response` to claim it, or `null` to continue through normal auth.
+   * This is a trusted in-process hook: it receives only a read-only,
+   * authentication-free request context and no Chatpack API or domain state.
+   * Capability validation remains the responsibility of the claiming plugin.
+   */
+  handleCapabilityRequest?(
+    ctx: PluginCapabilityRequestContext,
+  ): Promise<Response | null> | Response | null;
   /** A user's SSE stream connected. Fire-and-forget. */
   onStreamOpen?(ctx: PluginStreamContext): void;
   /** A user's SSE stream disconnected. Fire-and-forget. */
@@ -131,14 +181,20 @@ export interface PluginRuntime {
   /** Whether any plugin is registered (lets hot paths skip work). */
   hasPlugins: boolean;
   publishEphemeral(input: PublishEphemeralInput): void;
+  /** First capability response wins; `null` continues to normal auth. */
+  handleCapabilityRequest(input: PluginCapabilityRequestContext): Promise<Response | null>;
   /** First plugin response wins; `null` means "no plugin claimed the route". */
   handleRequest(input: {
     request: Request;
     url: URL;
     method: string;
     segments: string[];
+    basePath: string;
     userId: string;
+    user: ChatpackUser;
   }): Promise<Response | null>;
+  /** Run blocking plugin message hooks in registration order. */
+  runBeforeMessageSend(ctx: BeforeMessageSendContext): Promise<BeforeMessageSendResult>;
   notifyStreamOpen(userId: string): void;
   notifyStreamClose(userId: string): void;
   notifyMarkRead(input: {
@@ -184,6 +240,15 @@ export function createPluginRuntime(
     hasPlugins: plugins.length > 0,
     publishEphemeral,
 
+    async handleCapabilityRequest(input) {
+      for (const plugin of plugins) {
+        if (!plugin.handleCapabilityRequest) continue;
+        const response = await plugin.handleCapabilityRequest({ ...input });
+        if (response !== null) return response;
+      }
+      return null;
+    },
+
     async handleRequest(input) {
       for (const plugin of plugins) {
         if (!plugin.handleRequest) continue;
@@ -191,6 +256,32 @@ export function createPluginRuntime(
         if (response !== null) return response;
       }
       return null;
+    },
+
+    async runBeforeMessageSend(input) {
+      let current: BeforeMessageSendContext = input;
+      for (const plugin of plugins) {
+        if (!plugin.beforeMessageSend) continue;
+
+        let result: BeforeMessageSendResult | void;
+        try {
+          result = await plugin.beforeMessageSend({ ...context, ...current });
+        } catch (err) {
+          if (err instanceof ChatpackError) throw err;
+          throw new ChatpackError(
+            "MESSAGE_REJECTED",
+            err instanceof Error && err.message ? err.message : "Message rejected.",
+          );
+        }
+
+        current = {
+          ...current,
+          ...(result?.body !== undefined ? { body: result.body } : {}),
+          ...(result?.metadata !== undefined ? { metadata: result.metadata } : {}),
+        };
+      }
+
+      return { body: current.body, metadata: current.metadata };
     },
 
     notifyStreamOpen(userId) {

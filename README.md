@@ -173,7 +173,7 @@ export const chat = chatpack({
 ```ts
 // app/api/chat/[...chatpack]/route.ts
 import { chat } from "@/lib/chat";
-export const { GET, POST, PATCH, DELETE } = chat.handler();
+export const { GET, POST, PATCH, DELETE, PUT } = chat.handler();
 ```
 
 Or, with the [`@chatpack/next`](./packages/next) helper (same result, reads
@@ -182,7 +182,7 @@ better):
 ```ts
 import { toNextRouteHandlers } from "@chatpack/next";
 import { chat } from "@/lib/chat";
-export const { GET, POST, PATCH, DELETE } = toNextRouteHandlers(chat);
+export const { GET, POST, PATCH, DELETE, PUT } = toNextRouteHandlers(chat);
 ```
 
 > **The route file must be a catch-all** (`[...chatpack]` in Next.js) -
@@ -199,7 +199,7 @@ send/list/edit/delete messages, read-state, and a **live SSE stream** at
 `/api/chat/stream`, with your auth enforced on every request.
 
 Not on Next.js? The handler is Web-standard (`Request` → `Response`) and
-`GET`/`POST`/`PATCH`/`DELETE`/`fetch` are **all the same function** - the
+`GET`/`POST`/`PATCH`/`DELETE`/`PUT`/`fetch` are **all the same function** - the
 method names only exist so they can be re-exported from a Next.js route file.
 Any of them serves every route, including `/stream`:
 

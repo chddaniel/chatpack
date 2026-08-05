@@ -40,7 +40,7 @@ export const chat = chatpack({
 import { toNextRouteHandlers } from "@chatpack/next";
 import { chat } from "@/lib/chat";
 
-export const { GET, POST, PATCH, DELETE } = toNextRouteHandlers(chat);
+export const { GET, POST, PATCH, DELETE, PUT } = toNextRouteHandlers(chat);
 ```
 
 > The route file must be a **catch-all** (`[...chatpack]`) so every sub-path
@@ -49,7 +49,7 @@ export const { GET, POST, PATCH, DELETE } = toNextRouteHandlers(chat);
 Mounting somewhere other than `/api/chat`? Pass the base path:
 
 ```ts
-export const { GET, POST, PATCH, DELETE } = toNextRouteHandlers(chat, {
+export const { GET, POST, PATCH, DELETE, PUT } = toNextRouteHandlers(chat, {
   basePath: "/api/messaging",
 });
 ```
