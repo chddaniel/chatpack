@@ -86,12 +86,29 @@ type ParticipantRow = typeof conversationParticipants.$inferSelect;
 type MessageRow = typeof messages.$inferSelect;
 type ReactionRow = typeof messageReactions.$inferSelect;
 
-function searchTokenRows(messageId: string, body: string) {
+interface SearchTokenRow {
+  messageId: string;
+  token: string;
+  occurrences: number;
+}
+
+const SEARCH_TOKEN_BATCH_SIZE = 1000;
+
+function searchTokenRows(messageId: string, body: string): SearchTokenRow[] {
   return [...countSearchTokens(body)].map(([token, occurrences]) => ({
     messageId,
     token,
     occurrences,
   }));
+}
+
+async function insertSearchTokenRows(
+  rows: SearchTokenRow[],
+  insert: (batch: SearchTokenRow[]) => Promise<void>,
+): Promise<void> {
+  for (let offset = 0; offset < rows.length; offset += SEARCH_TOKEN_BATCH_SIZE) {
+    await insert(rows.slice(offset, offset + SEARCH_TOKEN_BATCH_SIZE));
+  }
 }
 
 /**
@@ -106,9 +123,9 @@ export async function backfillMessageSearchTokens(db: DrizzlePgDatabase): Promis
   const tokens = rows.flatMap((row) => (row.deletedAt ? [] : searchTokenRows(row.id, row.body)));
 
   await db.delete(messageSearchTokens);
-  for (let offset = 0; offset < tokens.length; offset += 1000) {
-    await db.insert(messageSearchTokens).values(tokens.slice(offset, offset + 1000));
-  }
+  await insertSearchTokenRows(tokens, async (batch) => {
+    await db.insert(messageSearchTokens).values(batch);
+  });
 }
 
 function generateId(prefix: string): string {
@@ -364,8 +381,9 @@ export function drizzleAdapter(db: DrizzlePgDatabase): StorageAdapter {
         if (!row) {
           throw new Error("drizzleAdapter: message insert returned no row.");
         }
-        const tokenRows = searchTokenRows(row.id, row.body);
-        if (tokenRows.length > 0) await tx.insert(messageSearchTokens).values(tokenRows);
+        await insertSearchTokenRows(searchTokenRows(row.id, row.body), async (batch) => {
+          await tx.insert(messageSearchTokens).values(batch);
+        });
         return toMessage(row);
       });
     },
@@ -502,8 +520,9 @@ export function drizzleAdapter(db: DrizzlePgDatabase): StorageAdapter {
         if (input.body !== undefined || input.deletedAt !== undefined) {
           await tx.delete(messageSearchTokens).where(eq(messageSearchTokens.messageId, row.id));
           if (!row.deletedAt) {
-            const tokenRows = searchTokenRows(row.id, row.body);
-            if (tokenRows.length > 0) await tx.insert(messageSearchTokens).values(tokenRows);
+            await insertSearchTokenRows(searchTokenRows(row.id, row.body), async (batch) => {
+              await tx.insert(messageSearchTokens).values(batch);
+            });
           }
         }
         return toMessage(row);

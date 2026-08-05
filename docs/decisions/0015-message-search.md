@@ -41,7 +41,6 @@ Results order by relevance descending, creation time descending, then message
 id descending as a stable tie-break. Tombstones are excluded because their
 content was deleted and must not reappear in search.
 
-The Drizzle schema adds a GIN expression index on the simple body vector.
 The HTTP surface is `GET /search/messages?q=&limit=&cursor=` and returns
 `{ messages, nextCursor }`. No client hook is added in this milestone.
 

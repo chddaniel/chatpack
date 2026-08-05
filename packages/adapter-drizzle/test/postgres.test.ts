@@ -597,6 +597,37 @@ describe("message search on Postgres", () => {
     ).toHaveLength(0);
   });
 
+  it("batches token inserts for large sends and edits", async () => {
+    const conversation = await chat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "bob",
+    });
+    const sentBody = Array.from({ length: 25_000 }, (_, index) => `token${index}`).join(" ");
+    const message = await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: sentBody,
+    });
+
+    expect(
+      (await chat.api.searchMessages({ userId: "alice", query: "token24999" })).messages.map(
+        (result) => result.id,
+      ),
+    ).toEqual([message.id]);
+
+    const editedBody = Array.from({ length: 25_000 }, (_, index) => `edited${index}`).join(" ");
+    await chat.api.editMessage({ userId: "alice", messageId: message.id, body: editedBody });
+
+    expect(
+      (await chat.api.searchMessages({ userId: "alice", query: "token24999" })).messages,
+    ).toHaveLength(0);
+    expect(
+      (await chat.api.searchMessages({ userId: "alice", query: "edited24999" })).messages.map(
+        (result) => result.id,
+      ),
+    ).toEqual([message.id]);
+  });
+
   it("does not search non-participant conversations yet", async () => {
     const supportChat = chatpack({
       storage: drizzleAdapter(db),
