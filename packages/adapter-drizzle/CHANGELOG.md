@@ -1,5 +1,18 @@
 # @chatpack/adapter-drizzle
 
+## 0.4.1
+
+### Patch Changes
+
+- 76ec258: Add case-insensitive, ranked message search across participant conversations.
+  Search is available through the server API and `GET /search/messages` when the
+  configured storage adapter provides the optional search capability. Memory and
+  Drizzle share canonical punctuation-separated token matching; existing Drizzle
+  databases must run the exported search-token backfill once after migration.
+- Updated dependencies [76ec258]
+- Updated dependencies [99e22c4]
+  - @chatpack/core@0.6.0
+
 ## 0.4.0
 
 ### Minor Changes

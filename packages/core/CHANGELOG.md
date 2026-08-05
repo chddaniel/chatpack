@@ -1,5 +1,16 @@
 # @chatpack/core
 
+## 0.6.0
+
+### Minor Changes
+
+- 76ec258: Add case-insensitive, ranked message search across participant conversations.
+  Search is available through the server API and `GET /search/messages` when the
+  configured storage adapter provides the optional search capability. Memory and
+  Drizzle share canonical punctuation-separated token matching; existing Drizzle
+  databases must run the exported search-token backfill once after migration.
+- 99e22c4: Add the `afterMessageMutation` hook for post-persistence send, edit, and delete side-effects. Keep `afterMessageSend` as a deprecated compatibility hook.
+
 ## 0.5.0
 
 ### Minor Changes
