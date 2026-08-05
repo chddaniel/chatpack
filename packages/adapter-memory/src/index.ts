@@ -50,15 +50,21 @@ interface SearchCandidate {
   score: number;
 }
 
-const SEARCH_TOKEN = /[\p{L}\p{N}]+/gu;
+const SEARCH_TOKEN =
+  /[\p{L}\p{N}]+(?:[.@][\p{L}\p{N}]+)+|[\p{L}\p{N}]+(?:-[\p{L}\p{N}]+)+|[\p{L}\p{N}]+/gu;
+
+function searchTokens(value: string): string[] {
+  const tokens = value.toLowerCase().match(SEARCH_TOKEN) ?? [];
+  return tokens.flatMap((token) => (token.includes("-") ? [token, ...token.split("-")] : [token]));
+}
 
 function searchTerms(value: string): string[] {
-  return [...new Set(value.toLowerCase().match(SEARCH_TOKEN) ?? [])];
+  return [...new Set(searchTokens(value))];
 }
 
 function searchCandidate(message: Message, terms: string[]): SearchCandidate | null {
   if (message.deletedAt) return null;
-  const tokens = message.body.toLowerCase().match(SEARCH_TOKEN) ?? [];
+  const tokens = searchTokens(message.body);
   const counts = new Map<string, number>();
   for (const token of tokens) counts.set(token, (counts.get(token) ?? 0) + 1);
   if (!terms.every((term) => counts.has(term))) return null;
@@ -269,14 +275,18 @@ export function memoryAdapter(): StorageAdapter {
       candidates.sort(compareSearchCandidates);
 
       const cursor = input.cursor ? decodeSearchCursor(input.cursor) : null;
-      const start = cursor
+      const afterCursor = cursor
         ? candidates.findIndex(
             (candidate) =>
-              candidate.score === cursor[0] &&
-              candidate.message.createdAt.getTime() === cursor[1] &&
-              candidate.message.id === cursor[2],
-          ) + 1
+              candidate.score < cursor[0] ||
+              (candidate.score === cursor[0] &&
+                candidate.message.createdAt.getTime() < cursor[1]) ||
+              (candidate.score === cursor[0] &&
+                candidate.message.createdAt.getTime() === cursor[1] &&
+                candidate.message.id < cursor[2]),
+          )
         : 0;
+      const start = afterCursor === -1 ? candidates.length : afterCursor;
       const page = candidates.slice(start, start + input.limit + 1);
       const visible = page.slice(0, input.limit);
       const last = visible[visible.length - 1];

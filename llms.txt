@@ -377,7 +377,8 @@ Semantics that trip up generated clients:
   (the message says *why*: bad hook return shape vs. missing cookie vs.
   unparsed cookie), 400 `INVALID_INPUT`, 403 `FORBIDDEN_*`, 404 `*_NOT_FOUND`,
   409 `MESSAGE_DELETED`, 422 `MESSAGE_REJECTED` (a `beforeMessageSend` hook
-  refused the message), 500 `INTERNAL_ERROR` (opaque).
+  refused the message), 501 `SEARCH_UNSUPPORTED` (storage has no search
+  capability), 500 `INTERNAL_ERROR` (opaque).
 - **Auth runs before routing** - an unauthenticated request to a wrong path
   still 401s. Fix auth first; then a lingering 404 `NOT_FOUND` means your
   mount path/basePath is wrong.
@@ -557,7 +558,7 @@ clouds, ...).
 ## The contract
 
 Implement the `StorageAdapter` interface exported from `@chatpack/core` and
-pass it as `chatpack({ storage: yourAdapter() })`. Fifteen async methods:
+pass it as `chatpack({ storage: yourAdapter() })`. Fourteen required async methods:
 
 | Method                          | Contract                                                                  |
 | ------------------------------- | ------------------------------------------------------------------------- |
@@ -572,13 +573,19 @@ pass it as `chatpack({ storage: yourAdapter() })`. Fifteen async methods:
 | `updateMessage`                 | Patch body / `editedAt` / `deletedAt` in place; throw if id unknown       |
 | `updateLastRead`                | Set a participant's `lastReadMessageId`                                   |
 | `countUnread`                   | Batched per-conversation unread counts for one viewer (invariant 10)      |
-| `searchMessages`                | Participant-scoped, case-insensitive ranked message search               |
-| `addReaction`                   | Idempotent insert; return the message's **full** reaction set (inv. 11)   |
-| `removeReaction`                | Idempotent delete; return the remaining set (inv. 11)                     |
-| `listReactionsByMessageIds`     | Batched reactions for a page, ascending `createdAt` (invariant 12)        |
+| `addReaction`                   | Idempotent insert; return the message's **full** reaction set (inv. 12)   |
+| `removeReaction`                | Idempotent delete; return the remaining set (inv. 12)                     |
+| `listReactionsByMessageIds`     | Batched reactions for a page, ascending `createdAt` (invariant 13)        |
 
 Exact TypeScript signatures and per-method TSDoc ship in the package's
 `.d.ts` (`@chatpack/core`, `storage.ts` module).
+
+`searchMessages` is an optional storage capability. Memory and Drizzle provide
+it. Existing custom adapters may omit it; core then throws `SEARCH_UNSUPPORTED`
+and the HTTP handler returns `501`. Adapters that provide search must return
+non-tombstone participant-scoped results. Matching, relevance, and cursor
+encoding are adapter-defined; first-party adapters use case-insensitive
+whole-token matching with no stemming.
 
 ### Entities your adapter stores
 
@@ -621,10 +628,8 @@ else is implementation detail.
 3. **Adapters generate ids.** `getOrCreateDirectConversation` and `addMessage`
    create the `id` themselves (any unique string; the official adapters use
    prefixed random ids like `msg_<uuid>`). Ids must be unique and stable.
-4. **Adapters never enforce custom permissions.** Core validates participants
-   and permission hooks *before* calling you. Return whatever is asked for.
-   The `searchMessages` method is the scoped exception: it applies the required
-   participant filter supplied by `userId`.
+4. **Adapters never enforce permissions.** Core validates participants and
+   permission hooks *before* calling you. Return whatever is asked for.
    Corollary for hosted platforms: the adapter must run **server-side with
    full DB privileges** (e.g. the Supabase service-role key), and the
    Chatpack tables must NOT be readable or writable by browser/anon clients -
@@ -664,9 +669,10 @@ else is implementation detail.
     whole page of conversations - do it in one query, not one per id.
     Note `lastReadMessageId` is a message **id**, not a seq: resolve it at
     query time (SQL: LEFT JOIN the message row + `COALESCE(read.seq, 0)`).
-11. **Search is participant-scoped.** `searchMessages` must filter by the
-    supplied `userId`, match case-insensitively, exclude tombstones, rank
-    results deterministically, and return an opaque cursor.
+11. **Optional search is participant-scoped.** If implemented,
+    `searchMessages` must filter by the supplied `userId`, match
+    case-insensitively, exclude tombstones, rank results deterministically, and
+    return an opaque cursor. Core applies `canRead` after retrieving candidates.
 12. **Reaction writes are idempotent and return the full set.** `addReaction`
     with the same `(messageId, userId, emoji)` twice must leave exactly one
     reaction - not two, not an error - so enforce uniqueness in the database
@@ -677,7 +683,7 @@ else is implementation detail.
     the conversation's `lastSeq` or activity timestamp - a reaction is not a
     message, so it must not reorder the conversation list or move the
     `Last-Event-ID` baseline. Only `addMessage` bumps those.
-12. **`listReactionsByMessageIds` is batched and ordered.** All reactions on
+13. **`listReactionsByMessageIds` is batched and ordered.** All reactions on
     the given messages in **one** query (a page of messages, not one call per
     message), sorted ascending by `createdAt` so core's aggregated `userIds`
     come out earliest-first. Unknown ids are simply absent; an empty input
@@ -787,7 +793,7 @@ How the reference implementation satisfies the two hard invariants
   ```
 
   Note what is *absent*: no `UPDATE chatpack_conversations`. Reacting must not
-  advance `last_seq` or `last_activity_at` (invariant 11).
+  advance `last_seq` or `last_activity_at` (invariant 12).
 
 ### Non-SQL platforms (Convex, Firestore, ...)
 
@@ -798,7 +804,7 @@ functions) and the `StorageAdapter` object calls them through the Convex
 client; `addMessage` is a single mutation (read counter → increment → insert),
 which is automatically a serializable transaction, satisfying invariant 2
 with no extra machinery. Enforce invariant 1 with an index/lookup on
-`pairKey` inside one mutation, and invariant 11 with a lookup on the
+`pairKey` inside one mutation, and invariant 12 with a lookup on the
 `(messageId, userId, emoji)` triple inside the reaction mutation.
 
 ## Skeleton
@@ -856,6 +862,7 @@ export function myAdapter(client: MyDbClient): StorageAdapter {
       // Tombstones count. One batched query, not one per id (invariant 10).
       // return { [conversationId]: count };
     },
+    // Optional capability. Omit this method when backend search is not available.
     async searchMessages({ userId, query, limit, cursor }) {
       // Search only conversations where userId participates. Exclude
       // tombstones, match case-insensitively, rank deterministically, and
@@ -864,7 +871,7 @@ export function myAdapter(client: MyDbClient): StorageAdapter {
     },
     async addReaction({ messageId, userId, emoji }) {
       // Insert-on-conflict-do-nothing on the (messageId, userId, emoji)
-      // triple, then return ALL reactions on the message (invariant 11).
+      // triple, then return ALL reactions on the message (invariant 12).
       // Do NOT touch the conversation's seq counter or activity timestamp.
       // return reactions;
     },

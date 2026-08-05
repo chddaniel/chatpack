@@ -291,6 +291,32 @@ describe("message search over HTTP", () => {
     expect(response.status).toBe(200);
     expect(((await response.json()) as { messages: { body: string }[] }).messages).toHaveLength(0);
   });
+
+  it("returns 501 when the storage adapter lacks search support", async () => {
+    const storage = memoryAdapter();
+    delete storage.searchMessages;
+    const chat = chatpack({
+      storage,
+      telemetry: false,
+      auth: (request) => {
+        const userId = request.headers.get("x-user-id");
+        return userId ? { id: userId } : null;
+      },
+    });
+
+    const response = await chat.handler().GET(
+      new Request(`${BASE}/search/messages?q=hello`, {
+        headers: { "x-user-id": "alice" },
+      }),
+    );
+    expect(response.status).toBe(501);
+    expect(await response.json()).toEqual({
+      error: {
+        code: "SEARCH_UNSUPPORTED",
+        message: "Message search is not supported by this storage adapter.",
+      },
+    });
+  });
 });
 
 describe("validation and error mapping", () => {

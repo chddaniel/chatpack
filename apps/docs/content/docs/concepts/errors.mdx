@@ -25,6 +25,7 @@ Statuses are mapped from the code:
 | 409    | `MESSAGE_DELETED`                                          | editing a deleted message                                                      |
 | 422    | `MESSAGE_REJECTED`                                         | a [`beforeMessageSend` hook](/docs/concepts/message-hooks) refused the message |
 | 500    | `INTERNAL_ERROR`                                           | unexpected server error (opaque)                                               |
+| 501    | `SEARCH_UNSUPPORTED`                                       | configured storage adapter has no search capability                            |
 
 <Callout type="info">
   The `401` body's `message` says *why* auth failed - bad hook return shape vs. missing cookie vs.

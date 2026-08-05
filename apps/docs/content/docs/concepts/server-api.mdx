@@ -87,6 +87,7 @@ const search = await chat.api.searchMessages({
   query: "hello",
   limit: 50,
 });
+// Throws SEARCH_UNSUPPORTED when storage adapter has no search capability.
 
 // paginate history (newest first)
 const { messages, nextCursor } = await chat.api.listMessages({

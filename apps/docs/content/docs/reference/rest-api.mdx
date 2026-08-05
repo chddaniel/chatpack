@@ -52,7 +52,9 @@ These trip up hand-written and generated clients alike:
 - **Search is case-insensitive and relevance-ranked**; creation time breaks
   relevance ties. It searches the viewer's participant conversations, excludes
   tombstones, and checks `canRead` for each result. Non-participant search is
-  not supported yet.
+  not supported yet. Search is an optional storage capability; when the
+  configured adapter does not provide it, this route returns `501` with
+  `SEARCH_UNSUPPORTED`.
 - **The message text field is `body`** (not `text` / `content`).
 - **Every message carries `reactions` and its reply fields.** `reactions` is
   grouped: `[{ emoji, count, userIds }]`, `userIds` earliest-first (at most two
@@ -229,15 +231,16 @@ JSON with a stable machine-readable code and a mapped HTTP status:
 { "error": { "code": "FORBIDDEN_READ", "message": "…" } }
 ```
 
-| Status | Code(s)                                                    | When                                             |
-| ------ | ---------------------------------------------------------- | ------------------------------------------------ |
-| 401    | `UNAUTHENTICATED`                                          | `auth` returned `null` (or a non-`ChatpackUser`) |
-| 400    | `INVALID_INPUT`                                            | bad body/query params                            |
-| 403    | `FORBIDDEN_READ`, `FORBIDDEN_WRITE`, `NOT_MESSAGE_SENDER`  | not allowed                                      |
-| 404    | `CONVERSATION_NOT_FOUND`, `MESSAGE_NOT_FOUND`, `NOT_FOUND` | missing resource/route                           |
-| 409    | `MESSAGE_DELETED`                                          | editing a deleted message                        |
-| 422    | `MESSAGE_REJECTED`                                         | a `beforeMessageSend` hook refused the message   |
-| 500    | `INTERNAL_ERROR`                                           | unexpected server error (opaque)                 |
+| Status | Code(s)                                                    | When                                                |
+| ------ | ---------------------------------------------------------- | --------------------------------------------------- |
+| 401    | `UNAUTHENTICATED`                                          | `auth` returned `null` (or a non-`ChatpackUser`)    |
+| 400    | `INVALID_INPUT`                                            | bad body/query params                               |
+| 403    | `FORBIDDEN_READ`, `FORBIDDEN_WRITE`, `NOT_MESSAGE_SENDER`  | not allowed                                         |
+| 404    | `CONVERSATION_NOT_FOUND`, `MESSAGE_NOT_FOUND`, `NOT_FOUND` | missing resource/route                              |
+| 409    | `MESSAGE_DELETED`                                          | editing a deleted message                           |
+| 422    | `MESSAGE_REJECTED`                                         | a `beforeMessageSend` hook refused the message      |
+| 500    | `INTERNAL_ERROR`                                           | unexpected server error (opaque)                    |
+| 501    | `SEARCH_UNSUPPORTED`                                       | configured storage adapter has no search capability |
 
 More on branching by code in [Error handling](/docs/concepts/errors).
 

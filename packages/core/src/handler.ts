@@ -72,6 +72,7 @@ export interface ChatpackHandler {
 
 /** HTTP status for each {@link ChatpackErrorCode}. */
 const STATUS_BY_CODE: Record<ChatpackErrorCode, number> = {
+  SEARCH_UNSUPPORTED: 501,
   INVALID_INPUT: 400,
   FORBIDDEN_READ: 403,
   FORBIDDEN_WRITE: 403,

@@ -76,20 +76,20 @@ lives at [`examples/messenger`](../../examples/messenger).
 
 ## API surface
 
-| Method                        | What it does                                                                                    |
-| ----------------------------- | ----------------------------------------------------------------------------------------------- |
-| `api.getOrCreateConversation` | Find or create the 1:1 conversation for a user pair                                             |
-| `api.listConversations`       | List a user's conversations, most recent first                                                  |
-| `api.getConversation`         | Fetch one conversation (read-permission checked)                                                |
-| `api.sendMessage`             | Send a text message, optionally quote-replying to another (write-permission checked)            |
-| `api.listMessages`            | Paginate history, newest-first                                                                  |
-| `api.searchMessages`          | Search participant conversation bodies, ranked and cursor-paginated                             |
-| `api.editMessage`             | Edit your own message                                                                           |
-| `api.deleteMessage`           | Soft-delete your own message                                                                    |
-| `api.addReaction`             | React as `userId` (write-permission checked); idempotent                                        |
-| `api.removeReaction`          | Remove one of your own reactions; idempotent                                                    |
-| `api.markRead`                | Update durable read-state (`last_read`); monotonic - marking an older message is a silent no-op |
-| `api.listMessagesAfter`       | Messages after a `seq` (SSE reconnect gap-fill)                                                 |
+| Method                        | What it does                                                                                     |
+| ----------------------------- | ------------------------------------------------------------------------------------------------ |
+| `api.getOrCreateConversation` | Find or create the 1:1 conversation for a user pair                                              |
+| `api.listConversations`       | List a user's conversations, most recent first                                                   |
+| `api.getConversation`         | Fetch one conversation (read-permission checked)                                                 |
+| `api.sendMessage`             | Send a text message, optionally quote-replying to another (write-permission checked)             |
+| `api.listMessages`            | Paginate history, newest-first                                                                   |
+| `api.searchMessages`          | Search participant conversation bodies, ranked and cursor-paginated; requires adapter capability |
+| `api.editMessage`             | Edit your own message                                                                            |
+| `api.deleteMessage`           | Soft-delete your own message                                                                     |
+| `api.addReaction`             | React as `userId` (write-permission checked); idempotent                                         |
+| `api.removeReaction`          | Remove one of your own reactions; idempotent                                                     |
+| `api.markRead`                | Update durable read-state (`last_read`); monotonic - marking an older message is a silent no-op  |
+| `api.listMessagesAfter`       | Messages after a `seq` (SSE reconnect gap-fill)                                                  |
 
 Conversation-returning methods (`getOrCreateConversation`,
 `listConversations`, `getConversation`) return the conversation plus the
@@ -291,15 +291,16 @@ The `auth` hook runs on every request. Errors are JSON -
 `{ "error": { "code", "message" } }` - with statuses mapped from the error
 code:
 
-| Status | Code(s)                                                    | When                                             |
-| ------ | ---------------------------------------------------------- | ------------------------------------------------ |
-| 401    | `UNAUTHENTICATED`                                          | `auth` returned `null` (or a non-`ChatpackUser`) |
-| 400    | `INVALID_INPUT`                                            | bad body/query params                            |
-| 403    | `FORBIDDEN_READ`, `FORBIDDEN_WRITE`, `NOT_MESSAGE_SENDER`  | not allowed                                      |
-| 404    | `CONVERSATION_NOT_FOUND`, `MESSAGE_NOT_FOUND`, `NOT_FOUND` | missing resource/route                           |
-| 409    | `MESSAGE_DELETED`                                          | editing a deleted message                        |
-| 422    | `MESSAGE_REJECTED`                                         | a `beforeMessageSend` hook refused the message   |
-| 500    | `INTERNAL_ERROR`                                           | unexpected server error (opaque)                 |
+| Status | Code(s)                                                    | When                                                |
+| ------ | ---------------------------------------------------------- | --------------------------------------------------- |
+| 401    | `UNAUTHENTICATED`                                          | `auth` returned `null` (or a non-`ChatpackUser`)    |
+| 400    | `INVALID_INPUT`                                            | bad body/query params                               |
+| 403    | `FORBIDDEN_READ`, `FORBIDDEN_WRITE`, `NOT_MESSAGE_SENDER`  | not allowed                                         |
+| 404    | `CONVERSATION_NOT_FOUND`, `MESSAGE_NOT_FOUND`, `NOT_FOUND` | missing resource/route                              |
+| 409    | `MESSAGE_DELETED`                                          | editing a deleted message                           |
+| 422    | `MESSAGE_REJECTED`                                         | a `beforeMessageSend` hook refused the message      |
+| 500    | `INTERNAL_ERROR`                                           | unexpected server error (opaque)                    |
+| 501    | `SEARCH_UNSUPPORTED`                                       | configured storage adapter has no search capability |
 
 ## Message hooks
 

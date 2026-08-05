@@ -280,11 +280,12 @@ AND the Network tab must show it on `/api/chat/*` requests.
 ## Custom storage adapter (Supabase JS / Convex / Firestore / other)
 
 Do NOT improvise: read **Part 2 of `llms.txt`** and follow it exactly - it
-contains the 15-method `StorageAdapter` contract, the invariants (atomic
+contains the 14-required-method `StorageAdapter` contract plus optional search,
+the invariants (atomic
 `pairKey` creation, atomic per-conversation `seq`, `Date` instances not ISO
 strings, soft-delete as tombstone, newest-first vs oldest-first ordering,
-batched exact unread counts, participant-scoped ranked search, idempotent
-reaction writes that never touch `lastSeq`/activity), the reference Postgres
-schema, a skeleton, and a 15-point verification checklist.
+batched exact unread counts, participant-scoped ranked search when supported,
+idempotent reaction writes that never touch `lastSeq`/activity), the reference
+Postgres schema, a skeleton, and a 14-point verification checklist.
 The adapter must run server-side with privileged credentials; `chatpack_*`
 tables must never be readable by browser/anon clients.

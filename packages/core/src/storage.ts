@@ -224,8 +224,12 @@ export interface StorageAdapter {
    * Search non-tombstone messages in the user's participant conversations by
    * body, case-insensitively, in ranked order. Core applies `canRead` to each
    * returned message's conversation.
+   *
+   * This is an optional capability because matching and relevance semantics
+   * are storage-backend specific. First-party adapters implement it; custom
+   * adapters may omit it and core will report `SEARCH_UNSUPPORTED`.
    */
-  searchMessages(input: SearchMessagesInput): Promise<SearchMessagesResult>;
+  searchMessages?(input: SearchMessagesInput): Promise<SearchMessagesResult>;
 
   /**
    * List messages with `seq` strictly greater than `afterSeq`, **oldest

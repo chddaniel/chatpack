@@ -5,4 +5,5 @@
 ---
 
 Add case-insensitive, ranked message search across participant conversations.
-Search is available through the server API and `GET /search/messages`.
+Search is available through the server API and `GET /search/messages` when the
+configured storage adapter provides the optional search capability.

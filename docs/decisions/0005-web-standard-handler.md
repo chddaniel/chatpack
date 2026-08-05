@@ -27,7 +27,7 @@ in `examples/node-server` rather than shipped as a package until demand exists.
 
 Error mapping is part of the contract: every `ChatpackError.code` has a fixed
 HTTP status (`INVALID_INPUT`→400, `FORBIDDEN_*`→403, `*_NOT_FOUND`→404,
-`MESSAGE_DELETED`→409), unauthenticated requests get 401, and unexpected
+`MESSAGE_DELETED`→409, `SEARCH_UNSUPPORTED`→501), unauthenticated requests get 401, and unexpected
 failures return an opaque 500 (details are logged server-side, never leaked).
 
 The auth hook runs once per request before any routing logic; handlers cannot

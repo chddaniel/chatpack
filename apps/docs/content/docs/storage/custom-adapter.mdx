@@ -20,7 +20,7 @@ AI-builder clouds.
 ## The contract
 
 Implement the `StorageAdapter` interface exported from `@chatpack/core` and
-pass it as `chatpack({ storage: yourAdapter() })`. Fifteen async methods:
+pass it as `chatpack({ storage: yourAdapter() })`. Fourteen required async methods:
 
 | Method                          | Contract                                                                     |
 | ------------------------------- | ---------------------------------------------------------------------------- |
@@ -35,13 +35,18 @@ pass it as `chatpack({ storage: yourAdapter() })`. Fifteen async methods:
 | `updateMessage`                 | Patch body / `editedAt` / `deletedAt` in place; throw if id unknown          |
 | `updateLastRead`                | Set a participant's `lastReadMessageId`                                      |
 | `countUnread`                   | Batched per-conversation unread counts for one viewer (invariant 10)         |
-| `searchMessages`                | Participant-scoped, case-insensitive ranked message search                   |
 | `addReaction`                   | Idempotent insert; return the message's **full** reaction set (invariant 12) |
 | `removeReaction`                | Idempotent delete; return the remaining set (invariant 12)                   |
 | `listReactionsByMessageIds`     | Batched reactions for a page, ascending `createdAt` (invariant 13)           |
 
 Exact TypeScript signatures and per-method TSDoc ship in the package's
 `.d.ts` (`@chatpack/core`, `storage.ts` module).
+
+`searchMessages` is an optional storage capability. Memory and Drizzle provide
+it. Existing custom adapters may omit it; `chat.api.searchMessages` and
+`GET /search/messages` then return `SEARCH_UNSUPPORTED` with HTTP status `501`.
+Adapters that provide search must return non-tombstone participant-scoped
+results, but matching, relevance, and cursor encoding are adapter-defined.
 
 The entities you store are described in
 [Conversations & Messages](/docs/concepts/conversations-messages#the-data-model).
@@ -54,8 +59,8 @@ a message in the same conversation) and you never see the API-only decorations
 `getMessagesByIds` and `listReactionsByMessageIds`, one batched call per page.
 
 <Callout type="warn">
-  The five search, batched, and reaction methods arrived after the original contract. If you wrote
-  an adapter against an earlier contract, add them - TypeScript will point at every gap.
+  The four batched and reaction methods arrived after the original contract. If you wrote an adapter
+  against an earlier contract, add them - TypeScript will point at every gap.
 </Callout>
 
 ## The invariants
@@ -77,10 +82,8 @@ does atomicity. Everything else is implementation detail.
 3. **Adapters generate ids.** `getOrCreateDirectConversation` and `addMessage`
    create the `id` themselves (any unique string; the official adapters use
    prefixed random ids like `msg_<uuid>`). Ids must be unique and stable.
-4. **Adapters never enforce custom permissions.** Core validates participants
-   and permission hooks _before_ calling you. Return whatever is asked for.
-   The `searchMessages` method is the scoped exception: it applies the required
-   participant filter supplied by `userId`.
+4. **Adapters never enforce permissions.** Core validates participants and
+   permission hooks _before_ calling you. Return whatever is asked for.
    Corollary for hosted platforms: the adapter must run **server-side with
    full DB privileges** (e.g. the Supabase service-role key), and the
    Chatpack tables must NOT be readable or writable by browser/anon clients -
@@ -121,11 +124,12 @@ does atomicity. Everything else is implementation detail.
     whole page of conversations - do it in one query, not one per id.
     Note `lastReadMessageId` is a message **id**, not a seq: resolve it at
     query time (SQL: LEFT JOIN the message row + `COALESCE(read.seq, 0)`).
-11. **`searchMessages` is participant-scoped, case-insensitive, and ranked.**
-    Match plain-text terms for the requested participant, exclude tombstones,
-    order by relevance then creation time, and return an opaque cursor. Core
-    applies `canRead` after retrieving participant-scoped candidates.
-    Non-participant search is not supported yet.
+11. **Optional search is participant-scoped.** If you implement
+    `searchMessages`, filter by the supplied `userId`, exclude tombstones, and
+    return an opaque cursor. Core applies `canRead` after retrieving
+    participant-scoped candidates. Matching and ranking semantics are
+    adapter-defined; first-party adapters use case-insensitive whole-token
+    matching with no stemming.
 12. **Reaction writes are idempotent and return the full set.** `addReaction`
     with the same `(messageId, userId, emoji)` triple twice must leave exactly
     one reaction - not two, not an error - so enforce uniqueness in the
@@ -260,7 +264,7 @@ NOTHING`, then re-select by `pair_key`; zero inserted rows means a
   ```
 
   Note what's _absent_: no `UPDATE chatpack_conversations`. Reacting must not
-  advance `last_seq` or `last_activity_at` (invariant 11).
+  advance `last_seq` or `last_activity_at` (invariant 12).
 
 ### Non-SQL platforms (Convex, Firestore, ...)
 
@@ -271,7 +275,7 @@ functions) and the `StorageAdapter` object calls them through the Convex
 client; `addMessage` is a single mutation (read counter → increment → insert),
 which is automatically a serializable transaction, satisfying invariant 2 with
 no extra machinery. Enforce invariant 1 with an index/lookup on `pairKey`
-inside one mutation, and invariant 11 with a lookup on the
+inside one mutation, and invariant 12 with a lookup on the
 `(messageId, userId, emoji)` triple inside the reaction mutation.
 
 ## Skeleton
@@ -337,7 +341,7 @@ export function myAdapter(client: MyDbClient): StorageAdapter {
     },
     async addReaction({ messageId, userId, emoji }) {
       // Insert-on-conflict-do-nothing on the (messageId, userId, emoji)
-      // triple, then return ALL reactions on the message (invariant 11).
+      // triple, then return ALL reactions on the message (invariant 12).
       // Do NOT touch the conversation's seq counter or activity timestamp.
       // return reactions;
     },

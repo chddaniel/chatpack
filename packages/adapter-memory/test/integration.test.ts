@@ -257,6 +257,159 @@ describe("message search", () => {
     const stranger = await chat.api.searchMessages({ userId: "mallory", query: "searchable" });
     expect(stranger.messages).toHaveLength(0);
   });
+
+  it("keeps filtered results reachable across pages", async () => {
+    let deniedConversationId: string | undefined;
+    const chat = createChat({
+      permissions: {
+        canRead: ({ conversation }) => conversation.id !== deniedConversationId,
+      },
+    });
+    const conversations = await Promise.all(
+      ["one", "two", "three", "four"].map((otherUserId) =>
+        chat.api.getOrCreateConversation({ userId: "alice", otherUserId }),
+      ),
+    );
+
+    await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversations[0]!.id,
+      body: "needle needle needle needle",
+    });
+    await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversations[1]!.id,
+      body: "needle needle needle",
+    });
+    const denied = await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversations[2]!.id,
+      body: "needle needle",
+    });
+    deniedConversationId = denied.conversationId;
+    await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversations[3]!.id,
+      body: "needle",
+    });
+
+    const firstPage = await chat.api.searchMessages({ userId: "alice", query: "needle", limit: 2 });
+    expect(firstPage.messages.map((message) => message.body)).toEqual([
+      "needle needle needle needle",
+      "needle needle needle",
+    ]);
+    expect(firstPage.nextCursor).not.toBeNull();
+
+    const secondPage = await chat.api.searchMessages({
+      userId: "alice",
+      query: "needle",
+      limit: 2,
+      cursor: firstPage.nextCursor!,
+    });
+    expect(secondPage.messages.map((message) => message.body)).toEqual(["needle"]);
+    expect(secondPage.nextCursor).toBeNull();
+  });
+
+  it("continues after a deleted cursor anchor", async () => {
+    const chat = createChat();
+    const conversation = await chat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "bob",
+    });
+    const first = await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "needle needle needle",
+    });
+    const anchor = await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "needle needle",
+    });
+    await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "needle",
+    });
+
+    const firstPage = await chat.api.searchMessages({ userId: "alice", query: "needle", limit: 2 });
+    expect(firstPage.messages.map((message) => message.id)).toEqual([first.id, anchor.id]);
+    await chat.api.deleteMessage({ userId: "alice", messageId: anchor.id });
+
+    const secondPage = await chat.api.searchMessages({
+      userId: "alice",
+      query: "needle",
+      limit: 2,
+      cursor: firstPage.nextCursor!,
+    });
+    expect(secondPage.messages).toHaveLength(1);
+    expect(secondPage.messages[0]!.body).toBe("needle");
+  });
+
+  it("uses punctuation-aware tokens for emails, versions, and compounds", async () => {
+    const chat = createChat();
+    const conversation = await chat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "bob",
+    });
+    await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "reach me at user@example.com",
+    });
+    await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "shipping v1.2.3 today",
+    });
+    await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "see the deploy-preview link",
+    });
+
+    expect((await chat.api.searchMessages({ userId: "alice", query: "example" })).messages).toEqual(
+      [],
+    );
+    expect(
+      (await chat.api.searchMessages({ userId: "alice", query: "user@example.com" })).messages,
+    ).toHaveLength(1);
+    expect((await chat.api.searchMessages({ userId: "alice", query: "v1" })).messages).toEqual([]);
+    expect(
+      (await chat.api.searchMessages({ userId: "alice", query: "v1.2.3" })).messages,
+    ).toHaveLength(1);
+    expect(
+      (await chat.api.searchMessages({ userId: "alice", query: "deploy-preview" })).messages,
+    ).toHaveLength(1);
+  });
+
+  it("hydrates reply previews and reactions", async () => {
+    const chat = createChat();
+    const conversation = await chat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "bob",
+    });
+    const parent = await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "original context",
+    });
+    const reply = await chat.api.sendMessage({
+      userId: "bob",
+      conversationId: conversation.id,
+      body: "searchable reply",
+      replyToMessageId: parent.id,
+    });
+    await chat.api.addReaction({ userId: "alice", messageId: reply.id, emoji: "👍" });
+
+    const result = await chat.api.searchMessages({ userId: "alice", query: "searchable" });
+    expect(result.messages[0]!.replyTo).toMatchObject({
+      id: parent.id,
+      excerpt: "original context",
+      deleted: false,
+    });
+    expect(result.messages[0]!.reactions).toEqual([{ emoji: "👍", count: 1, userIds: ["alice"] }]);
+  });
 });
 
 describe("messages", () => {

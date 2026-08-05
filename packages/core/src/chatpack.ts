@@ -121,7 +121,7 @@ export interface SearchMessagesApiInput {
 
 /** Result of {@link ChatpackApi.searchMessages}. */
 export interface SearchMessagesApiResult {
-  messages: Message[];
+  messages: MessageWithDetails[];
   nextCursor: string | null;
 }
 
@@ -707,6 +707,12 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
       if (typeof input.query !== "string" || input.query.trim() === "") {
         throw new ChatpackError("INVALID_INPUT", '"query" must be a non-empty string.');
       }
+      if (!storage.searchMessages) {
+        throw new ChatpackError(
+          "SEARCH_UNSUPPORTED",
+          "Message search is not supported by this storage adapter.",
+        );
+      }
 
       const limit = normalizeLimit(input.limit);
       const messages: Message[] = [];
@@ -718,7 +724,7 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
         const page = await storage.searchMessages({
           userId: input.userId,
           query: input.query.trim(),
-          limit,
+          limit: limit - messages.length,
           ...(cursor !== undefined ? { cursor } : {}),
         });
 
@@ -730,7 +736,10 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
         }
 
         if (messages.length >= limit || page.nextCursor === null) {
-          return { messages: messages.slice(0, limit), nextCursor: page.nextCursor };
+          return {
+            messages: await withDetails(messages.slice(0, limit)),
+            nextCursor: page.nextCursor,
+          };
         }
         cursor = page.nextCursor;
       }

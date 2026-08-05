@@ -497,6 +497,42 @@ describe("message search on Postgres", () => {
     expect(deletedSearch.messages).toHaveLength(0);
   });
 
+  it("matches Postgres punctuation semantics", async () => {
+    const conversation = await chat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "bob",
+    });
+    await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "reach me at user@example.com",
+    });
+    await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "shipping v1.2.3 today",
+    });
+    await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "see the deploy-preview link",
+    });
+
+    expect((await chat.api.searchMessages({ userId: "alice", query: "example" })).messages).toEqual(
+      [],
+    );
+    expect(
+      (await chat.api.searchMessages({ userId: "alice", query: "user@example.com" })).messages,
+    ).toHaveLength(1);
+    expect((await chat.api.searchMessages({ userId: "alice", query: "v1" })).messages).toEqual([]);
+    expect(
+      (await chat.api.searchMessages({ userId: "alice", query: "v1.2.3" })).messages,
+    ).toHaveLength(1);
+    expect(
+      (await chat.api.searchMessages({ userId: "alice", query: "deploy-preview" })).messages,
+    ).toHaveLength(1);
+  });
+
   it("does not search non-participant conversations yet", async () => {
     const supportChat = chatpack({
       storage: drizzleAdapter(db),
