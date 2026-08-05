@@ -127,9 +127,10 @@ does atomicity. Everything else is implementation detail.
 11. **Optional search is participant-scoped.** If you implement
     `searchMessages`, filter by the supplied `userId`, exclude tombstones, and
     return an opaque cursor. Core applies `canRead` after retrieving
-    participant-scoped candidates. Matching and ranking semantics are
-    adapter-defined; first-party adapters use case-insensitive whole-token
-    matching with no stemming.
+    participant-scoped candidates. Matching, ranking, and punctuation
+    semantics are adapter-defined. URLs, paths, emails, phone numbers, and
+    versions can produce different matches across backends; document the
+    behavior of your adapter.
 12. **Reaction writes are idempotent and return the full set.** `addReaction`
     with the same `(messageId, userId, emoji)` triple twice must leave exactly
     one reaction - not two, not an error - so enforce uniqueness in the

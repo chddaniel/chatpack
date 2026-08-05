@@ -22,14 +22,13 @@ through the configured `canRead` hook. Non-participant access granted by a
 custom `canRead` hook is explicitly deferred; search does not return those
 conversations yet.
 
-Search uses plain-text, case-insensitive whole-token terms with no stemming.
-The first-party adapters align on these punctuation rules: `@` and `.` inside
-an alphanumeric token stay part of that token, while hyphenated compounds
-match both the compound and its component terms. The Drizzle adapter uses
-PostgreSQL `to_tsvector('simple', body)` with `plainto_tsquery('simple', query)`
-and `ts_rank`; the memory adapter uses equivalent lower-cased token matching
-with a deterministic score. Custom adapters may use backend-specific matching
-and relevance semantics, but must document them with their capability.
+Search uses plain-text, case-insensitive terms with no stemming. Matching and
+relevance semantics are backend-specific. The Drizzle adapter uses PostgreSQL
+`to_tsvector('simple', body)` with `plainto_tsquery('simple', query)` and
+`ts_rank`; the memory adapter uses lower-cased token matching with a
+deterministic score. Punctuated tokens such as URLs, paths, emails, phone
+numbers, and versions are not portable between adapters. Each adapter must
+document its own behavior with the capability.
 
 Results order by relevance descending, creation time descending, then message
 id descending as a stable tie-break. Tombstones are excluded because their

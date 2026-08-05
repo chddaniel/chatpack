@@ -346,7 +346,7 @@ describe("message search", () => {
     expect(secondPage.messages[0]!.body).toBe("needle");
   });
 
-  it("uses punctuation-aware tokens for emails, versions, and compounds", async () => {
+  it("documents memory punctuation token matching", async () => {
     const chat = createChat();
     const conversation = await chat.api.getOrCreateConversation({
       userId: "alice",

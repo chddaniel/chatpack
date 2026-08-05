@@ -584,8 +584,9 @@ Exact TypeScript signatures and per-method TSDoc ship in the package's
 it. Existing custom adapters may omit it; core then throws `SEARCH_UNSUPPORTED`
 and the HTTP handler returns `501`. Adapters that provide search must return
 non-tombstone participant-scoped results. Matching, relevance, and cursor
-encoding are adapter-defined; first-party adapters use case-insensitive
-whole-token matching with no stemming.
+encoding and matching are adapter-defined. Punctuated tokens such as URLs,
+paths, emails, phone numbers, and versions are not portable between adapters;
+document the behavior of each adapter.
 
 ### Entities your adapter stores
 
@@ -670,9 +671,10 @@ else is implementation detail.
     Note `lastReadMessageId` is a message **id**, not a seq: resolve it at
     query time (SQL: LEFT JOIN the message row + `COALESCE(read.seq, 0)`).
 11. **Optional search is participant-scoped.** If implemented,
-    `searchMessages` must filter by the supplied `userId`, match
-    case-insensitively, exclude tombstones, rank results deterministically, and
-    return an opaque cursor. Core applies `canRead` after retrieving candidates.
+    `searchMessages` must filter by the supplied `userId`, exclude tombstones,
+    rank results deterministically, and return an opaque cursor. Matching,
+    case handling, stemming, and punctuation semantics are adapter-defined;
+    document them. Core applies `canRead` after retrieving candidates.
 12. **Reaction writes are idempotent and return the full set.** `addReaction`
     with the same `(messageId, userId, emoji)` twice must leave exactly one
     reaction - not two, not an error - so enforce uniqueness in the database

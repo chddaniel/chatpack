@@ -497,7 +497,7 @@ describe("message search on Postgres", () => {
     expect(deletedSearch.messages).toHaveLength(0);
   });
 
-  it("matches Postgres punctuation semantics", async () => {
+  it("documents Postgres punctuation matching", async () => {
     const conversation = await chat.api.getOrCreateConversation({
       userId: "alice",
       otherUserId: "bob",
