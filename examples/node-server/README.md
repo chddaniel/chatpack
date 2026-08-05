@@ -101,7 +101,14 @@ curl -s -X POST $BASE/conversations/$CONV/messages \
 # 5. bob lists the history (newest first)
 curl -s $BASE/conversations/$CONV/messages -H 'x-user-id: bob'
 
-# 6. mallory is not a participant - permissions enforced
+# 6. bob searches message bodies, case-insensitively
+curl -s "$BASE/search/messages?q=HEY" -H 'x-user-id: bob'
+
+# 7. mallory cannot see matches from bob's conversation
+curl -s "$BASE/search/messages?q=HEY" -H 'x-user-id: mallory'
+# {"messages":[],"nextCursor":null}
+
+# 8. mallory cannot read a conversation directly - permissions enforced
 curl -si $BASE/conversations/$CONV/messages -H 'x-user-id: mallory' | head -1
 # HTTP/1.1 403 Forbidden
 ```
@@ -164,6 +171,7 @@ reconnect; `?lastEventId=` works as a query fallback.)
 | GET    | `/conversations/:id`          | fetch one conversation  |
 | POST   | `/conversations/:id/messages` | send a message          |
 | GET    | `/conversations/:id/messages` | list messages           |
+| GET    | `/search/messages?q=`         | search message bodies   |
 | POST   | `/conversations/:id/read`     | update my last-read     |
 | PATCH  | `/messages/:id`               | edit my message         |
 | DELETE | `/messages/:id`               | soft-delete my message  |

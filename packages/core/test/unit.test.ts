@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { pairKeyFor } from "../src/chatpack";
 import { ChatpackError } from "../src/errors";
+import { countSearchTokens, getSearchTerms, scoreSearchTerms, tokenizeSearch } from "../src/search";
 import {
   TelemetryCounters,
   resolveTelemetryEnabled,
@@ -24,6 +25,26 @@ describe("ChatpackError", () => {
     expect(err.name).toBe("ChatpackError");
     expect(err.code).toBe("FORBIDDEN_WRITE");
     expect(err.message).toBe("nope");
+  });
+});
+
+describe("canonical message search", () => {
+  it("normalizes Unicode, casing, and punctuation consistently", () => {
+    expect(tokenizeSearch("Check HTTPS://Chatpack.dev/docs_v2 ✅")).toEqual([
+      "check",
+      "https",
+      "chatpack",
+      "dev",
+      "docs",
+      "v2",
+    ]);
+    expect(getSearchTerms("HELLO hello")).toEqual(["hello"]);
+  });
+
+  it("requires every unique term and scores occurrences", () => {
+    const counts = countSearchTokens("needle needle other");
+    expect(scoreSearchTerms(counts, getSearchTerms("NEEDLE other"))).toBe(3);
+    expect(scoreSearchTerms(counts, getSearchTerms("needle missing"))).toBeNull();
   });
 });
 

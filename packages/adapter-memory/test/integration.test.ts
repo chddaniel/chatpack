@@ -5,7 +5,7 @@
  * The first test is the M1 Definition of Done, verbatim from MVP §11:
  * "two users get a conversation and exchange messages via the core API in a test."
  */
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { ChatpackError, chatpack } from "@chatpack/core";
 import { memoryAdapter } from "../src/index";
@@ -181,6 +181,300 @@ describe("permissions", () => {
       conversationId: conversation.id,
     });
     expect(view.messages).toHaveLength(1);
+  });
+});
+
+describe("message search", () => {
+  it("searches case-insensitively across conversations, ranks terms, paginates, and skips tombstones", async () => {
+    const chat = createChat({ permissions: { canRead: () => true } });
+    const withBob = await chat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "bob",
+    });
+    const withCarol = await chat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "carol",
+    });
+
+    await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: withBob.id,
+      body: "hello from bob's conversation",
+    });
+    const deleted = await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: withBob.id,
+      body: "HELLO deleted secret",
+    });
+    await chat.api.deleteMessage({ userId: "alice", messageId: deleted.id });
+    await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: withCarol.id,
+      body: "HELLO hello world",
+    });
+
+    const firstPage = await chat.api.searchMessages({
+      userId: "alice",
+      query: "HeLLo",
+      limit: 1,
+    });
+    expect(firstPage.messages).toHaveLength(1);
+    expect(firstPage.messages[0]!.body).toBe("HELLO hello world");
+    expect(firstPage.nextCursor).not.toBeNull();
+
+    const secondPage = await chat.api.searchMessages({
+      userId: "alice",
+      query: "hello",
+      limit: 1,
+      cursor: firstPage.nextCursor!,
+    });
+    expect(secondPage.messages.map((message) => message.body)).toEqual([
+      "hello from bob's conversation",
+    ]);
+    expect(secondPage.nextCursor).toBeNull();
+  });
+
+  it("does not search non-participant conversations yet", async () => {
+    const chat = createChat({
+      permissions: {
+        canRead: ({ user, conversation }) =>
+          user.id === "support" || conversation.participantIds.includes(user.id),
+      },
+    });
+    const conversation = await chat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "bob",
+    });
+    await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "support searchable transcript",
+    });
+
+    const support = await chat.api.searchMessages({ userId: "support", query: "searchable" });
+    expect(support.messages).toHaveLength(0);
+
+    const stranger = await chat.api.searchMessages({ userId: "mallory", query: "searchable" });
+    expect(stranger.messages).toHaveLength(0);
+  });
+
+  it("uses creation time as the tie-break after relevance", async () => {
+    vi.useFakeTimers();
+    try {
+      const chat = createChat();
+      const conversation = await chat.api.getOrCreateConversation({
+        userId: "alice",
+        otherUserId: "bob",
+      });
+      vi.setSystemTime(new Date("2026-01-01T00:00:00.000Z"));
+      const older = await chat.api.sendMessage({
+        userId: "alice",
+        conversationId: conversation.id,
+        body: "same term",
+      });
+      vi.setSystemTime(new Date("2026-01-01T00:00:01.000Z"));
+      const newer = await chat.api.sendMessage({
+        userId: "alice",
+        conversationId: conversation.id,
+        body: "same term",
+      });
+
+      const result = await chat.api.searchMessages({ userId: "alice", query: "same" });
+      expect(result.messages.map((message) => message.id)).toEqual([newer.id, older.id]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("keeps filtered results reachable across pages", async () => {
+    let deniedConversationId: string | undefined;
+    const chat = createChat({
+      permissions: {
+        canRead: ({ conversation }) => conversation.id !== deniedConversationId,
+      },
+    });
+    const conversations = await Promise.all(
+      ["one", "two", "three", "four"].map((otherUserId) =>
+        chat.api.getOrCreateConversation({ userId: "alice", otherUserId }),
+      ),
+    );
+
+    await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversations[0]!.id,
+      body: "needle needle needle needle",
+    });
+    await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversations[1]!.id,
+      body: "needle needle needle",
+    });
+    const denied = await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversations[2]!.id,
+      body: "needle needle",
+    });
+    deniedConversationId = denied.conversationId;
+    await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversations[3]!.id,
+      body: "needle",
+    });
+
+    const firstPage = await chat.api.searchMessages({ userId: "alice", query: "needle", limit: 2 });
+    expect(firstPage.messages.map((message) => message.body)).toEqual([
+      "needle needle needle needle",
+      "needle needle needle",
+    ]);
+    expect(firstPage.nextCursor).not.toBeNull();
+
+    const secondPage = await chat.api.searchMessages({
+      userId: "alice",
+      query: "needle",
+      limit: 2,
+      cursor: firstPage.nextCursor!,
+    });
+    expect(secondPage.messages.map((message) => message.body)).toEqual(["needle"]);
+    expect(secondPage.nextCursor).toBeNull();
+  });
+
+  it("continues after a deleted cursor anchor", async () => {
+    const chat = createChat();
+    const conversation = await chat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "bob",
+    });
+    const first = await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "needle needle needle",
+    });
+    const anchor = await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "needle needle",
+    });
+    await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "needle",
+    });
+
+    const firstPage = await chat.api.searchMessages({ userId: "alice", query: "needle", limit: 2 });
+    expect(firstPage.messages.map((message) => message.id)).toEqual([first.id, anchor.id]);
+    await chat.api.deleteMessage({ userId: "alice", messageId: anchor.id });
+
+    const secondPage = await chat.api.searchMessages({
+      userId: "alice",
+      query: "needle",
+      limit: 2,
+      cursor: firstPage.nextCursor!,
+    });
+    expect(secondPage.messages).toHaveLength(1);
+    expect(secondPage.messages[0]!.body).toBe("needle");
+  });
+
+  it("matches canonical punctuation-separated tokens", async () => {
+    const chat = createChat();
+    const conversation = await chat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "bob",
+    });
+    await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "reach me at user@example.com",
+    });
+    await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "shipping v1.2.3 today",
+    });
+    await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "see the deploy-preview link",
+    });
+
+    expect(
+      (await chat.api.searchMessages({ userId: "alice", query: "example" })).messages,
+    ).toHaveLength(1);
+    expect(
+      (await chat.api.searchMessages({ userId: "alice", query: "user@example.com" })).messages,
+    ).toHaveLength(1);
+    expect((await chat.api.searchMessages({ userId: "alice", query: "v1" })).messages).toHaveLength(
+      1,
+    );
+    expect(
+      (await chat.api.searchMessages({ userId: "alice", query: "v1.2.3" })).messages,
+    ).toHaveLength(1);
+    expect(
+      (await chat.api.searchMessages({ userId: "alice", query: "deploy-preview" })).messages,
+    ).toHaveLength(1);
+  });
+
+  it("matches the same URL, path, phone, host, and version corpus as Drizzle", async () => {
+    const chat = createChat();
+    const conversation = await chat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "bob",
+    });
+    const bodies = [
+      "path is src/index.ts here",
+      "call me on +1-555-0100",
+      "check https://chatpack.dev/docs/realtime for details",
+      "the repo is github.com/chddaniel/chatpack",
+      "read docs/decisions/0015-message-search.md",
+    ];
+    for (const body of bodies) {
+      await chat.api.sendMessage({ userId: "alice", conversationId: conversation.id, body });
+    }
+
+    const cases = [
+      ["src", [bodies[0]!]],
+      ["index.ts", [bodies[0]!]],
+      ["555", [bodies[1]!]],
+      ["1-555-0100", [bodies[1]!]],
+      ["chatpack", [bodies[2]!, bodies[3]!]],
+      ["docs", [bodies[2]!, bodies[4]!]],
+      ["realtime", [bodies[2]!]],
+      ["chddaniel", [bodies[3]!]],
+      ["decisions", [bodies[4]!]],
+      ["0015-message-search.md", [bodies[4]!]],
+    ] as const;
+
+    for (const [query, expected] of cases) {
+      const result = await chat.api.searchMessages({ userId: "alice", query });
+      expect(result.messages.map((message) => message.body).sort()).toEqual([...expected].sort());
+    }
+  });
+
+  it("hydrates reply previews and reactions", async () => {
+    const chat = createChat();
+    const conversation = await chat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "bob",
+    });
+    const parent = await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "original context",
+    });
+    const reply = await chat.api.sendMessage({
+      userId: "bob",
+      conversationId: conversation.id,
+      body: "searchable reply",
+      replyToMessageId: parent.id,
+    });
+    await chat.api.addReaction({ userId: "alice", messageId: reply.id, emoji: "👍" });
+
+    const result = await chat.api.searchMessages({ userId: "alice", query: "searchable" });
+    expect(result.messages[0]!.replyTo).toMatchObject({
+      id: parent.id,
+      excerpt: "original context",
+      deleted: false,
+    });
+    expect(result.messages[0]!.reactions).toEqual([{ emoji: "👍", count: 1, userIds: ["alice"] }]);
   });
 });
 

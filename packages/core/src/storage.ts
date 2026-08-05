@@ -115,6 +115,30 @@ export interface ListMessagesResult {
   nextCursor: string | null;
 }
 
+/** Input for {@link StorageAdapter.searchMessages}. */
+export interface SearchMessagesInput {
+  /** User whose participant conversations are searchable. */
+  userId: string;
+  /** Plain-text terms to search for, case-insensitively. */
+  query: string;
+  /** Max messages to return. */
+  limit: number;
+  /**
+   * Opaque cursor from a previous page's `nextCursor`, or `undefined` for the
+   * first page. The adapter owns the participant scope, ranking, and cursor
+   * encoding.
+   */
+  cursor?: string | undefined;
+}
+
+/** Result of {@link StorageAdapter.searchMessages}. */
+export interface SearchMessagesResult {
+  /** Matching, non-tombstone messages in participant-scoped relevance order. */
+  messages: Message[];
+  /** Cursor for the next ranked page, or `null` when there are no more results. */
+  nextCursor: string | null;
+}
+
 /** Input for {@link StorageAdapter.updateMessage}. */
 export interface UpdateMessageInput {
   messageId: string;
@@ -195,6 +219,18 @@ export interface StorageAdapter {
 
   /** List messages in a conversation, newest-first, with cursor pagination. */
   listMessages(input: ListMessagesInput): Promise<ListMessagesResult>;
+
+  /**
+   * Search non-tombstone messages in the user's participant conversations by
+   * body, case-insensitively, in ranked order. Core applies `canRead` to each
+   * returned message's conversation.
+   *
+   * This is an optional capability so existing custom adapters remain valid.
+   * First-party adapters use the canonical tokenizer and score exported by
+   * `@chatpack/core`; custom adapters should use those helpers when they
+   * implement search. Core reports `SEARCH_UNSUPPORTED` when it is omitted.
+   */
+  searchMessages?(input: SearchMessagesInput): Promise<SearchMessagesResult>;
 
   /**
    * List messages with `seq` strictly greater than `afterSeq`, **oldest

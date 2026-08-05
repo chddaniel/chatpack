@@ -140,7 +140,7 @@ Also available: `realtime.pollNow()` for a manual "check for new messages".
 2. **These are the only server-side methods** on `chat.api`:
    `getOrCreateConversation`, `listConversations`, `getConversation`,
    `sendMessage`, `listMessages`, `editMessage`, `deleteMessage`,
-   `addReaction`, `removeReaction`, `markRead`, `listMessagesAfter`.
+   `searchMessages`, `addReaction`, `removeReaction`, `markRead`, `listMessagesAfter`.
    There is **no** `chat.api.getOrCreateDirectConversation`
    (that name is a low-level *storage adapter* method - never call the
    adapter directly). Do not invent methods; if a name is not in this list,
@@ -345,6 +345,7 @@ A complete plain-Node version lives in `examples/node-server` in the repo.
 | GET    | `/conversations/:id`          | -                                      | `{ conversation }`                        |
 | POST   | `/conversations/:id/messages` | `{ body, role?, replyToMessageId?, metadata? }` | `{ message }` (201)              |
 | GET    | `/conversations/:id/messages` | `?limit=&cursor=`                      | `{ messages, nextCursor }` - newest first |
+| GET    | `/search/messages`            | `?q=&limit=&cursor=`                   | `{ messages, nextCursor }` - ranked       |
 | POST   | `/conversations/:id/read`     | `{ messageId }`                        | `{ ok: true }`                            |
 | PATCH  | `/messages/:id`               | `{ body }`                             | `{ message }`                             |
 | DELETE | `/messages/:id`               | -                                      | `{ message }` (soft-deleted)              |
@@ -370,6 +371,10 @@ Semantics that trip up generated clients:
   tombstones). Read the badge from here - don't count client-side.
 - Message lists are **newest-first**; reverse for a chronological transcript.
   Paginate with `nextCursor` → `?cursor=`.
+- Message search is case-insensitive, relevance-ranked, excludes tombstones,
+  and searches only conversations where the requesting user is a participant.
+  Core still applies `canRead`; dynamic access for non-participants is not
+  supported by this initial implementation.
 - The message text field is **`body`** (not `text`/`content`).
 - Every message object carries `reactions` and reply fields:
   `reactions: [{ emoji, count, userIds }]` (grouped, `userIds` earliest-first,
@@ -406,7 +411,8 @@ Semantics that trip up generated clients:
   (the message says *why*: bad hook return shape vs. missing cookie vs.
   unparsed cookie), 400 `INVALID_INPUT`, 403 `FORBIDDEN_*`, 404 `*_NOT_FOUND`,
   409 `MESSAGE_DELETED`, 422 `MESSAGE_REJECTED` (a `beforeMessageSend` hook
-  refused the message), 500 `INTERNAL_ERROR` (opaque).
+  refused the message), 501 `SEARCH_UNSUPPORTED` (storage has no search
+  capability), 500 `INTERNAL_ERROR` (opaque).
 - **Auth runs before routing** - an unauthenticated request to a wrong path
   still 401s. Fix auth first; then a lingering 404 `NOT_FOUND` means your
   mount path/basePath is wrong.
@@ -592,7 +598,7 @@ clouds, ...).
 ## The contract
 
 Implement the `StorageAdapter` interface exported from `@chatpack/core` and
-pass it as `chatpack({ storage: yourAdapter() })`. Fourteen async methods:
+pass it as `chatpack({ storage: yourAdapter() })`. Fourteen required async methods:
 
 | Method                          | Contract                                                                  |
 | ------------------------------- | ------------------------------------------------------------------------- |
@@ -607,12 +613,24 @@ pass it as `chatpack({ storage: yourAdapter() })`. Fourteen async methods:
 | `updateMessage`                 | Patch body / `editedAt` / `deletedAt` in place; throw if id unknown       |
 | `updateLastRead`                | Set a participant's `lastReadMessageId`                                   |
 | `countUnread`                   | Batched per-conversation unread counts for one viewer (invariant 10)      |
-| `addReaction`                   | Idempotent insert; return the message's **full** reaction set (inv. 11)   |
-| `removeReaction`                | Idempotent delete; return the remaining set (inv. 11)                     |
-| `listReactionsByMessageIds`     | Batched reactions for a page, ascending `createdAt` (invariant 12)        |
+| `addReaction`                   | Idempotent insert; return the message's **full** reaction set (inv. 12)   |
+| `removeReaction`                | Idempotent delete; return the remaining set (inv. 12)                     |
+| `listReactionsByMessageIds`     | Batched reactions for a page, ascending `createdAt` (invariant 13)        |
 
 Exact TypeScript signatures and per-method TSDoc ship in the package's
 `.d.ts` (`@chatpack/core`, `storage.ts` module).
+
+`searchMessages` is an optional storage capability. Memory and Drizzle provide
+it. Existing custom adapters may omit it; core then throws `SEARCH_UNSUPPORTED`
+and the HTTP handler returns `501`. Adapters that provide search must return
+non-tombstone participant-scoped results. First-party adapters use the core
+helpers `tokenizeSearch`, `getSearchTerms`, `countSearchTokens`, and
+`scoreSearchTerms`: Unicode NFKC normalization, lowercase matching, punctuation
+as a separator, all unique query terms required, no stemming or prefix
+matching, and occurrence-sum relevance. This makes URLs, paths, emails, phone
+numbers, versions, and underscored identifiers behave the same in memory and
+Postgres. Custom adapters should use these helpers to preserve the same
+contract; cursors remain opaque and adapter-defined.
 
 ### Entities your adapter stores
 
@@ -696,7 +714,14 @@ else is implementation detail.
     whole page of conversations - do it in one query, not one per id.
     Note `lastReadMessageId` is a message **id**, not a seq: resolve it at
     query time (SQL: LEFT JOIN the message row + `COALESCE(read.seq, 0)`).
-11. **Reaction writes are idempotent and return the full set.** `addReaction`
+11. **Optional search is participant-scoped.** If implemented,
+    `searchMessages` must filter by the supplied `userId`, exclude tombstones,
+    rank results deterministically, and return an opaque cursor. Use the core
+    search helpers for case-insensitive NFKC tokenization, punctuation
+    separation, all-term matching, and occurrence-sum relevance. Core applies
+    `canRead` after retrieving participant-scoped candidates. Dynamic access to
+    non-participant conversations is not supported by this initial design.
+12. **Reaction writes are idempotent and return the full set.** `addReaction`
     with the same `(messageId, userId, emoji)` twice must leave exactly one
     reaction - not two, not an error - so enforce uniqueness in the database
     (unique index + insert-on-conflict-do-nothing), not in JS.
@@ -706,7 +731,7 @@ else is implementation detail.
     the conversation's `lastSeq` or activity timestamp - a reaction is not a
     message, so it must not reorder the conversation list or move the
     `Last-Event-ID` baseline. Only `addMessage` bumps those.
-12. **`listReactionsByMessageIds` is batched and ordered.** All reactions on
+13. **`listReactionsByMessageIds` is batched and ordered.** All reactions on
     the given messages in **one** query (a page of messages, not one call per
     message), sorted ascending by `createdAt` so core's aggregated `userIds`
     come out earliest-first. Unknown ids are simply absent; an empty input
@@ -816,7 +841,7 @@ How the reference implementation satisfies the two hard invariants
   ```
 
   Note what is *absent*: no `UPDATE chatpack_conversations`. Reacting must not
-  advance `last_seq` or `last_activity_at` (invariant 11).
+  advance `last_seq` or `last_activity_at` (invariant 12).
 
 ### Non-SQL platforms (Convex, Firestore, ...)
 
@@ -827,7 +852,7 @@ functions) and the `StorageAdapter` object calls them through the Convex
 client; `addMessage` is a single mutation (read counter → increment → insert),
 which is automatically a serializable transaction, satisfying invariant 2
 with no extra machinery. Enforce invariant 1 with an index/lookup on
-`pairKey` inside one mutation, and invariant 11 with a lookup on the
+`pairKey` inside one mutation, and invariant 12 with a lookup on the
 `(messageId, userId, emoji)` triple inside the reaction mutation.
 
 ## Skeleton
@@ -885,9 +910,16 @@ export function myAdapter(client: MyDbClient): StorageAdapter {
       // Tombstones count. One batched query, not one per id (invariant 10).
       // return { [conversationId]: count };
     },
+    // Optional capability. Omit this method when backend search is not available.
+    async searchMessages({ userId, query, limit, cursor }) {
+      // Search only conversations where userId participates. Exclude
+      // tombstones, match case-insensitively, rank deterministically, and
+      // return an opaque cursor.
+      // return { messages, nextCursor };
+    },
     async addReaction({ messageId, userId, emoji }) {
       // Insert-on-conflict-do-nothing on the (messageId, userId, emoji)
-      // triple, then return ALL reactions on the message (invariant 11).
+      // triple, then return ALL reactions on the message (invariant 12).
       // Do NOT touch the conversation's seq counter or activity timestamp.
       // return reactions;
     },
@@ -973,23 +1005,23 @@ if any fails, the bug is in the adapter.
    (tombstones count).
 10. **Types at the boundary.** `createdAt instanceof Date` is `true` on
     returned conversations and messages (catches ISO-string leakage).
-11. **Quote-reply round trip.** Send a parent, then a reply with
+12. **Quote-reply round trip.** Send a parent, then a reply with
     `replyToMessageId` - the reply comes back with that pointer and a
     `replyTo` whose `excerpt` is the parent's body. Edit the parent: the
     excerpt on a **refetched** reply changes too (proves it is hydrated, not
     denormalized). Delete the parent: the reply survives with
     `replyTo.deleted: true` and an empty excerpt. A pointer at a message in
     another conversation is `MESSAGE_NOT_FOUND`.
-12. **Reaction idempotency.** `addReaction` the same emoji twice as the same
+13. **Reaction idempotency.** `addReaction` the same emoji twice as the same
     user - exactly one row exists and the returned set shows `count: 1`. Fire
     5 identical `addReaction` calls in parallel - still one row. Have the other
     participant add the same emoji - `count: 2` with both ids, earliest-first.
     `removeReaction` twice - the second is a silent no-op.
-13. **Reactions do not disturb messages.** Note the conversation's list
+14. **Reactions do not disturb messages.** Note the conversation's list
     position and `unreadCount`, add and remove a reaction, re-list: identical
     ordering, identical unread counts, and the next message still gets the
     `seq` it would have had.
-14. **Privilege check (hosted DBs).** With the browser/anon credentials, a
+15. **Privilege check (hosted DBs).** With the browser/anon credentials, a
     direct read of `chatpack_messages` or `chatpack_message_reactions` returns
     nothing/denied.
 

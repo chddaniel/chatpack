@@ -21,6 +21,8 @@ export {
   type SendMessageInput,
   type ListMessagesApiInput,
   type ListMessagesApiResult,
+  type SearchMessagesApiInput,
+  type SearchMessagesApiResult,
   type ListMessagesAfterInput,
   type EditMessageInput,
   type DeleteMessageInput,
@@ -67,12 +69,17 @@ export type {
   AddMessageInput,
   ListMessagesInput,
   ListMessagesResult,
+  SearchMessagesInput,
+  SearchMessagesResult,
   ListMessagesAfterSeqInput,
   ReactionInput,
   UpdateMessageInput,
   UpdateLastReadInput,
   CountUnreadInput,
 } from "./storage";
+
+// Canonical message-search semantics for first-party adapters.
+export { countSearchTokens, getSearchTerms, scoreSearchTerms, tokenizeSearch } from "./search";
 
 // HTTP handler (M2) + SSE (M3)
 export { createHandler, type ChatpackHandler, type HandlerOptions } from "./handler";

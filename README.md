@@ -311,6 +311,18 @@ curl '/api/chat/conversations/conv_1/messages?limit=50'
 { "messages": [{ "id": "msg_1", "body": "hey bob!", "seq": 1, "…": "…" }], "nextCursor": null }
 ```
 
+Search participant conversations across message bodies. Search is
+case-insensitive, punctuation-separated, relevance-ranked, and excludes
+tombstones:
+
+```sh
+curl '/api/chat/search/messages?q=hello&limit=50'
+```
+
+The response is `{ "messages": [...], "nextCursor": null }`. Core applies
+`canRead` to the participant-scoped results. Dynamic access to conversations
+where the user is not a participant is not supported by this initial design.
+
 Errors are JSON with a stable machine-readable code and a mapped HTTP status -
 `401` when `auth` returns `null`, `400` for invalid input, `403`/`404`/`409`
 for domain errors:

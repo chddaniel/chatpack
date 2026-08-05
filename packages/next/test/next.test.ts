@@ -38,6 +38,9 @@ const stubStorage = {
   async listMessages() {
     return { messages: [], nextCursor: null };
   },
+  async searchMessages() {
+    return { messages: [], nextCursor: null };
+  },
   async listMessagesAfterSeq() {
     return [];
   },

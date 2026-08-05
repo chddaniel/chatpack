@@ -29,7 +29,7 @@
  * @module
  */
 
-import { and, asc, desc, eq, gt, lt, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
 import { alias, type PgDatabase, type PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 import type {
@@ -48,18 +48,28 @@ import type {
   Metadata,
   Reaction,
   ReactionInput,
+  SearchMessagesInput,
+  SearchMessagesResult,
   StorageAdapter,
   UpdateLastReadInput,
   UpdateMessageInput,
 } from "@chatpack/core";
+import { countSearchTokens, getSearchTerms } from "@chatpack/core";
 
-import { conversationParticipants, conversations, messageReactions, messages } from "./schema";
+import {
+  conversationParticipants,
+  conversations,
+  messageReactions,
+  messageSearchTokens,
+  messages,
+} from "./schema";
 
 export {
   chatpackSchema,
   conversationParticipants,
   conversations,
   messageReactions,
+  messageSearchTokens,
   messages,
   migrationSql,
   migrationStatements,
@@ -76,10 +86,73 @@ type ParticipantRow = typeof conversationParticipants.$inferSelect;
 type MessageRow = typeof messages.$inferSelect;
 type ReactionRow = typeof messageReactions.$inferSelect;
 
+interface SearchTokenRow {
+  messageId: string;
+  token: string;
+  occurrences: number;
+}
+
+const SEARCH_TOKEN_BATCH_SIZE = 1000;
+
+function searchTokenRows(messageId: string, body: string): SearchTokenRow[] {
+  return [...countSearchTokens(body)].map(([token, occurrences]) => ({
+    messageId,
+    token,
+    occurrences,
+  }));
+}
+
+async function insertSearchTokenRows(
+  rows: SearchTokenRow[],
+  insert: (batch: SearchTokenRow[]) => Promise<void>,
+): Promise<void> {
+  for (let offset = 0; offset < rows.length; offset += SEARCH_TOKEN_BATCH_SIZE) {
+    await insert(rows.slice(offset, offset + SEARCH_TOKEN_BATCH_SIZE));
+  }
+}
+
+/**
+ * Rebuild the canonical token table after applying the exported migration to
+ * a database that already contains messages. New messages and edits maintain
+ * their rows automatically through {@link drizzleAdapter}.
+ */
+export async function backfillMessageSearchTokens(db: DrizzlePgDatabase): Promise<void> {
+  const rows = await db
+    .select({ id: messages.id, body: messages.body, deletedAt: messages.deletedAt })
+    .from(messages);
+  const tokens = rows.flatMap((row) => (row.deletedAt ? [] : searchTokenRows(row.id, row.body)));
+
+  await db.delete(messageSearchTokens);
+  await insertSearchTokenRows(tokens, async (batch) => {
+    await db.insert(messageSearchTokens).values(batch);
+  });
+}
+
 function generateId(prefix: string): string {
   // 128 bits of randomness via the Web Crypto API (available in Node 19+,
   // Bun, Deno, Workers) - no extra dependency.
   return `${prefix}_${crypto.randomUUID().replaceAll("-", "")}`;
+}
+
+function encodeSearchCursor(rank: number, createdAt: Date, id: string): string {
+  return encodeURIComponent(JSON.stringify([rank, createdAt.getTime(), id]));
+}
+
+function decodeSearchCursor(cursor: string): [number, number, string] | null {
+  try {
+    const value: unknown = JSON.parse(decodeURIComponent(cursor));
+    if (
+      Array.isArray(value) &&
+      typeof value[0] === "number" &&
+      typeof value[1] === "number" &&
+      typeof value[2] === "string"
+    ) {
+      return [value[0], value[1], value[2]];
+    }
+  } catch {
+    // Invalid cursors restart from the first result, matching other adapter cursors.
+  }
+  return null;
 }
 
 function toMessage(row: MessageRow): Message {
@@ -274,40 +347,45 @@ export function drizzleAdapter(db: DrizzlePgDatabase): StorageAdapter {
       // THE critical line of the adapter (ADR 0003/0007): one atomic
       // read-modify-write. Postgres locks the row for the duration of the
       // UPDATE, so concurrent sends serialize and each gets a unique seq.
-      const [bumped] = await db
-        .update(conversations)
-        .set({
-          lastSeq: sql`${conversations.lastSeq} + 1`,
-          lastActivityAt: now,
-        })
-        .where(eq(conversations.id, input.conversationId))
-        .returning({ seq: conversations.lastSeq });
+      return db.transaction(async (tx) => {
+        const [bumped] = await tx
+          .update(conversations)
+          .set({
+            lastSeq: sql`${conversations.lastSeq} + 1`,
+            lastActivityAt: now,
+          })
+          .where(eq(conversations.id, input.conversationId))
+          .returning({ seq: conversations.lastSeq });
 
-      if (!bumped) {
-        throw new Error(`drizzleAdapter: unknown conversation "${input.conversationId}".`);
-      }
+        if (!bumped) {
+          throw new Error(`drizzleAdapter: unknown conversation "${input.conversationId}".`);
+        }
 
-      const [row] = await db
-        .insert(messages)
-        .values({
-          id: generateId("msg"),
-          conversationId: input.conversationId,
-          senderId: input.senderId,
-          body: input.body,
-          role: input.role,
-          seq: bumped.seq,
-          createdAt: now,
-          editedAt: null,
-          deletedAt: null,
-          replyToMessageId: input.replyToMessageId,
-          metadata: input.metadata,
-        })
-        .returning();
+        const [row] = await tx
+          .insert(messages)
+          .values({
+            id: generateId("msg"),
+            conversationId: input.conversationId,
+            senderId: input.senderId,
+            body: input.body,
+            role: input.role,
+            seq: bumped.seq,
+            createdAt: now,
+            editedAt: null,
+            deletedAt: null,
+            replyToMessageId: input.replyToMessageId,
+            metadata: input.metadata,
+          })
+          .returning();
 
-      if (!row) {
-        throw new Error("drizzleAdapter: message insert returned no row.");
-      }
-      return toMessage(row);
+        if (!row) {
+          throw new Error("drizzleAdapter: message insert returned no row.");
+        }
+        await insertSearchTokenRows(searchTokenRows(row.id, row.body), async (batch) => {
+          await tx.insert(messageSearchTokens).values(batch);
+        });
+        return toMessage(row);
+      });
     },
 
     async getMessage(messageId: string): Promise<Message | null> {
@@ -349,6 +427,68 @@ export function drizzleAdapter(db: DrizzlePgDatabase): StorageAdapter {
       return { messages: page.map(toMessage), nextCursor };
     },
 
+    async searchMessages(input: SearchMessagesInput): Promise<SearchMessagesResult> {
+      const terms = getSearchTerms(input.query);
+      if (terms.length === 0) return { messages: [], nextCursor: null };
+
+      const matches = db
+        .select({
+          messageId: messageSearchTokens.messageId,
+          // Cast away from Postgres int8 so node-postgres and PGlite both
+          // return the numeric rank expected by the opaque cursor.
+          rank: sql<number>`sum(${messageSearchTokens.occurrences})::integer`.as("rank"),
+        })
+        .from(messageSearchTokens)
+        .where(inArray(messageSearchTokens.token, terms))
+        .groupBy(messageSearchTokens.messageId)
+        .having(sql`count(distinct ${messageSearchTokens.token}) = ${terms.length}`)
+        .as("search_matches");
+
+      const conditions = [
+        isNull(messages.deletedAt),
+        eq(conversationParticipants.userId, input.userId),
+      ];
+
+      const cursor = input.cursor ? decodeSearchCursor(input.cursor) : null;
+      if (cursor) {
+        const [cursorRank, cursorCreatedAt, cursorId] = cursor;
+        const cursorDate = new Date(cursorCreatedAt);
+        const cursorCondition = or(
+          lt(matches.rank, cursorRank),
+          and(eq(matches.rank, cursorRank), lt(messages.createdAt, cursorDate)),
+          and(
+            eq(matches.rank, cursorRank),
+            eq(messages.createdAt, cursorDate),
+            lt(messages.id, cursorId),
+          ),
+        );
+        if (cursorCondition) conditions.push(cursorCondition);
+      }
+
+      const rows = await db
+        .select({ message: messages, rank: matches.rank })
+        .from(matches)
+        .innerJoin(messages, eq(messages.id, matches.messageId))
+        .innerJoin(
+          conversationParticipants,
+          eq(conversationParticipants.conversationId, messages.conversationId),
+        )
+        .where(and(...conditions))
+        .orderBy(desc(matches.rank), desc(messages.createdAt), desc(messages.id))
+        .limit(input.limit + 1);
+
+      const page = rows.slice(0, input.limit);
+      const hasMore = rows.length > input.limit;
+      const last = page[page.length - 1];
+      return {
+        messages: page.map((row) => toMessage(row.message)),
+        nextCursor:
+          hasMore && last
+            ? encodeSearchCursor(last.rank, last.message.createdAt, last.message.id)
+            : null,
+      };
+    },
+
     async listMessagesAfterSeq(input: ListMessagesAfterSeqInput): Promise<Message[]> {
       const rows = await db
         .select()
@@ -367,16 +507,26 @@ export function drizzleAdapter(db: DrizzlePgDatabase): StorageAdapter {
       if (input.editedAt !== undefined) patch.editedAt = input.editedAt;
       if (input.deletedAt !== undefined) patch.deletedAt = input.deletedAt;
 
-      const [row] = await db
-        .update(messages)
-        .set(patch)
-        .where(eq(messages.id, input.messageId))
-        .returning();
+      return db.transaction(async (tx) => {
+        const [row] = await tx
+          .update(messages)
+          .set(patch)
+          .where(eq(messages.id, input.messageId))
+          .returning();
 
-      if (!row) {
-        throw new Error(`drizzleAdapter: unknown message "${input.messageId}".`);
-      }
-      return toMessage(row);
+        if (!row) {
+          throw new Error(`drizzleAdapter: unknown message "${input.messageId}".`);
+        }
+        if (input.body !== undefined || input.deletedAt !== undefined) {
+          await tx.delete(messageSearchTokens).where(eq(messageSearchTokens.messageId, row.id));
+          if (!row.deletedAt) {
+            await insertSearchTokenRows(searchTokenRows(row.id, row.body), async (batch) => {
+              await tx.insert(messageSearchTokens).values(batch);
+            });
+          }
+        }
+        return toMessage(row);
+      });
     },
 
     async updateLastRead(input: UpdateLastReadInput): Promise<void> {

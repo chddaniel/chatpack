@@ -206,6 +206,119 @@ describe("permissions over HTTP", () => {
   });
 });
 
+describe("message search over HTTP", () => {
+  it("returns ranked, case-insensitive results and filters unreadable conversations", async () => {
+    const handler = createHttpChat();
+    const first = await send(handler, "POST", "/conversations", "alice", {
+      otherUserId: "bob",
+    });
+    const firstConversation = (await first.json()) as { conversation: { id: string } };
+    const second = await send(handler, "POST", "/conversations", "alice", {
+      otherUserId: "carol",
+    });
+    const secondConversation = (await second.json()) as { conversation: { id: string } };
+
+    await send(
+      handler,
+      "POST",
+      `/conversations/${firstConversation.conversation.id}/messages`,
+      "alice",
+      { body: "hello from bob" },
+    );
+    await send(
+      handler,
+      "POST",
+      `/conversations/${secondConversation.conversation.id}/messages`,
+      "alice",
+      { body: "HELLO hello world" },
+    );
+
+    const result = await get(handler, "/search/messages?q=HeLLo&limit=1", "alice");
+    expect(result.status).toBe(200);
+    const page = (await result.json()) as {
+      messages: { body: string }[];
+      nextCursor: string | null;
+    };
+    expect(page.messages.map((message) => message.body)).toEqual(["HELLO hello world"]);
+    expect(page.nextCursor).not.toBeNull();
+
+    const next = await get(
+      handler,
+      `/search/messages?q=hello&limit=1&cursor=${encodeURIComponent(page.nextCursor!)}`,
+      "alice",
+    );
+    expect(
+      ((await next.json()) as { messages: { body: string }[] }).messages.map(
+        (message) => message.body,
+      ),
+    ).toEqual(["hello from bob"]);
+
+    const outsider = await get(handler, "/search/messages?q=hello", "mallory");
+    expect(outsider.status).toBe(200);
+    expect(((await outsider.json()) as { messages: unknown[] }).messages).toHaveLength(0);
+  });
+
+  it("requires a non-empty query and authentication", async () => {
+    const handler = createHttpChat();
+    expect((await get(handler, "/search/messages", "alice")).status).toBe(400);
+    expect((await get(handler, "/search/messages?q=%20", "alice")).status).toBe(400);
+    expect((await get(handler, "/search/messages?q=hello")).status).toBe(401);
+  });
+
+  it("does not search non-participant conversations yet", async () => {
+    const chat = chatpack({
+      storage: memoryAdapter(),
+      telemetry: false,
+      permissions: {
+        canRead: ({ user, conversation }) =>
+          user.id === "support" || conversation.participantIds.includes(user.id),
+      },
+      auth: (request) => {
+        const userId = request.headers.get("x-user-id");
+        return userId ? { id: userId } : null;
+      },
+    });
+    const handler = chat.handler();
+    const created = await send(handler, "POST", "/conversations", "alice", {
+      otherUserId: "bob",
+    });
+    const { conversation } = (await created.json()) as { conversation: { id: string } };
+    await send(handler, "POST", `/conversations/${conversation.id}/messages`, "alice", {
+      body: "support case result",
+    });
+
+    const response = await get(handler, "/search/messages?q=result", "support");
+    expect(response.status).toBe(200);
+    expect(((await response.json()) as { messages: { body: string }[] }).messages).toHaveLength(0);
+  });
+
+  it("returns 501 when the storage adapter lacks search support", async () => {
+    const storage = memoryAdapter();
+    delete storage.searchMessages;
+    const chat = chatpack({
+      storage,
+      telemetry: false,
+      auth: (request) => {
+        const userId = request.headers.get("x-user-id");
+        return userId ? { id: userId } : null;
+      },
+    });
+
+    const response = await chat.handler().GET(
+      new Request(`${BASE}/search/messages?q=hello`, {
+        headers: { "x-user-id": "alice" },
+      }),
+    );
+    expect(response.status).toBe(501);
+    expect(await response.json()).toEqual({
+      error: {
+        code: "SEARCH_UNSUPPORTED",
+        message: "Message search is not supported by this storage adapter.",
+      },
+    });
+  });
+});
+
 describe("validation and error mapping", () => {
   it("400 for malformed JSON, missing fields, and bad roles", async () => {
     const handler = createHttpChat();

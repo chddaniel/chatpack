@@ -238,6 +238,16 @@ describe.each(backends)("storage: $name", ({ databaseUrl }) => {
         "hey bob!",
       ]);
 
+      const search = await json(await request(users.bob, "GET", "/search/messages?q=HEY"));
+      expect(search.messages.map((m: { body: string }) => m.body)).toEqual([
+        "hey alice!",
+        "hey bob!",
+      ]);
+      const hiddenSearch = await json(
+        await request(users.mallory, "GET", "/search/messages?q=HEY"),
+      );
+      expect(hiddenSearch.messages).toHaveLength(0);
+
       // conversation endpoints
       const conversations = await json(await request(users.bob, "GET", "/conversations"));
       expect(conversations.conversations).toHaveLength(1);
