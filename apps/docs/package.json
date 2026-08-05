@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "scripts": {
-    "build": "next build",
+    "build": "next build --webpack",
     "dev": "next dev --port 3333",
     "start": "next start",
     "typecheck": "next typegen && tsc --noEmit",
