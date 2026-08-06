@@ -1,11 +1,12 @@
 ---
 title: Permissions
-description: The default participants-only model and the canRead / canWrite hooks.
+description: The default participants-only model and the canRead / canWrite / canManage hooks.
 ---
 
-By default, **only the two participants** of a conversation can read or write
-it - enforced on every `chat.api.*` call and every HTTP route. You can loosen
-or tighten that with two hooks.
+By default, **only the participants** of a conversation can read or write it -
+enforced on every `chat.api.*` call and every HTTP route. Managing a group
+(membership, roles, the name) additionally requires the **`admin`** role. You
+can loosen or tighten all of that with three hooks.
 
 ## The hooks
 
@@ -23,11 +24,16 @@ const chat = chatpack({
     // May `user` write to `conversation`? Default: participants only.
     canWrite: ({ user, conversation }) =>
       conversation.participantIds.includes(user.id) && !isBanned(user.id),
+
+    // May `user` manage this group - add/remove members, change roles, rename?
+    // Default: participants whose role is "admin".
+    canManage: ({ user, conversation }) =>
+      conversation.participants.some((p) => p.userId === user.id && p.role === "admin"),
   },
 });
 ```
 
-Both hooks receive a `PermissionContext`:
+All three hooks receive a `PermissionContext`:
 
 <TypeTable
   type={{
@@ -38,21 +44,32 @@ Both hooks receive a `PermissionContext`:
     },
     conversation: {
       description:
-        "The conversation being read from / written to, with a participantIds convenience array.",
+        "The conversation being read from / written to / managed, with a participantIds convenience array. Use conversation.participants for roles.",
       type: "Conversation & { participantIds: string[] }",
     },
   }}
 />
 
 Hooks may be sync or async and must return a boolean. Returning `false` maps
-to a `403` - `FORBIDDEN_READ` or `FORBIDDEN_WRITE` - both over HTTP and as a
-thrown `ChatpackError` from `chat.api.*`.
+to a `403` - `FORBIDDEN_READ`, `FORBIDDEN_WRITE` or `NOT_CONVERSATION_ADMIN` -
+both over HTTP and as a thrown `ChatpackError` from `chat.api.*`.
 
 ## What the hooks do and don't cover
 
 - **Sender-only edit/delete is separate.** Even with `canWrite` returning
   `true`, only the original sender can edit or delete a message - a
   non-sender gets `403 NOT_MESSAGE_SENDER`. This rule is not hook-overridable.
+- **`canManage` gates group administration only.** It runs on
+  `addParticipants`, `removeParticipant`, `setParticipantRole` and
+  `updateConversation`. Reading and sending are unaffected: a plain `member`
+  is a full participant for every other purpose.
+- **Leaving is exempt from `canManage`.** Removing _yourself_ always works,
+  even when your `canManage` returns `false`, so a member is never trapped in
+  a group.
+- **`canManage` deliberately has the narrowest default.** `canRead` and
+  `canWrite` default to "any participant"; `canManage` defaults to "any
+  participant whose role is `admin`". If you override it, you are replacing
+  the role check entirely - re-add it yourself unless you mean to drop it.
 - **Read permission gates live delivery too.** SSE events are only delivered
   for conversations the connected user may read - participation is re-checked
   server-side per event.
@@ -84,14 +101,28 @@ permissions: {
 },
 ```
 
-**Blocklists** - deny writing to someone who blocked the sender:
+**Blocklists** - deny writing to someone who blocked the sender. Note the
+`type` guard: "the other participant" only means something in a DM, so the rule
+skips groups rather than picking an arbitrary member:
 
 ```ts
 permissions: {
   canWrite: async ({ user, conversation }) => {
     if (!conversation.participantIds.includes(user.id)) return false;
+    if (conversation.type !== "direct") return true;
     const other = conversation.participantIds.find((id) => id !== user.id)!;
     return !(await isBlocked({ by: other, target: user.id }));
   },
+},
+```
+
+**Org staff can manage any group** - keep the admin rule and add an escape
+hatch on top:
+
+```ts
+permissions: {
+  canManage: async ({ user, conversation }) =>
+    conversation.participants.some((p) => p.userId === user.id && p.role === "admin") ||
+    (await hasRole(user.id, "staff")),
 },
 ```

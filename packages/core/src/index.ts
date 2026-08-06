@@ -12,6 +12,8 @@
 export {
   chatpack,
   pairKeyFor,
+  MAX_CONVERSATION_NAME_LENGTH,
+  MAX_GROUP_PARTICIPANTS,
   type ChatpackApi,
   type ChatpackInstance,
   type GetOrCreateConversationInput,
@@ -28,6 +30,12 @@ export {
   type DeleteMessageInput,
   type MarkReadInput,
   type ReactionApiInput,
+  // Group conversations (docs/decisions/0017)
+  type CreateGroupConversationApiInput,
+  type AddParticipantsApiInput,
+  type RemoveParticipantApiInput,
+  type SetParticipantRoleApiInput,
+  type UpdateConversationApiInput,
 } from "./chatpack";
 
 // Configuration
@@ -48,8 +56,10 @@ export type {
 // Domain types
 export type {
   Conversation,
+  ConversationType,
   ConversationWithUnread,
   Participant,
+  ParticipantRole,
   Message,
   MessageReference,
   MessageRole,
@@ -76,6 +86,12 @@ export type {
   UpdateMessageInput,
   UpdateLastReadInput,
   CountUnreadInput,
+  // Group conversations (docs/decisions/0017)
+  CreateGroupConversationInput,
+  AddParticipantsInput,
+  RemoveParticipantInput,
+  SetParticipantRoleInput,
+  UpdateConversationInput,
 } from "./storage";
 
 // Canonical message-search semantics for first-party adapters.
@@ -87,11 +103,13 @@ export { createHandler, type ChatpackHandler, type HandlerOptions } from "./hand
 // Transport (M3) - live event pub/sub
 export {
   inProcessTransport,
+  isConversationEvent,
   isEphemeralEvent,
   isMessageEvent,
   isReactionEvent,
   type Transport,
   type ChatEvent,
+  type ConversationEvent,
   type EphemeralEvent,
   type ReactionEvent,
   type TransportEvent,

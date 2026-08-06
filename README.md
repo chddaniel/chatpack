@@ -5,8 +5,8 @@
 **Open-source chat infrastructure for developers.**
 
 Install a package, wire up your database and auth, and get a production-ready
-1:1 chat backend - conversations, messages, permissions, read-state, and
-real-time delivery - without rebuilding it from scratch.
+chat backend - 1:1 and group conversations, messages, permissions, read-state,
+and real-time delivery - without rebuilding it from scratch.
 
 [![CI](https://github.com/chddaniel/chatpack/actions/workflows/ci.yml/badge.svg)](https://github.com/chddaniel/chatpack/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
@@ -20,11 +20,11 @@ full REST reference. (Source in [`apps/docs`](./apps/docs); run locally with
 
 ---
 
-> **Status: `0.3.x` - v0 MVP + real-time plugins + unread counts + browser
-> client, live on npm.** The v0 MVP (core engine, HTTP handler, real-time SSE,
-> Postgres adapter) plus the opt-in real-time plugins - **`typing()`,
-> `presence()`, and `receipts()`, all shipping today inside `@chatpack/core`
-> under the `@chatpack/core/plugins` subpath** (see
+> **Status: `0.6.x` - v0 MVP + real-time plugins + unread counts + browser
+> client + reactions + group chats, live on npm.** The v0 MVP (core engine,
+> HTTP handler, real-time SSE, Postgres adapter) plus the opt-in real-time
+> plugins - **`typing()`, `presence()`, and `receipts()`, all shipping today
+> inside `@chatpack/core` under the `@chatpack/core/plugins` subpath** (see
 > [Real-time plugins](#real-time-plugins-typing-presence-read-ticks)) - are
 > published and installable now, along with the first-party
 > [`@chatpack/client`](./packages/client), which provides the matching typed
@@ -34,7 +34,8 @@ full REST reference. (Source in [`apps/docs`](./apps/docs); run locally with
 ## Why
 
 Every app that needs messaging ends up rebuilding the same things: conversations,
-messages, permissions, read receipts, real-time delivery, and countless edge cases.
+messages, permissions, read receipts, real-time delivery, group membership and
+roles, and countless edge cases.
 
 Chatpack removes that repetition - the same way BetterAuth did for authentication.
 You bring your **auth** and your **frontend**; Chatpack gives you a small,
@@ -252,6 +253,23 @@ Every conversation object carries the **viewer's `unreadCount`** (messages
 newer than their read-state, excluding their own) - the badge number comes
 from the API, no client-side counting.
 
+Groups are **created, never found** - a separate route, because two groups with
+the same members are still two different groups:
+
+```sh
+curl -X POST /api/chat/conversations/group \
+  -H 'content-type: application/json' \
+  -d '{"name": "Standup", "userIds": ["bob", "carol"]}'
+```
+
+The caller becomes an `admin`, everyone in `userIds` a `member`, and the
+conversation comes back with `type: "group"`, `pairKey: null`, and the `name`.
+Managing it afterwards is four admin-only routes - rename
+(`PATCH /conversations/:id`), add (`POST /conversations/:id/participants`),
+remove (`DELETE`, and any member may pass their own id to leave), and change a
+role (`PATCH …/participants`). Groups hold 1-256 participants and always keep at
+least one admin.
+
 Send a message - note the field is **`body`**:
 
 ```sh
@@ -331,7 +349,7 @@ for domain errors:
 { "error": { "code": "FORBIDDEN_READ", "message": "…" } }
 ```
 
-The full endpoint reference (all 11 routes, request/response shapes, error
+The full endpoint reference (every route, request/response shapes, error
 codes) lives in [`@chatpack/core`'s README](./packages/core#rest-api).
 
 ### 5. Use the first-party client (optional)
@@ -423,6 +441,13 @@ events.addEventListener("reaction.added", (e) => {
   // message.reactions is the COMPLETE set after the change - replace, don't merge
 });
 
+events.addEventListener("participant.removed", (e) => {
+  const { affectedUserIds, conversation } = JSON.parse((e as MessageEvent).data);
+  // If affectedUserIds includes YOUR id, you were removed - drop the
+  // conversation. Otherwise replace your cached copy with `conversation`.
+});
+// participant.added and conversation.updated (rename / role change) match.
+
 events.onerror = () => {
   if (events.readyState === EventSource.CLOSED) {
     // Fatal (e.g. 401 from your auth hook): the browser will NOT retry.
@@ -437,8 +462,14 @@ If the connection drops, `EventSource` reconnects with `Last-Event-ID` and
 Chatpack replays whatever was missed **from storage** - durable-first delivery,
 no lost messages.
 
-Three things to know before going live:
+Four things to know before going live:
 
+- **Membership changes are live too, and also not replayed.**
+  `participant.added` / `participant.removed` / `conversation.updated` carry
+  `{ actorId, affectedUserIds, conversation }` - a complete snapshot, so replace
+  your cached conversation rather than patching it. Compare `affectedUserIds`
+  against your own id to tell "I was removed" (drop it; it's the last event
+  you'll see for that conversation) from "someone else was".
 - **Reactions are live but not replayed.** `reaction.added` /
   `reaction.removed` are stored, unlike ephemeral plugin events, but reactions
   have no `seq` - so their frames carry no `id:` (emitting one would rewind
@@ -490,9 +521,34 @@ await chat.api.addReaction({ userId: "bob", messageId: messages[0].id, emoji: "�
 await chat.api.removeReaction({ userId: "bob", messageId: messages[0].id, emoji: "👍" });
 ```
 
-That's it. Only the two participants can read or write - enforced by default,
-customizable via the `permissions` hooks. Need content rules (length caps,
-profanity filters) or post-send side-effects? Add
+Groups use a different first call - `createGroupConversation` always creates,
+and everything after it is the same API:
+
+```ts
+const group = await chat.api.createGroupConversation({
+  userId: "alice", // becomes the group's first admin
+  userIds: ["bob", "carol"], // joined as members
+  name: "Standup",
+});
+
+await chat.api.addParticipants({ userId: "alice", conversationId: group.id, userIds: ["dave"] });
+await chat.api.setParticipantRole({
+  userId: "alice",
+  conversationId: group.id,
+  targetUserId: "bob",
+  role: "admin",
+});
+await chat.api.removeParticipant({
+  userId: "carol", // passing your own id = leaving; no admin needed
+  conversationId: group.id,
+  targetUserId: "carol",
+});
+```
+
+That's it. Only participants can read or write - enforced by default,
+customizable via the `permissions` hooks (`canRead`, `canWrite`, and `canManage`
+for the group-management methods, which default to admins only). Need content
+rules (length caps, profanity filters) or post-send side-effects? Add
 `hooks: { beforeMessageSend, afterMessageMutation }` - block or rewrite a
 message before it persists, react after send/edit/delete persistence (see [`@chatpack/core`'s
 README](./packages/core#message-hooks)).
@@ -502,7 +558,8 @@ README](./packages/core#message-hooks)).
 To Chatpack, an AI assistant is **just another participant** - pick a
 synthetic user id (any string you'll never issue to a real user, e.g.
 `ai:assistant`) and have your backend send its replies. No special AI support
-needed, and the same 1:1 permissions apply:
+needed, and the same permissions apply (drop the same id into a group's
+`userIds` for a shared assistant):
 
 ```ts
 const ASSISTANT_ID = "ai:assistant";
@@ -586,17 +643,20 @@ Notes that keep the design honest:
 
 - **Typing** is stateless: while the user types, `POST …/typing` at most once
   every few seconds; the other side clears the indicator if no ping arrives
-  within ~5s. Send `{ "isTyping": false }` to clear it eagerly.
+  within ~5s. Send `{ "isTyping": false }` to clear it eagerly. In a group the
+  ping goes to every other participant, so key your indicator by `senderId` -
+  several people can be typing at once.
 - **Presence needs no heartbeat endpoint** - the SSE connection _is_ the
   heartbeat. Multi-tab safe; a short grace period (default 5s,
   `presence({ offlineDelayMs })`) stops the online dot from blinking during
   `EventSource` auto-reconnects. Snapshots via `GET /presence` only reveal
   users the caller shares a conversation with.
 - **Receipts** are instant ✓/✓✓ pings while both sides are online:
-  `receipt.delivered` fires to the sender the moment the recipient's stream
-  receives the message; `receipt.read` fires when the other side calls
-  mark-read. Ticks are at-least-once - dedupe by `payload.messageId`. The
-  durable truth is still `lastReadMessageId`.
+  `receipt.delivered` fires to the sender the moment a recipient's stream
+  receives the message; `receipt.read` fires when someone else calls mark-read.
+  Ticks are at-least-once - dedupe by `payload.messageId`. Each tick is
+  **per-user**, so in a group collect `senderId`s rather than treating one tick
+  as "everyone read it". The durable truth is still `lastReadMessageId`.
 - Like the default transport, plugin state is **in-memory and single-node**
   (MVP §5). Multi-node fan-out is a future transport, not an API change.
 
@@ -621,9 +681,10 @@ Want to write your own plugin? The seam is public - see `ChatpackPlugin` in
 | Unread counts (`unreadCount`)           | ✅ Done (v0.next) |
 | Browser client + React hooks            | ✅ Done (v0.next) |
 | Reactions + quote-replies               | ✅ Done (v0.next) |
+| Group chats: membership, roles, admin   | ✅ Done (v0.next) |
 
-Deliberately **not** in scope yet: groups, file uploads, push notification
-delivery, UI components, message threads (replies are flat pointers, not threads). See
+Deliberately **not** in scope yet: file uploads, push notification delivery, UI
+components, message threads (replies are flat pointers, not threads). See
 [docs/MVP.md](./docs/MVP.md) for the full scope and reasoning.
 
 ## Packages

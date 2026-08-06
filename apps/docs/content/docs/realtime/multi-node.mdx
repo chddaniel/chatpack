@@ -86,13 +86,14 @@ is yours to do, since this package didn't open them.
 
 ## What goes multi-node - and what doesn't
 
-| Feature                                            | Multi-node? |
-| -------------------------------------------------- | ----------- |
-| `message.created` / `message.updated` / `.deleted` | ✅ Yes      |
-| `reaction.added` / `reaction.removed`              | ✅ Yes      |
-| `typing()` indicators                              | ✅ Yes      |
-| `receipts()` delivered/read ticks                  | ✅ Yes      |
-| `presence()` online/offline                        | ❌ Per-node |
+| Feature                                                   | Multi-node? |
+| --------------------------------------------------------- | ----------- |
+| `message.created` / `message.updated` / `.deleted`        | ✅ Yes      |
+| `reaction.added` / `reaction.removed`                     | ✅ Yes      |
+| `participant.added` / `.removed` / `conversation.updated` | ✅ Yes      |
+| `typing()` indicators                                     | ✅ Yes      |
+| `receipts()` delivered/read ticks                         | ✅ Yes      |
+| `presence()` online/offline                               | ❌ Per-node |
 
 <Callout type="warn">
   **`presence()` stays per-node.** It counts live SSE connections in an in-process `Map`, so
@@ -123,9 +124,9 @@ Failures surface through `onError` instead of the request path.
 
 Redis pub/sub itself is at-most-once - there's no replay buffer, which is exactly
 why durable events remain replayable from storage and ephemeral ones are defined
-as droppable. Reaction events sit in between: they're stored, but they have no
-`seq`, so `Last-Event-ID` can't replay them either - a reaction missed during an
-outage appears on the next refetch of that thread
+as droppable. Reaction and membership events sit in between: they're stored, but
+they have no `seq`, so `Last-Event-ID` can't replay them either - one missed
+during an outage appears on the next refetch of that conversation
 ([Reaction events](/docs/realtime/sse#reaction-events-are-a-third-category)).
 
 ## Notes

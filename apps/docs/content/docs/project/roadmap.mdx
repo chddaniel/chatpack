@@ -22,11 +22,15 @@ description: What shipped in v0, what's deliberately out of scope, and where Cha
 | Browser client + React hooks             | ✅ Done (v0.next) |
 | Reactions + quote-replies                | ✅ Done (v0.next) |
 | Participant-scoped ranked message search | ✅ Done (v0.next) |
+| Group chats: membership, roles, admin    | ✅ Done (v0.next) |
 
 ## Deliberately not in scope yet
 
-- **Group conversations** - v0 is 1:1 only; the data model anticipates groups
-  (group conversations simply won't carry a pair key).
+- **Group features beyond membership and roles** - groups ship with
+  `admin`/`member`, a name, a 256-participant cap, and admin-gated management
+  ([ADR 0017](/docs/concepts/architecture)). Invite links, join requests,
+  per-group permission grants, mentions, and public/discoverable channels are
+  not part of it.
 - **Message threads** - `replyToMessageId` is a flat pointer at one earlier
   message, not a thread tree: no thread ids, no per-thread reply counts, no
   nested pagination. See

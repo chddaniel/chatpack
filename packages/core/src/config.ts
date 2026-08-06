@@ -39,20 +39,30 @@ export interface PermissionContext {
   user: ChatpackUser;
   /** The conversation being read from / written to. */
   conversation: Conversation & {
-    /** Convenience: the two participant user ids. */
+    /** Convenience: the participant user ids. */
     participantIds: string[];
   };
 }
 
 /**
- * Permission hooks (MVP §2). The default for both is
- * "only the two participants" - override to loosen or tighten.
+ * Permission hooks (MVP §2). Defaults: `canRead`/`canWrite` allow any
+ * participant; `canManage` allows group admins (`docs/decisions/0017`).
+ * Override to loosen or tighten.
  */
 export interface PermissionHooks {
   /** May `user` read `conversation`? Default: participants only. */
   canRead?: (ctx: PermissionContext) => Promise<boolean> | boolean;
   /** May `user` write to `conversation`? Default: participants only. */
   canWrite?: (ctx: PermissionContext) => Promise<boolean> | boolean;
+  /**
+   * May `user` administer `conversation` - add/remove members, change roles,
+   * rename (`docs/decisions/0017`)?
+   *
+   * Default: the user is a participant whose `role` is `"admin"`. Override when
+   * authority lives outside Chatpack (org roles, subscription tier, staff
+   * flags). Leaving a group is exempt: a member may always remove themselves.
+   */
+  canManage?: (ctx: PermissionContext) => Promise<boolean> | boolean;
 }
 
 /**
@@ -101,10 +111,26 @@ export interface AfterMessageMutationContext {
   message: Message;
   /** The conversation containing the message. */
   conversation: Conversation & {
-    /** Convenience: the two participant user ids. */
+    /** Convenience: the participant user ids. */
     participantIds: string[];
   };
-  /** The participant who is not the persisted message sender. */
+  /**
+   * Every participant except the sender - i.e. everyone who should be notified
+   * (`docs/decisions/0017`). **Use this**, not `otherParticipantId`: it is
+   * correct for both direct and group conversations.
+   *
+   * Empty when the sender is the only participant (a creator-only group).
+   */
+  recipientIds: string[];
+  /**
+   * The participant who is not the persisted message sender.
+   *
+   * @deprecated Single-valued, so it silently drops recipients in a group:
+   * for a group it is the *first* non-sender participant, matching the
+   * behavior shipped in core 0.6.0. Use {@link recipientIds} instead. Removed
+   * at 1.0; kept required here because narrowing or removing it would break
+   * every 0.6.0 push integration (`docs/decisions/0017` §5).
+   */
   otherParticipantId: string;
   /** The durable message mutation that completed. */
   action: MessageMutationAction;
@@ -116,10 +142,17 @@ export interface AfterMessageSendContext {
   message: Message;
   /** The conversation it landed in. */
   conversation: Conversation & {
-    /** Convenience: the two participant user ids. */
+    /** Convenience: the participant user ids. */
     participantIds: string[];
   };
-  /** The participant who is not the persisted message sender. */
+  /** Every participant except the sender (`docs/decisions/0017`). */
+  recipientIds: string[];
+  /**
+   * The participant who is not the persisted message sender.
+   *
+   * @deprecated See {@link AfterMessageMutationContext.otherParticipantId} -
+   * use `recipientIds`.
+   */
   otherParticipantId: string;
   /** `"send"` for new messages, `"edit"` for body rewrites. */
   action: "send" | "edit";

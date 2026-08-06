@@ -174,17 +174,26 @@ function sameMessage(left: ClientMessage, right: ClientMessage): boolean {
 }
 
 /**
- * True when the loaded read-state of two renderings of a conversation match.
- * `unreadCount` and `lastReadMessageId` are the only mutable fields on the API
- * shape - `pairKey`, `createdAt` and the participant set never change.
+ * True when two renderings of the same conversation would look identical.
+ *
+ * `unreadCount` and `lastReadMessageId` are the read-state fields; `name` and
+ * the participant set (membership and roles) are mutable too now that groups
+ * ship (`docs/decisions/0017`), so a rename or a promotion must count as a
+ * change or a polling client would never re-render it. `type`, `pairKey` and
+ * `createdAt` are immutable after creation.
+ *
+ * Participant order is stable across reads (an adapter contract), so comparing
+ * positionally is safe rather than flapping.
  */
 function sameConversation(left: ClientConversation, right: ClientConversation): boolean {
   if (left.unreadCount !== right.unreadCount) return false;
+  if (left.name !== right.name) return false;
   if (left.participants.length !== right.participants.length) return false;
   return left.participants.every((participant, index) => {
     const other = right.participants[index]!;
     return (
       participant.userId === other.userId &&
+      participant.role === other.role &&
       participant.lastReadMessageId === other.lastReadMessageId
     );
   });

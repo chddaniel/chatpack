@@ -24,7 +24,7 @@
  * @module
  */
 
-import type { MessageWithDetails } from "./types";
+import type { Conversation, MessageWithDetails } from "./types";
 
 /**
  * A live event published on the transport whenever a message is created,
@@ -77,6 +77,44 @@ export interface ReactionEvent {
 }
 
 /**
+ * A live event published whenever a group's membership or metadata changes
+ * (`docs/decisions/0017`).
+ *
+ * Durable-backed, and like {@link ReactionEvent} its SSE frame carries **no
+ * `id:` line**: a membership change allocates no message `seq`, so an `id:`
+ * here would rewind `Last-Event-ID` gap-fill (ADR 0006). Not replayed on
+ * reconnect - a client that reopens its stream refetches the conversation.
+ *
+ * Carries the full post-change `conversation` (participants included), so
+ * receiving the same event twice is harmless and needs no follow-up request.
+ */
+export interface ConversationEvent {
+  /** What happened. */
+  type: "participant.added" | "participant.removed" | "conversation.updated";
+  /** The conversation that changed. */
+  conversationId: string;
+  /**
+   * The user ids that may receive this event.
+   *
+   * For `participant.removed` this is the membership **before** the removal, so
+   * the removed user is included - it is the only signal that tells their
+   * client to drop the conversation. This is the one place `recipientIds`
+   * deliberately contains a non-participant.
+   */
+  recipientIds: string[];
+  /** The user who performed the change (an admin, or the leaver themselves). */
+  actorId: string;
+  /**
+   * The users this change was about: those added, removed, or whose role
+   * changed. Empty for a rename - that change is visible in
+   * `conversation.name`.
+   */
+  affectedUserIds: string[];
+  /** Full conversation snapshot after the change, participants included. */
+  conversation: Conversation;
+}
+
+/**
  * A fire-and-forget live signal that is **never persisted** and **never
  * replayed** on reconnect (`docs/decisions/0008`).
  *
@@ -104,8 +142,11 @@ export interface EphemeralEvent {
   at: string;
 }
 
-/** Any event carried by the transport: durable, reaction, or ephemeral. */
-export type TransportEvent = ChatEvent | ReactionEvent | EphemeralEvent;
+/**
+ * Any event carried by the transport: durable message, reaction, conversation
+ * change, or ephemeral.
+ */
+export type TransportEvent = ChatEvent | ReactionEvent | ConversationEvent | EphemeralEvent;
 
 /** Type guard: is this transport event an {@link EphemeralEvent}? */
 export function isEphemeralEvent(event: TransportEvent): event is EphemeralEvent {
@@ -134,6 +175,22 @@ export function isReactionEvent(event: TransportEvent): event is ReactionEvent {
   return (
     !isEphemeralEvent(event) &&
     (event.type === "reaction.added" || event.type === "reaction.removed")
+  );
+}
+
+/**
+ * Type guard: is this a {@link ConversationEvent} (membership or rename,
+ * `docs/decisions/0017`)?
+ *
+ * An explicit predicate for the same reason the others are: `EphemeralEvent.type`
+ * is `string`, so TypeScript cannot narrow this union by `===` on `type` alone.
+ */
+export function isConversationEvent(event: TransportEvent): event is ConversationEvent {
+  return (
+    !isEphemeralEvent(event) &&
+    (event.type === "participant.added" ||
+      event.type === "participant.removed" ||
+      event.type === "conversation.updated")
   );
 }
 

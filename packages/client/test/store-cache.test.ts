@@ -25,7 +25,9 @@ const page: ClientMessagePage = {
 
 const conversation: ClientConversation = {
   id: "c1",
+  type: "direct",
   pairKey: "alice:bob",
+  name: null,
   metadata: {},
   createdAt: "2026-01-01T00:00:00.000Z",
   participants: [],
@@ -531,12 +533,79 @@ describe("polled page merges (ADR 0016)", () => {
     const read: ClientConversation = {
       ...makeConversation("c1", 0),
       participants: [
-        { conversationId: "c1", userId: "alice", joinedAt: "x", lastReadMessageId: "m9" },
+        {
+          conversationId: "c1",
+          userId: "alice",
+          role: "admin",
+          joinedAt: "x",
+          lastReadMessageId: "m9",
+        },
       ],
     };
     // `unreadCount` is unchanged, so only the participant read-state reveals it.
     cache.applyPolledConversations({
       conversations: [read, makeConversation("c2", 0)],
+      nextCursor: null,
+    });
+    expect(notifications).toBe(1);
+  });
+
+  it("notices a group rename", () => {
+    const cache = cacheWithList([0, 0]);
+    let notifications = 0;
+    cache.subscribe(() => {
+      notifications += 1;
+    });
+
+    // Nothing about read-state moved - only the name did (ADR 0017). Without
+    // comparing it, a polling client would render the old title forever.
+    cache.applyPolledConversations({
+      conversations: [
+        { ...makeConversation("c1", 0), type: "group", pairKey: null, name: "Standup" },
+        makeConversation("c2", 0),
+      ],
+      nextCursor: null,
+    });
+    expect(notifications).toBe(1);
+  });
+
+  it("notices a role change", () => {
+    const cache = cacheWithList([0, 0]);
+    const member: ClientConversation = {
+      ...makeConversation("c1", 0),
+      type: "group",
+      pairKey: null,
+      participants: [
+        {
+          conversationId: "c1",
+          userId: "bob",
+          role: "member",
+          joinedAt: "x",
+          lastReadMessageId: null,
+        },
+      ],
+    };
+    cache.setConversations(
+      {
+        data: { conversations: [member, makeConversation("c2", 0)], nextCursor: null },
+        error: null,
+      },
+      false,
+    );
+    let notifications = 0;
+    cache.subscribe(() => {
+      notifications += 1;
+    });
+
+    // Same membership, same read-state: `role` is the only field that moved.
+    cache.applyPolledConversations({
+      conversations: [
+        {
+          ...member,
+          participants: [{ ...member.participants[0]!, role: "admin" }],
+        },
+        makeConversation("c2", 0),
+      ],
       nextCursor: null,
     });
     expect(notifications).toBe(1);

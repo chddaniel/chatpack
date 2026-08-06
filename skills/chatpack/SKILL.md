@@ -1,13 +1,14 @@
 ---
 name: chatpack
-description: Integrate Chatpack (@chatpack/core) - an open-source TypeScript 1:1 chat backend with REST + real-time SSE - into any app. Use when adding chat, messaging, DMs, or an AI-assistant conversation to an app; when working with any @chatpack/* package, chatpack(), chat.handler(), or toNextRouteHandlers; or when debugging Chatpack integrations (401 UNAUTHENTICATED, 404 on /api/chat/*, EventSource /stream not receiving events, cookies dropped in preview iframes).
+description: Integrate Chatpack (@chatpack/core) - an open-source TypeScript chat backend (1:1 and group conversations) with REST + real-time SSE - into any app. Use when adding chat, messaging, DMs, group chats, or an AI-assistant conversation to an app; when working with any @chatpack/* package, chatpack(), chat.handler(), or toNextRouteHandlers; or when debugging Chatpack integrations (401 UNAUTHENTICATED, 404 on /api/chat/*, EventSource /stream not receiving events, cookies dropped in preview iframes).
 ---
 
 # Integrating Chatpack
 
-Chatpack is a chat **backend** library: 1:1 conversations, messages, permissions,
-read-state, and real-time SSE. You bring auth and the frontend; Chatpack serves
-everything else from ONE handler. It has no UI components and no AI features.
+Chatpack is a chat **backend** library: 1:1 and group conversations, messages,
+permissions, read-state, and real-time SSE. You bring auth and the frontend;
+Chatpack serves everything else from ONE handler. It has no UI components and no
+AI features.
 
 **Authoritative reference** (full route table, custom-adapter contract, HTTP
 semantics): read `node_modules/@chatpack/core/llms.txt` after install. If the
@@ -23,7 +24,9 @@ installed `llms.txt` wins (it matches the installed version).
    conversations, messages, read-state, plugins, AND `/stream` - under one
    `basePath` (default `/api/chat`).
 2. **The only server-side methods on `chat.api`** are: `getOrCreateConversation`,
-   `listConversations`, `getConversation`, `sendMessage`, `listMessages`,
+   `createGroupConversation`, `listConversations`, `getConversation`,
+   `updateConversation`, `addParticipants`, `removeParticipant`,
+   `setParticipantRole`, `sendMessage`, `listMessages`,
    `searchMessages`, `editMessage`, `deleteMessage`, `addReaction`, `removeReaction`, `markRead`,
    `listMessagesAfter`.
    `getOrCreateDirectConversation` is a storage-adapter method - never call the
@@ -31,14 +34,20 @@ installed `llms.txt` wins (it matches the installed version).
    do not invent it.**
 3. **Conversation ids are server-generated opaque strings** (e.g. `conv_1`).
    Never construct ids like `"alice-bob"`.
-4. **Create exactly ONE `chatpack()` instance** in one module, guarded with
+4. **DMs and groups are one `Conversation` shape, told apart by `type`.**
+   `"direct"` = exactly 2 participants, a `pairKey`, no `name`. `"group"` =
+   1..256 participants, `pairKey: null`, optional `name`. **DMs are
+   find-or-create; groups never are** - calling `createGroupConversation` twice
+   with the same members makes two groups, so store the returned id. Group-only
+   calls on a DM are 409 `NOT_GROUP_CONVERSATION`.
+5. **Create exactly ONE `chatpack()` instance** in one module, guarded with
    `globalThis` for dev-server HMR, and import it everywhere (exact snippet in
    Step 2).
-5. **The `auth` hook returns `{ id: string }` or `null`.** A bare string or
+6. **The `auth` hook returns `{ id: string }` or `null`.** A bare string or
    `{ userId }` shape = unauthenticated = 401 on everything. The hook gets a raw
    WHATWG `Request` - there is no `request.cookies`; parse
    `request.headers.get("cookie")` yourself.
-6. **Browser auth must be cookie-based** (`EventSource` can't send headers).
+7. **Browser auth must be cookie-based** (`EventSource` can't send headers).
    Inside a cross-site iframe - every AI-builder preview pane - cookies need
    `SameSite=None; Secure; Partitioned` or they are silently dropped and every
    request 401s.
@@ -210,6 +219,39 @@ events.addEventListener("reaction.added", (e) => {
 });
 ```
 
+**Groups** reuse every messages/stream route above - only creation and membership
+differ. The client package doesn't wrap these five yet, so use `fetch`:
+
+```ts
+// create - NOT find-or-create, so keep the id (creator becomes the first admin)
+const { conversation: group } = await fetch("/api/chat/conversations/group", {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ name: "Launch", userIds: ["bob", "carol"] }),
+}).then((r) => r.json());
+
+// add members / set a role / rename: admin only, all return the FULL conversation
+await fetch(`/api/chat/conversations/${group.id}/participants`, {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ userIds: ["dave"] }),
+});
+
+// leave: DELETE your own id (no admin rights needed). Promote a successor first
+// if you're the last admin, or it's 409 LAST_ADMIN_REMAINING.
+await fetch(`/api/chat/conversations/${group.id}/participants`, {
+  method: "DELETE",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ userId: me }),
+});
+
+// membership changes arrive on the same stream (no `id:` line, so no gap-fill)
+events.addEventListener("participant.removed", (e) => {
+  const { affectedUserIds, conversation } = JSON.parse((e as MessageEvent).data);
+  // you get this even when YOU were removed - drop the conversation in that case
+});
+```
+
 Client semantics that trip up generated code:
 
 - HTTP responses are **enveloped**: `{ conversation }`, `{ message }`,
@@ -228,21 +270,31 @@ Client semantics that trip up generated code:
   (`"👍"`, `":shipit:"`, `"custom_1234"`); `""` or longer is `INVALID_INPUT`.
   Replies are flat pointers, **not threads**; a reaction is not a message - no
   `seq`, no conversation reorder, no unread bump.
-- **Reaction events aren't replayed.** `reaction.added`/`reaction.removed` are
-  live-only: reactions have no `seq`, so their frames carry no `id:` and
-  `Last-Event-ID` gap-fill skips them. Refetch the thread on stream reopen to
-  pick up reactions applied while offline.
+- **Reaction and membership events aren't replayed.**
+  `reaction.added`/`.removed` and `participant.added`/`.removed` /
+  `conversation.updated` are live-only: they have no `seq`, so their frames carry
+  no `id:` and `Last-Event-ID` gap-fill skips them. Refetch the thread and the
+  conversation list on stream reopen to pick up what changed while offline.
+- **Group rules core enforces for you** (don't re-implement them): only admins
+  add, remove others, rename, or change roles - otherwise 403
+  `NOT_CONVERSATION_ADMIN`; anyone may remove _themselves_; a group always keeps
+  at least one admin (409 `LAST_ADMIN_REMAINING`); 256 participants max (422
+  `GROUP_LIMIT_EXCEEDED`); names are trimmed 1..200 chars, and omitting `name`
+  in a rename leaves it unchanged rather than clearing it. Adding an existing
+  member is a no-op, not an error.
 - Plugin events on the same stream: `typing.started/.stopped`,
   `presence.online/.offline`, `receipt.delivered/.read` - ephemeral, never
   replayed. Throttle typing POSTs to ~1 per 3s; expire indicators after ~5s.
 - AI assistant = just a participant with a synthetic id (e.g. `"ai:assistant"`):
   persist the user message via `chat.api.sendMessage`, call your LLM in your
   backend, then `chat.api.sendMessage({ userId: "ai:assistant", ..., role: "assistant" })`.
+  The same id works in a group - pass it in `userIds`; gate on a mention before
+  answering rather than replying to every message.
 
 ## Step 5 - Verify BEFORE declaring success (mandatory)
 
-Run these (adjust port/cookie names). All four must pass; do not report the
-integration as working until they do.
+Run these (adjust port/cookie names). All must pass; do not report the
+integration as working until they do. Skip #4 if the app has no group UI.
 
 ```sh
 # 1. auth + server-generated conversation id (expect 200, id like "conv_1")
@@ -262,8 +314,18 @@ curl -s -X POST localhost:3000/api/chat/messages/msg_1/reactions \
 curl -s -X POST localhost:3000/api/chat/messages/msg_1/reactions \
   -H 'cookie: demo_user=bob' -H 'content-type: application/json' -d '{"emoji":"👍"}'
 
-# 4. live stream (expect ": connected", then events as messages are sent;
-#    reaction.added frames arrive with no `id:` line - that is correct)
+# 4. group (expect 201, type "group", pairKey null, alice admin + bob member)
+curl -si -X POST localhost:3000/api/chat/conversations/group \
+  -H 'cookie: demo_user=alice' -H 'content-type: application/json' \
+  -d '{"name":"Launch","userIds":["bob"]}'
+
+# 5. non-admin management is refused (expect 403 NOT_CONVERSATION_ADMIN)
+curl -si -X POST localhost:3000/api/chat/conversations/conv_2/participants \
+  -H 'cookie: demo_user=bob' -H 'content-type: application/json' \
+  -d '{"userIds":["carol"]}'
+
+# 6. live stream (expect ": connected", then events as messages are sent;
+#    reaction.added and participant.* frames arrive with no `id:` line - correct)
 curl -sN localhost:3000/api/chat/stream -H 'cookie: demo_user=bob'
 ```
 
@@ -278,20 +340,36 @@ AND the Network tab must show it on `/api/chat/*` requests.
 | 401 only in the preview pane, works in a real tab          | Cross-site iframe dropped a `SameSite=Lax` cookie. Re-set it with `SameSite=None; Secure; Partitioned`.                                                                                |
 | 404 `NOT_FOUND` after auth passes                          | Mount path/basePath mismatch, or the route file isn't a catch-all (`[...chatpack]` / `chat.$`).                                                                                        |
 | `chat.api.getOrCreateDirectConversation is not a function` | Hallucinated method - the API method is `getOrCreateConversation` (Hard rule 2).                                                                                                       |
-| Messages send but never appear live                        | Custom-written stream route, second `chatpack()` instance, or non-streaming Express bridge. One instance, one handler (Hard rules 1 & 4).                                              |
+| Messages send but never appear live                        | Custom-written stream route, second `chatpack()` instance, or non-streaming Express bridge. One instance, one handler (Hard rules 1 & 5).                                              |
 | `EventSource` closes and never retries                     | Fatal response (usually 401): browser won't reconnect on its own - re-auth, then create a new `EventSource`.                                                                           |
 | Chat state vanishes between requests                       | `memoryAdapter` on serverless/multi-isolate, or HMR wiped an unguarded instance. Database adapter / `globalThis` guard.                                                                |
 | Old package version right after a release (Bun)            | Bun's `minimumReleaseAge` guard - check `npm view @chatpack/core dist-tags`.                                                                                                           |
+| 409 `NOT_GROUP_CONVERSATION`                               | A group-only call (add/remove/role/rename) aimed at a DM. DM membership is fixed at creation.                                                                                          |
+| 409 `LAST_ADMIN_REMAINING`                                 | Removing or demoting a group's only admin. Promote a successor first - Chatpack refuses rather than leave a group nobody can manage.                                                   |
+| Duplicate groups piling up                                 | Treating `createGroupConversation` as find-or-create. It always creates; store the returned id (Hard rule 4).                                                                          |
+| Second group insert fails on a unique-key error            | Custom adapter left the `pair_key` unique index total instead of partial (`WHERE pair_key IS NOT NULL`), so two `NULL` keys collide.                                                   |
+| An admin silently becomes a `member`                       | Custom adapter used `ON CONFLICT DO UPDATE` for participant inserts. Re-adding an existing member must be `DO NOTHING`.                                                                |
 
 ## Custom storage adapter (Supabase JS / Convex / Firestore / other)
 
 Do NOT improvise: read **Part 2 of `llms.txt`** and follow it exactly - it
-contains the 14-required-method `StorageAdapter` contract plus optional search,
+contains the 19-required-method `StorageAdapter` contract plus optional search,
 the invariants (atomic
 `pairKey` creation, atomic per-conversation `seq`, `Date` instances not ISO
 strings, soft-delete as tombstone, newest-first vs oldest-first ordering,
 batched exact unread counts, participant-scoped ranked search when supported,
 idempotent reaction writes that never touch `lastSeq`/activity), the reference
-Postgres schema, a skeleton, and a 14-point verification checklist.
+Postgres schema, a skeleton, and a 17-point verification checklist.
 The adapter must run server-side with privileged credentials; `chatpack_*`
 tables must never be readable by browser/anon clients.
+
+The five group methods (`createGroupConversation`, `addParticipants`,
+`removeParticipant`, `setParticipantRole`, `updateConversation`) are **required,
+not optional** like `searchMessages` - an adapter written before groups won't
+typecheck until it has them. Two traps that only bite in production: `pair_key`
+must become **nullable with a PARTIAL unique index** (`WHERE pair_key IS NOT
+NULL`) or the second group collides on `NULL`, and Postgres only matches a
+partial index in `ON CONFLICT` when the insert **repeats the same predicate** -
+so the DM upsert needs `WHERE pair_key IS NOT NULL` too. Membership inserts use
+`ON CONFLICT DO NOTHING`, never `DO UPDATE`: an update would demote an admin to
+`member` when someone re-adds them.

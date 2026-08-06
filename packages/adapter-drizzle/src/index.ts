@@ -22,20 +22,24 @@
  *   `UPDATE ... SET last_seq = last_seq + 1 RETURNING` - Postgres row
  *   locking makes concurrent sends serialize correctly with no gaps-by-race
  *   and no duplicates (ADR 0003, ADR 0007).
- * - **Idempotent find-or-create:** conversation creation uses
- *   `ON CONFLICT (pair_key) DO NOTHING` + re-select, so concurrent calls for
- *   the same user pair converge on one conversation (ADR 0002).
+ * - **Idempotent find-or-create:** DM creation uses
+ *   `ON CONFLICT (pair_key) WHERE pair_key IS NOT NULL DO NOTHING` +
+ *   re-select, so concurrent calls for the same user pair converge on one
+ *   conversation (ADR 0002). Groups take the plain-insert path instead: they
+ *   have no pair key and nothing to converge on (ADR 0017).
  *
  * @module
  */
 
-import { and, asc, desc, eq, gt, inArray, isNull, lt, ne, or, sql } from "drizzle-orm";
+import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, ne, or, sql } from "drizzle-orm";
 import { alias, type PgDatabase, type PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 import type {
   AddMessageInput,
+  AddParticipantsInput,
   Conversation,
   CountUnreadInput,
+  CreateGroupConversationInput,
   GetOrCreateDirectConversationInput,
   GetOrCreateDirectConversationResult,
   ListConversationsInput,
@@ -48,9 +52,12 @@ import type {
   Metadata,
   Reaction,
   ReactionInput,
+  RemoveParticipantInput,
   SearchMessagesInput,
   SearchMessagesResult,
+  SetParticipantRoleInput,
   StorageAdapter,
+  UpdateConversationInput,
   UpdateLastReadInput,
   UpdateMessageInput,
 } from "@chatpack/core";
@@ -183,12 +190,18 @@ function toReaction(row: ReactionRow): Reaction {
 function toConversation(row: ConversationRow, participantRows: ParticipantRow[]): Conversation {
   return {
     id: row.id,
+    // `type` and `role` are plain text columns, so a row written by an older
+    // version (or by hand) is coerced to the safe default rather than widening
+    // the domain type (ADR 0017).
+    type: row.type === "group" ? "group" : "direct",
     pairKey: row.pairKey,
+    name: row.name,
     createdAt: row.createdAt,
     metadata: (row.metadata ?? {}) as Metadata,
     participants: participantRows.map((p) => ({
       conversationId: p.conversationId,
       userId: p.userId,
+      role: p.role === "admin" ? "admin" : "member",
       joinedAt: p.joinedAt,
       lastReadMessageId: p.lastReadMessageId,
     })),
@@ -204,7 +217,16 @@ function toConversation(row: ConversationRow, participantRows: ParticipantRow[])
  * @param db - Any Drizzle Postgres database instance.
  */
 export function drizzleAdapter(db: DrizzlePgDatabase): StorageAdapter {
-  /** Load participant rows for a set of conversation ids. */
+  /**
+   * Load participant rows for a set of conversation ids.
+   *
+   * Ordered by `joined_at` (then `user_id` to break ties, since a group's seed
+   * members all share one timestamp): the creator therefore comes first, and
+   * more importantly the order is **stable across reads**. Postgres gives no
+   * row order without `ORDER BY`, and clients diff participant lists
+   * positionally - with N-member groups an unordered read would look like a
+   * membership change on every poll (ADR 0017).
+   */
   async function participantsFor(
     conversationIds: string[],
   ): Promise<Map<string, ParticipantRow[]>> {
@@ -212,7 +234,8 @@ export function drizzleAdapter(db: DrizzlePgDatabase): StorageAdapter {
     const rows = await db
       .select()
       .from(conversationParticipants)
-      .where(or(...conversationIds.map((id) => eq(conversationParticipants.conversationId, id))));
+      .where(or(...conversationIds.map((id) => eq(conversationParticipants.conversationId, id))))
+      .orderBy(asc(conversationParticipants.joinedAt), asc(conversationParticipants.userId));
     const byConversation = new Map<string, ParticipantRow[]>();
     for (const row of rows) {
       const list = byConversation.get(row.conversationId) ?? [];
@@ -243,6 +266,20 @@ export function drizzleAdapter(db: DrizzlePgDatabase): StorageAdapter {
     return toConversation(row, participants.get(row.id) ?? []);
   }
 
+  /**
+   * Re-read a conversation after a membership write, for the full-snapshot
+   * return the contract requires (ADR 0017 §6). Throws if the row is gone -
+   * core only calls these after loading the conversation, so a miss is a bug
+   * (or a concurrent delete), not an expected outcome.
+   */
+  async function reloadConversation(conversationId: string): Promise<Conversation> {
+    const conversation = await loadConversation(conversationId);
+    if (!conversation) {
+      throw new Error(`drizzleAdapter: unknown conversation "${conversationId}".`);
+    }
+    return conversation;
+  }
+
   return {
     async getOrCreateDirectConversation(
       input: GetOrCreateDirectConversationInput,
@@ -257,13 +294,24 @@ export function drizzleAdapter(db: DrizzlePgDatabase): StorageAdapter {
         .insert(conversations)
         .values({
           id,
+          type: "direct",
           pairKey: input.pairKey,
+          name: null,
           createdAt: now,
           metadata: input.metadata,
           lastSeq: 0,
           lastActivityAt: now,
         })
-        .onConflictDoNothing({ target: conversations.pairKey })
+        // The `where` predicate is required, not decorative: since ADR 0017 the
+        // pair_key unique index is **partial** (`WHERE pair_key IS NOT NULL`),
+        // and Postgres only matches an ON CONFLICT target to a partial index
+        // when the predicate is repeated here. Without it every DM insert fails
+        // with "no unique or exclusion constraint matching the ON CONFLICT
+        // specification".
+        .onConflictDoNothing({
+          target: conversations.pairKey,
+          where: isNotNull(conversations.pairKey),
+        })
         .returning({ id: conversations.id });
 
       const created = inserted.length > 0;
@@ -272,6 +320,9 @@ export function drizzleAdapter(db: DrizzlePgDatabase): StorageAdapter {
           input.userIds.map((userId) => ({
             conversationId: id,
             userId,
+            // Both DM participants are admins - a DM has nothing to administer
+            // (ADR 0017 §3).
+            role: "admin",
             joinedAt: now,
             lastReadMessageId: null,
           })),
@@ -290,6 +341,104 @@ export function drizzleAdapter(db: DrizzlePgDatabase): StorageAdapter {
       }
       const participants = await participantsFor([row.id]);
       return { conversation: toConversation(row, participants.get(row.id) ?? []), created };
+    },
+
+    async createGroupConversation(input: CreateGroupConversationInput): Promise<Conversation> {
+      const now = new Date();
+      const id = generateId("conv");
+
+      // Not find-or-create (ADR 0017 §2): a group has no pair key, so there is
+      // no conflict target and nothing to converge on - two groups with the
+      // same members are two different groups.
+      await db.transaction(async (tx) => {
+        await tx.insert(conversations).values({
+          id,
+          type: "group",
+          pairKey: null,
+          name: input.name,
+          createdAt: now,
+          metadata: input.metadata,
+          lastSeq: 0,
+          lastActivityAt: now,
+        });
+        await tx.insert(conversationParticipants).values([
+          {
+            conversationId: id,
+            userId: input.creatorId,
+            role: "admin",
+            joinedAt: now,
+            lastReadMessageId: null,
+          },
+          ...input.userIds.map((userId) => ({
+            conversationId: id,
+            userId,
+            role: "member",
+            joinedAt: now,
+            lastReadMessageId: null,
+          })),
+        ]);
+      });
+
+      return reloadConversation(id);
+    },
+
+    async addParticipants(input: AddParticipantsInput): Promise<Conversation> {
+      if (input.userIds.length > 0) {
+        const now = new Date();
+        // Idempotent via the (conversation_id, user_id) unique index: a replayed
+        // add leaves the existing row untouched, so it can never demote an admin
+        // back to member or reset their read-state (ADR 0017 §3).
+        await db
+          .insert(conversationParticipants)
+          .values(
+            input.userIds.map((userId) => ({
+              conversationId: input.conversationId,
+              userId,
+              role: "member",
+              joinedAt: now,
+              lastReadMessageId: null,
+            })),
+          )
+          .onConflictDoNothing({
+            target: [conversationParticipants.conversationId, conversationParticipants.userId],
+          });
+      }
+      return reloadConversation(input.conversationId);
+    },
+
+    async removeParticipant(input: RemoveParticipantInput): Promise<Conversation> {
+      // Idempotent: deleting a row that isn't there affects zero rows. Messages
+      // are left alone - departure does not rewrite history (ADR 0017 §6).
+      await db
+        .delete(conversationParticipants)
+        .where(
+          and(
+            eq(conversationParticipants.conversationId, input.conversationId),
+            eq(conversationParticipants.userId, input.userId),
+          ),
+        );
+      return reloadConversation(input.conversationId);
+    },
+
+    async setParticipantRole(input: SetParticipantRoleInput): Promise<Conversation> {
+      await db
+        .update(conversationParticipants)
+        .set({ role: input.role })
+        .where(
+          and(
+            eq(conversationParticipants.conversationId, input.conversationId),
+            eq(conversationParticipants.userId, input.userId),
+          ),
+        );
+      return reloadConversation(input.conversationId);
+    },
+
+    async updateConversation(input: UpdateConversationInput): Promise<Conversation> {
+      await db
+        .update(conversations)
+        .set({ name: input.name })
+        .where(eq(conversations.id, input.conversationId));
+      return reloadConversation(input.conversationId);
     },
 
     async getConversation(conversationId: string): Promise<Conversation | null> {

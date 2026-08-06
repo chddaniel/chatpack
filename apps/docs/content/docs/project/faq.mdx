@@ -182,14 +182,19 @@ your database on your own schedule.
 
 <Accordion title="I upgraded and Postgres errors on a missing table or column - why?">
 
-Reactions and quote-replies added a fourth table
-(`chatpack_message_reactions`) and a `reply_to_message_id` column on
-`chatpack_messages`. **Re-run the migration before deploying the upgrade** -
-every statement is `IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS`, so re-running
-the whole script is safe and preserves your data and `seq` counters. Custom
-adapters need the four new `StorageAdapter` methods
-(`getMessagesByIds`, `addReaction`, `removeReaction`,
-`listReactionsByMessageIds`); see the
+Recent releases added columns and tables: reactions and quote-replies brought
+`chatpack_message_reactions` and `reply_to_message_id`; groups brought
+`type` + `name` on `chatpack_conversations`, `role` on
+`chatpack_participants`, and made `pair_key` nullable with a **partial** unique
+index. **Re-run the migration before deploying the upgrade** - every statement
+is `IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS`, so re-running the whole script
+is safe and preserves your data and `seq` counters. It also backfills existing
+rows (`type: "direct"`, every current participant to `admin`, which is a no-op
+for DMs since `canManage` only gates group routes).
+
+Custom adapters need the group methods too - `createGroupConversation`,
+`updateConversation`, `addParticipants`, `removeParticipant`,
+`setParticipantRole` - alongside the earlier reaction ones; see the
 [custom adapter guide](/docs/storage/custom-adapter).
 
 </Accordion>
@@ -209,12 +214,25 @@ versions and read changelogs when upgrading.
 
 </Accordion>
 
-<Accordion title="Group chats? File uploads? Push notifications? React components?">
+<Accordion title="File uploads? Push notifications? React components?">
 
-All deliberately out of scope for v0 - see [Roadmap](/docs/project/roadmap).
-The data model anticipates groups; attachments can point at files you host via
-`metadata`. Reactions and quote-replies **did** ship - they fit the existing
-seams without a new data model.
+All deliberately out of scope - see [Roadmap](/docs/project/roadmap).
+Attachments can point at files you host via `metadata`. Reactions,
+quote-replies, and group chats **did** ship - each fit the existing seams.
+
+</Accordion>
+
+<Accordion title="Do group chats work? What about invite links and mentions?">
+
+Groups ship: `createGroupConversation`, a first-class `name`, `admin`/`member`
+roles, admin-gated membership management, and 1-256 participants
+([Conversations & messages](/docs/concepts/conversations-messages#groups-created-never-found)).
+A group is a `type` on Conversation, not a second entity, so messages,
+permissions, read-state, search, reactions and SSE all work unchanged.
+
+What isn't there: invite links, join requests, per-group permission grants,
+mentions, and public/discoverable channels. Chatpack owns membership and roles;
+the social layer around them stays your app's.
 
 </Accordion>
 

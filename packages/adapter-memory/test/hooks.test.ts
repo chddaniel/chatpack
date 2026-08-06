@@ -444,7 +444,12 @@ describe("afterMessageMutation", () => {
     await chat.api.deleteMessage({ userId: "alice", messageId: message.id });
   });
 
-  it("logs and swallows recipient lookup failures after persistence", async () => {
+  // Since ADR 0017 a sender-only conversation is a legitimate state - a group
+  // whose creator has not invited anyone yet - so the hook fires with an empty
+  // recipient list instead of being suppressed. It used to be treated as a
+  // failed recipient lookup, back when every conversation had exactly two
+  // participants.
+  it("fires with no recipients when the sender is the only participant", async () => {
     const storage = memoryAdapter();
     const { conversation } = await storage.getOrCreateDirectConversation({
       pairKey: "alice:bob",
@@ -470,17 +475,52 @@ describe("afterMessageMutation", () => {
         body: "still durable",
       });
 
-      expect(after).not.toHaveBeenCalled();
-      expect(errorLog).toHaveBeenCalledWith(
-        "chatpack: afterMessageMutation hook failed",
-        expect.objectContaining({ code: "INVALID_INPUT" }),
-      );
+      expect(after).toHaveBeenCalledTimes(1);
+      expect(after.mock.calls[0]?.[0]).toMatchObject({
+        recipientIds: [],
+        // The deprecated single-valued field degrades to "" rather than
+        // suppressing the whole hook (ADR 0017 §5).
+        otherParticipantId: "",
+      });
+      expect(errorLog).not.toHaveBeenCalled();
       await expect(
         chat.api.listMessages({ userId: "alice", conversationId: conversation.id }),
       ).resolves.toMatchObject({ messages: [{ id: message.id }] });
     } finally {
       errorLog.mockRestore();
     }
+  });
+
+  // The deprecated hook predates groups and its contract promises a real id, so
+  // it stays suppressed when there is no other participant (ADR 0017 §5).
+  it("suppresses the deprecated afterMessageSend hook when there is no recipient", async () => {
+    const storage = memoryAdapter();
+    const { conversation } = await storage.getOrCreateDirectConversation({
+      pairKey: "alice:bob",
+      userIds: ["alice", "bob"],
+      metadata: {},
+    });
+    vi.spyOn(storage, "getConversation").mockResolvedValue({
+      ...conversation,
+      participants: [conversation.participants[0]!],
+    });
+    const after = vi.fn();
+    const chat = chatpack({
+      storage,
+      telemetry: false,
+      hooks: { afterMessageSend: after },
+    });
+
+    const message = await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "still durable",
+    });
+
+    expect(after).not.toHaveBeenCalled();
+    await expect(
+      chat.api.listMessages({ userId: "alice", conversationId: conversation.id }),
+    ).resolves.toMatchObject({ messages: [{ id: message.id }] });
   });
 
   it("runs after persistence and transport publish", async () => {

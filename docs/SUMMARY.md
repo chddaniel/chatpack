@@ -104,7 +104,7 @@ developer turns them on with one line, or leaves them off entirely
 | First official UI helpers (e.g. React hooks) | Faster to wire a frontend without building everything by hand | Next up                                                        |
 | Stronger docs + example app polish           | Easier onboarding for outside developers                      | Ongoing (demo messenger now shows typing, presence, and ticks) |
 
-**Still out at day 7:** groups, Discord-like rooms, attachments as a first-class feature, push notifications, AI framework features.
+**Still out at day 7:** groups (~~out~~ - shipped later, see day 14), Discord-like rooms, attachments as a first-class feature, push notifications, AI framework features.
 
 **Bottom line for day 7:** 1:1 chat that _feels_ closer to a consumer messenger (typing, presence, live ticks), with a smoother path to build UI - still configurable to turn those extras off.
 
@@ -112,14 +112,19 @@ developer turns them on with one line, or leaves them off entirely
 
 ### In ~14 days - toward “pick what you need”
 
+**Status: group conversations have shipped.** A developer can now create a group
+of up to 256 people, add and remove members, give someone admin rights, and
+rename the room - and it is the same chat they already built for 1:1, not a
+second thing to learn.
+
 **What’s added to the package:**
 
-| Added around day 14                                 | What it means in plain terms                                                                  |
-| --------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| Group conversations                                 | Chat with more than two people                                                                |
-| First pass at rooms / channels (lightweight)        | Early Discord-like structure - not full Discord parity                                        |
-| Attachments (images / GIFs / files) - first version | Send media, with clear limits and a simple upload story                                       |
-| More configuration knobs                            | “1:1 only,” “1:1 + images,” “groups on/off” - closer to the Loom vision of install-and-choose |
+| Added around day 14                                 | What it means in plain terms                                                                  | Status                                                                                     |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| Group conversations                                 | Chat with more than two people                                                                | ✅ Shipped (members + admin roles + rename)                                                |
+| First pass at rooms / channels (lightweight)        | Early Discord-like structure - not full Discord parity                                        | Partly - a group is the building block; no public/joinable channels yet                    |
+| Attachments (images / GIFs / files) - first version | Send media, with clear limits and a simple upload story                                       | Not started (still a deliberate non-goal)                                                  |
+| More configuration knobs                            | “1:1 only,” “1:1 + images,” “groups on/off” - closer to the Loom vision of install-and-choose | Not needed for groups - a developer who only wants 1:1 simply never calls the group routes |
 
 **Still later than 14 days (toward the year vision):** full Discord-like product depth, push/email notification suites, moderation/admin suites, large-scale search, reactions/threads at scale, multi-region infrastructure, and deep AI chat tooling.
 

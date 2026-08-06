@@ -6,7 +6,7 @@ description: An AI assistant is just another participant - synthetic user id, ro
 Chatpack has no special AI features - and that's the point. To Chatpack, an AI
 assistant is **just another participant**: pick a synthetic user id (any
 string you'll never issue to a real user, e.g. `ai:assistant`) and have your
-backend send its replies. The same 1:1 permissions apply.
+backend send its replies. The same permissions apply.
 
 ## The pattern
 
@@ -42,6 +42,25 @@ Chatpack stores, orders, and delivers the messages; the LLM call is yours -
 model, keys, prompts, streaming. If the user has the SSE stream open, the
 assistant's reply arrives as a live `message.created` event like any other
 message.
+
+## An assistant in a group
+
+The same id works in a group - put it in `userIds` at creation, or add it later:
+
+```ts
+const room = await chat.api.createGroupConversation({
+  userId: user.id,
+  userIds: ["bob", "carol", ASSISTANT_ID],
+  name: "Design review",
+});
+```
+
+It joins as a `member`, so it can send and read but not manage membership. Give
+it `role: "admin"` only if your backend needs it to add or remove people. Since
+every participant receives the group's messages, decide when the assistant should
+answer - replying to every message in a busy room is rarely what you want. Your
+`afterMessageMutation` hook sees `recipientIds`, so gate on a mention, a command
+prefix, or a direct address before calling the model.
 
 ## The `role` field
 

@@ -11,8 +11,13 @@
  * | Method | Path                              | Action                       |
  * | ------ | --------------------------------- | ---------------------------- |
  * | POST   | `/conversations`                  | find-or-create a 1:1 DM      |
+ * | POST   | `/conversations/group`            | create a group               |
  * | GET    | `/conversations?limit&cursor`     | list my conversations        |
  * | GET    | `/conversations/:id`              | fetch one conversation       |
+ * | PATCH  | `/conversations/:id`              | rename a group               |
+ * | POST   | `/conversations/:id/participants` | add group members            |
+ * | DELETE | `/conversations/:id/participants` | remove a member / leave      |
+ * | PATCH  | `/conversations/:id/participants` | change a member's role       |
  * | POST   | `/conversations/:id/messages`     | send a message               |
  * | GET    | `/conversations/:id/messages?limit&cursor` | list messages       |
  * | GET    | `/search/messages?q&limit&cursor` | search message bodies      |
@@ -36,7 +41,14 @@ import type { ChatpackApi } from "./chatpack";
 import type { AuthHook } from "./config";
 import { ChatpackError, type ChatpackErrorCode } from "./errors";
 import type { PluginRuntime } from "./plugin";
-import { isEphemeralEvent, isMessageEvent, type TransportEvent, type Transport } from "./transport";
+import {
+  isConversationEvent,
+  isEphemeralEvent,
+  isMessageEvent,
+  isReactionEvent,
+  type TransportEvent,
+  type Transport,
+} from "./transport";
 
 /** Options for {@link createHandler} / `chat.handler()`. */
 export interface HandlerOptions {
@@ -81,6 +93,10 @@ const STATUS_BY_CODE: Record<ChatpackErrorCode, number> = {
   MESSAGE_NOT_FOUND: 404,
   MESSAGE_DELETED: 409,
   MESSAGE_REJECTED: 422,
+  NOT_CONVERSATION_ADMIN: 403,
+  NOT_GROUP_CONVERSATION: 409,
+  LAST_ADMIN_REMAINING: 409,
+  GROUP_LIMIT_EXCEEDED: 422,
 };
 
 function json(status: number, payload: unknown): Response {
@@ -106,6 +122,32 @@ async function readJsonBody(request: Request): Promise<Record<string, unknown>> 
   }
 }
 
+/**
+ * Like {@link readJsonBody}, but an absent or empty body means "no options".
+ * Only for routes where every field is optional (group creation): there,
+ * `fetch(url, { method: "POST" })` is a reasonable thing for a client to write,
+ * and failing it with INVALID_INPUT would be a confusing 400. A body that *is*
+ * present still has to be a JSON object.
+ */
+async function readOptionalJsonBody(request: Request): Promise<Record<string, unknown>> {
+  let text: string;
+  try {
+    text = await request.text();
+  } catch {
+    throw new ChatpackError("INVALID_INPUT", "Request body must be a JSON object.");
+  }
+  if (text.trim() === "") return {};
+  try {
+    const parsed: unknown = JSON.parse(text);
+    if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+      throw new Error("not an object");
+    }
+    return parsed as Record<string, unknown>;
+  } catch {
+    throw new ChatpackError("INVALID_INPUT", "Request body must be a JSON object.");
+  }
+}
+
 function optionalString(value: unknown, field: string): string | undefined {
   if (value === undefined || value === null) return undefined;
   if (typeof value !== "string") {
@@ -120,6 +162,22 @@ function requiredString(value: unknown, field: string): string {
     throw new ChatpackError("INVALID_INPUT", `"${field}" is required.`);
   }
   return str;
+}
+
+function optionalStringArray(value: unknown, field: string): string[] | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (!Array.isArray(value) || value.some((item) => typeof item !== "string")) {
+    throw new ChatpackError("INVALID_INPUT", `"${field}" must be an array of strings.`);
+  }
+  return value as string[];
+}
+
+function requiredStringArray(value: unknown, field: string): string[] {
+  const arr = optionalStringArray(value, field);
+  if (arr === undefined) {
+    throw new ChatpackError("INVALID_INPUT", `"${field}" is required.`);
+  }
+  return arr;
 }
 
 function optionalMetadata(value: unknown): Record<string, unknown> | undefined {
@@ -149,10 +207,10 @@ function parseLimit(params: URLSearchParams): number | undefined {
  * never adopts them as `Last-Event-ID`, so typing/presence/receipt signals
  * can't disturb message gap-fill (`docs/decisions/0008`).
  *
- * Reaction events are durable-backed but also carry **no** `id:` line: a
- * reaction produces no new `seq`, so adopting one as `Last-Event-ID` would
- * poison gap-fill. Clients recover missed reactions by refetching on reconnect
- * (`docs/decisions/0013`).
+ * Reaction and conversation events are durable-backed but also carry **no**
+ * `id:` line: neither produces a new `seq`, so adopting one as `Last-Event-ID`
+ * would poison gap-fill. Clients recover missed ones by refetching on reconnect
+ * (`docs/decisions/0013`, `docs/decisions/0017`).
  */
 function sseFrame(event: TransportEvent): string {
   if (isEphemeralEvent(event)) {
@@ -165,7 +223,16 @@ function sseFrame(event: TransportEvent): string {
       at: event.at,
     })}\n\n`;
   }
-  if (!isMessageEvent(event)) {
+  if (isConversationEvent(event)) {
+    return `event: ${event.type}\ndata: ${JSON.stringify({
+      type: event.type,
+      conversationId: event.conversationId,
+      actorId: event.actorId,
+      affectedUserIds: event.affectedUserIds,
+      conversation: event.conversation,
+    })}\n\n`;
+  }
+  if (isReactionEvent(event)) {
     return `event: ${event.type}\ndata: ${JSON.stringify({
       type: event.type,
       conversationId: event.conversationId,
@@ -404,11 +471,105 @@ export function createHandler(
         return json(200, result);
       }
 
+      // POST /conversations/group - create a group (ADR 0017). Matched before
+      // the /conversations/:id routes so "group" is never read as an id.
+      if (
+        method === "POST" &&
+        segments.length === 2 &&
+        segments[0] === "conversations" &&
+        segments[1] === "group"
+      ) {
+        const body = await readOptionalJsonBody(request);
+        const name = optionalString(body["name"], "name");
+        const userIds = optionalStringArray(body["userIds"], "userIds");
+        const metadata = optionalMetadata(body["metadata"]);
+        const conversation = await api.createGroupConversation({
+          userId,
+          ...(name !== undefined ? { name } : {}),
+          ...(userIds !== undefined ? { userIds } : {}),
+          ...(metadata !== undefined ? { metadata } : {}),
+        });
+        return json(201, { conversation });
+      }
+
       // GET /conversations/:id
       if (method === "GET" && segments.length === 2 && segments[0] === "conversations") {
         const conversation = await api.getConversation({
           userId,
           conversationId: segments[1]!,
+        });
+        return json(200, { conversation });
+      }
+
+      // PATCH /conversations/:id - rename a group (ADR 0017). `name: null`
+      // clears the title, so the field is required but nullable.
+      if (method === "PATCH" && segments.length === 2 && segments[0] === "conversations") {
+        const body = await readJsonBody(request);
+        if (!("name" in body)) {
+          throw new ChatpackError("INVALID_INPUT", `"name" is required.`);
+        }
+        const raw = body["name"];
+        if (raw !== null && typeof raw !== "string") {
+          throw new ChatpackError("INVALID_INPUT", `"name" must be a string or null.`);
+        }
+        const conversation = await api.updateConversation({
+          userId,
+          conversationId: segments[1]!,
+          name: raw,
+        });
+        return json(200, { conversation });
+      }
+
+      // POST /conversations/:id/participants - add members (ADR 0017)
+      if (
+        method === "POST" &&
+        segments.length === 3 &&
+        segments[0] === "conversations" &&
+        segments[2] === "participants"
+      ) {
+        const body = await readJsonBody(request);
+        const conversation = await api.addParticipants({
+          userId,
+          conversationId: segments[1]!,
+          userIds: requiredStringArray(body["userIds"], "userIds"),
+        });
+        return json(200, { conversation });
+      }
+
+      // DELETE /conversations/:id/participants - remove a member, or leave when
+      // `userId` is the caller. Body-carried like reaction removal (ADR 0017).
+      if (
+        method === "DELETE" &&
+        segments.length === 3 &&
+        segments[0] === "conversations" &&
+        segments[2] === "participants"
+      ) {
+        const body = await readJsonBody(request);
+        const conversation = await api.removeParticipant({
+          userId,
+          conversationId: segments[1]!,
+          targetUserId: requiredString(body["userId"], "userId"),
+        });
+        return json(200, { conversation });
+      }
+
+      // PATCH /conversations/:id/participants - promote/demote (ADR 0017)
+      if (
+        method === "PATCH" &&
+        segments.length === 3 &&
+        segments[0] === "conversations" &&
+        segments[2] === "participants"
+      ) {
+        const body = await readJsonBody(request);
+        const role = requiredString(body["role"], "role");
+        if (role !== "admin" && role !== "member") {
+          throw new ChatpackError("INVALID_INPUT", `"role" must be "admin" or "member".`);
+        }
+        const conversation = await api.setParticipantRole({
+          userId,
+          conversationId: segments[1]!,
+          targetUserId: requiredString(body["userId"], "userId"),
+          role,
         });
         return json(200, { conversation });
       }

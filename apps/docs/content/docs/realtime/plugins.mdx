@@ -36,11 +36,16 @@ export const chatClient = createChatClient({
 
 ## What each plugin adds
 
-| Plugin       | Routes                           | Events published                      | To whom                                            |
-| ------------ | -------------------------------- | ------------------------------------- | -------------------------------------------------- |
-| `typing()`   | `POST /conversations/:id/typing` | `typing.started`, `typing.stopped`    | the other participant (never the typist)           |
-| `presence()` | `GET /presence?userIds=a,b`      | `presence.online`, `presence.offline` | the user's conversation partners                   |
-| `receipts()` | - (hooks into send + mark-read)  | `receipt.delivered`, `receipt.read`   | sender on delivery; other participant on mark-read |
+| Plugin       | Routes                           | Events published                      | To whom                                             |
+| ------------ | -------------------------------- | ------------------------------------- | --------------------------------------------------- |
+| `typing()`   | `POST /conversations/:id/typing` | `typing.started`, `typing.stopped`    | every other participant (never the typist)          |
+| `presence()` | `GET /presence?userIds=a,b`      | `presence.online`, `presence.offline` | everyone sharing a conversation with the user       |
+| `receipts()` | - (hooks into send + mark-read)  | `receipt.delivered`, `receipt.read`   | sender on delivery; every other participant on read |
+
+All three fan out to **every** other participant, so in a group each event is
+one **per-user** signal, not a group-wide state. Key typing indicators and read
+ticks by `senderId` - several people can be typing, and one read tick never
+means "everyone has read it".
 
 Listen exactly like message events:
 
@@ -80,7 +85,9 @@ Ephemeral SSE frames carry no `id:` field - so they can't disturb
 
 Stateless by design. While the user types, `POST …/typing` at most once every
 few seconds; the other side clears the indicator if no ping arrives within
-~5s. Send `{ "isTyping": false }` to clear it eagerly.
+~5s. Send `{ "isTyping": false }` to clear it eagerly. In a group, track a
+per-`senderId` expiry rather than one boolean - "Bob and 2 others are typing"
+falls out of that map.
 
 ```ts
 // throttle to ~1 POST per 3s while the input has activity
@@ -114,9 +121,10 @@ caller may not see are silently omitted from the response:
 
 Instant ✓/✓✓ pings while both sides are online:
 
-- `receipt.delivered` fires to the **sender** the moment the recipient's
-  stream receives the message.
-- `receipt.read` fires to the other participant when mark-read is called.
+- `receipt.delivered` fires to the **sender** the moment a recipient's stream
+  receives the message - once per recipient, so in a group the sender gets N-1
+  of them.
+- `receipt.read` fires to every other participant when someone calls mark-read.
 
 Ticks are **at-least-once** - dedupe by `payload.messageId`. The durable truth
 is still `lastReadMessageId` on the participant

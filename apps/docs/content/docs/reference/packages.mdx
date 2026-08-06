@@ -13,15 +13,17 @@ The only package every integration needs.
 
 **Main exports:**
 
-| Export                    | What it is                                                                                                                                                                                                                                               |
-| ------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `chatpack(options)`       | The single factory - returns `{ api, handler, transport, telemetry, options }`                                                                                                                                                                           |
-| `ChatpackError`           | Domain error with a stable `code`                                                                                                                                                                                                                        |
-| `pairKeyFor(a, b)`        | Deterministic DM pair key (internal detail, exported for adapters/tests)                                                                                                                                                                                 |
-| `inProcessTransport()`    | The default single-node transport                                                                                                                                                                                                                        |
-| `isEphemeralEvent(event)` | Type guard for `TransportEvent`                                                                                                                                                                                                                          |
-| `isMessageEvent(event)`   | Type guard for the message half of `TransportEvent` - `TransportEvent` has three members (`ChatEvent`, `ReactionEvent`, `EphemeralEvent`), so "not ephemeral" no longer means "a message"                                                                |
-| Types                     | `ChatpackOptions`, `ChatpackUser`, `AuthHook`, `PermissionHooks`, `StorageAdapter`, `Transport`, `ChatpackPlugin`, `Conversation`, `Participant`, `Message`, `MessageWithDetails`, `Reaction`, `ReactionSummary`, `MessageRole`, `TelemetryPayload`, ... |
+| Export                    | What it is                                                                                                                                                                                                                                                                                      |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `chatpack(options)`       | The single factory - returns `{ api, handler, transport, telemetry, options }`                                                                                                                                                                                                                  |
+| `ChatpackError`           | Domain error with a stable `code`                                                                                                                                                                                                                                                               |
+| `pairKeyFor(a, b)`        | Deterministic DM pair key (internal detail, exported for adapters/tests)                                                                                                                                                                                                                        |
+| `inProcessTransport()`    | The default single-node transport                                                                                                                                                                                                                                                               |
+| `isEphemeralEvent(event)` | Type guard for `TransportEvent`                                                                                                                                                                                                                                                                 |
+| `isMessageEvent(event)`   | Type guard for the message half of `TransportEvent` - `TransportEvent` has four members (`ChatEvent`, `ReactionEvent`, `ConversationEvent`, `EphemeralEvent`), so "not ephemeral" no longer means "a message"                                                                                   |
+| `isReactionEvent(event)`  | Type guard for `reaction.added` / `reaction.removed`                                                                                                                                                                                                                                            |
+| `isConversationEvent(e)`  | Type guard for the membership events `participant.added` / `participant.removed` / `conversation.updated`                                                                                                                                                                                       |
+| Types                     | `ChatpackOptions`, `ChatpackUser`, `AuthHook`, `PermissionHooks`, `StorageAdapter`, `Transport`, `ChatpackPlugin`, `Conversation`, `ConversationType`, `Participant`, `ParticipantRole`, `Message`, `MessageWithDetails`, `Reaction`, `ReactionSummary`, `MessageRole`, `TelemetryPayload`, ... |
 
 **Subpath `@chatpack/core/plugins`:**
 
@@ -78,13 +80,14 @@ reference `StorageAdapter` implementation.
 Drizzle ORM (Postgres) storage - real persistence for production. Peer
 dependency on `drizzle-orm`.
 
-| Export                                                                      | What it is                                                 |
-| --------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| `drizzleAdapter(db)`                                                        | Create the adapter from any Drizzle Postgres instance      |
-| `chatpackSchema`                                                            | Drizzle table objects (for your `drizzle-kit` flow)        |
-| `conversations`, `conversationParticipants`, `messages`, `messageReactions` | The individual tables                                      |
-| `migrationSql`                                                              | Idempotent DDL as one string (no Drizzle needed to run it) |
-| `migrationStatements`                                                       | The same DDL split for one-statement-per-call drivers      |
+| Export                                                                                             | What it is                                                 |
+| -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `drizzleAdapter(db)`                                                                               | Create the adapter from any Drizzle Postgres instance      |
+| `chatpackSchema`                                                                                   | Drizzle table objects (for your `drizzle-kit` flow)        |
+| `conversations`, `conversationParticipants`, `messages`, `messageReactions`, `messageSearchTokens` | The individual tables                                      |
+| `migrationSql`                                                                                     | Idempotent DDL as one string (no Drizzle needed to run it) |
+| `migrationStatements`                                                                              | The same DDL split for one-statement-per-call drivers      |
+| `backfillMessageSearchTokens(db)`                                                                  | Index existing message bodies for search after an upgrade  |
 
 → [Drizzle / Postgres](/docs/storage/drizzle)
 
