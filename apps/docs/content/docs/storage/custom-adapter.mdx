@@ -20,13 +20,18 @@ AI-builder clouds.
 ## The contract
 
 Implement the `StorageAdapter` interface exported from `@chatpack/core` and
-pass it as `chatpack({ storage: yourAdapter() })`. Fourteen required async methods:
+pass it as `chatpack({ storage: yourAdapter() })`. Nineteen required async methods:
 
 | Method                          | Contract                                                                     |
 | ------------------------------- | ---------------------------------------------------------------------------- |
 | `getOrCreateDirectConversation` | Find or atomically create by `pairKey` - concurrent calls must converge      |
-| `getConversation`               | Fetch by id (with both participants), or `null`                              |
+| `createGroupConversation`       | Always create a new group: `pairKey: null`, creator `admin`, rest `member`   |
+| `getConversation`               | Fetch by id (with all participants), or `null`                               |
 | `listConversations`             | A user's conversations, most-recently-active first, cursor-paginated         |
+| `updateConversation`            | Patch the conversation `name` (string or `null`); throw if id unknown        |
+| `addParticipants`               | Insert-if-absent as `member`; never demote an existing participant           |
+| `removeParticipant`             | Delete that membership row; absent = silent no-op. Messages stay             |
+| `setParticipantRole`            | Set one participant's role; throw if they are not a participant              |
 | `addMessage`                    | Persist + assign the next strictly-increasing `seq` for that conversation    |
 | `getMessage`                    | Fetch by id, or `null`                                                       |
 | `getMessagesByIds`              | Batched fetch by id; unknown ids simply absent (quote-reply previews)        |
@@ -41,6 +46,12 @@ pass it as `chatpack({ storage: yourAdapter() })`. Fourteen required async metho
 
 Exact TypeScript signatures and per-method TSDoc ship in the package's
 `.d.ts` (`@chatpack/core`, `storage.ts` module).
+
+The five group methods are **required, not optional** (unlike `searchMessages`):
+a membership row either exists or it doesn't, so the semantics are identical on
+every backend and there's nothing for a platform to be unable to express. An
+adapter written before groups won't typecheck until it implements them - that's
+deliberate, because silently missing membership writes look like data loss.
 
 `searchMessages` is an optional storage capability. Memory and Drizzle provide
 it. Existing custom adapters may omit it; `chat.api.searchMessages` and
@@ -65,7 +76,8 @@ a message in the same conversation) and you never see the API-only decorations
 `getMessagesByIds` and `listReactionsByMessageIds`, one batched call per page.
 
 <Callout type="warn">
-  The four batched and reaction methods arrived after the original contract. If you wrote an adapter
+  The reaction, batched-lookup and group methods all arrived after the original contract, and
+  `Conversation` gained `type` / `name` while `Participant` gained `role`. If you wrote an adapter
   against an earlier contract, add them - TypeScript will point at every gap.
 </Callout>
 
@@ -74,13 +86,19 @@ a message in the same conversation) and you never see the API-only decorations
 These are database-agnostic - satisfy every one of them however your platform
 does atomicity. Everything else is implementation detail.
 
-1. **One conversation per `pairKey`, even under concurrency.** Core computes
-   `pairKey` (sorted user ids joined with `":"`) and hands it to you. Two
-   concurrent `getOrCreateDirectConversation` calls with the same `pairKey`
-   must converge on a single conversation (`created: true` for at most one
-   caller). A JS-side "select, then insert if missing" is NOT enough - enforce
-   uniqueness in the database (unique index + insert-on-conflict, transaction,
-   or your platform's equivalent).
+1. **One conversation per `pairKey`, even under concurrency - and that
+   uniqueness must NOT apply to groups.** Core computes `pairKey` (sorted user
+   ids joined with `":"`) and hands it to you. Two concurrent
+   `getOrCreateDirectConversation` calls with the same `pairKey` must converge
+   on a single conversation (`created: true` for at most one caller). A JS-side
+   "select, then insert if missing" is NOT enough - enforce uniqueness in the
+   database (unique index + insert-on-conflict, transaction, or your platform's
+   equivalent). Groups store `pairKey: null` and are **never** find-or-create,
+   so the constraint has to exclude nulls: in Postgres that means a _partial_
+   unique index (`WHERE pair_key IS NOT NULL`). Watch the corollary -
+   `ON CONFLICT` only matches a partial index when the insert **repeats the
+   predicate**, so the DM insert needs
+   `ON CONFLICT (pair_key) WHERE pair_key IS NOT NULL DO NOTHING`.
 2. **`seq` is strictly increasing per conversation and assigned atomically
    with the message insert.** Never reused, never decreasing; gaps are
    allowed. Concurrent sends to the same conversation must serialize. Do NOT
@@ -106,7 +124,12 @@ does atomicity. Everything else is implementation detail.
    `seq > afterSeq`, capped at `limit`. `listConversations`:
    most-recently-active first (latest message activity, falling back to
    conversation creation time), with a stable tiebreak so pagination never
-   skips or repeats.
+   skips or repeats. **`participants` must come back in a stable order across
+   reads** - any order you like (the official adapters use join order,
+   tie-broken by `userId`), but the _same_ one every time. SQL stores give no
+   row order without an explicit `ORDER BY`, and clients diff participant lists
+   positionally: an unordered read makes an N-member group look like it changed
+   membership on every poll.
 7. **Return real `Date` instances, never ISO strings.** The interface types
    say `Date` and core does not coerce. Database drivers and HTTP clients
    (PostgREST, Convex, Firestore) often hand back strings or numbers -
@@ -155,6 +178,28 @@ does atomicity. Everything else is implementation detail.
     never `null` entries, never a throw - and an empty input array returns `[]`
     without touching the database. Sort `listReactionsByMessageIds` ascending
     by `createdAt` so core's aggregated `userIds` come out earliest-first.
+14. **Group creation is atomic and never find-or-create.**
+    `createGroupConversation` always inserts a **new** conversation (generate
+    the id, `pairKey: null`, `type: "group"`) plus one participant row per
+    member, in a single transaction: a half-created group with no participants
+    is unrecoverable, because nobody can read it to fix it. Core hands you a
+    de-duplicated `userIds` that excludes the creator; write the creator as
+    `role: "admin"` and everyone else as `"member"`, and don't attempt
+    uniqueness on membership.
+15. **Membership writes are idempotent, and never clobber a role.**
+    `addParticipants` inserts only ids that are absent (unique index on
+    `(conversationId, userId)` + on-conflict-**do-nothing**, not do-update): a
+    replayed request must not reset an admin back to `member`.
+    `removeParticipant` for a non-participant is a silent no-op, and it **never
+    touches their messages** - history outlives membership.
+    `setParticipantRole` throws when the target is not a participant (core
+    already checked, so that's a corruption signal, not a user error). None of
+    these may bump `lastSeq` or the activity timestamp - a membership change is
+    not a message, exactly like a reaction (invariant 12).
+16. **Adapters never enforce group policy.** Core owns the participant cap, the
+    name length, and the last-admin rule, and validates before calling you.
+    Store what you're given. An adapter that re-checks will drift from core and
+    start rejecting valid writes after a core upgrade.
 
 ## Reference schema (Postgres)
 
@@ -169,23 +214,49 @@ official Drizzle adapter.
 ```sql
 CREATE TABLE IF NOT EXISTS "chatpack_conversations" (
   "id" text PRIMARY KEY,
-  "pair_key" text NOT NULL,
+  "type" text NOT NULL DEFAULT 'direct',
+  "pair_key" text,                          -- NULL for groups
+  "name" text,                              -- groups only
   "created_at" timestamptz NOT NULL,
   "metadata" jsonb NOT NULL DEFAULT '{}',
   "last_seq" integer NOT NULL DEFAULT 0,
   "last_activity_at" timestamptz NOT NULL
 );
-CREATE UNIQUE INDEX IF NOT EXISTS "chatpack_conversations_pair_key_idx"
-  ON "chatpack_conversations" ("pair_key");
+-- Upgrade path (the CREATE TABLE above no-ops on an existing table):
+ALTER TABLE "chatpack_conversations"
+  ADD COLUMN IF NOT EXISTS "type" text NOT NULL DEFAULT 'direct';
+ALTER TABLE "chatpack_conversations"
+  ADD COLUMN IF NOT EXISTS "name" text;
+ALTER TABLE "chatpack_conversations"
+  ALTER COLUMN "pair_key" DROP NOT NULL;
+-- The pair-key index becomes PARTIAL so unlimited null-keyed groups coexist
+-- with one-per-pair DMs. A partial index can't replace a total one under the
+-- same name (CREATE ... IF NOT EXISTS would silently keep the old one), hence
+-- the drop-and-rename.
+DROP INDEX IF EXISTS "chatpack_conversations_pair_key_idx";
+CREATE UNIQUE INDEX IF NOT EXISTS "chatpack_conversations_pair_key_unique_idx"
+  ON "chatpack_conversations" ("pair_key") WHERE "pair_key" IS NOT NULL;
 CREATE INDEX IF NOT EXISTS "chatpack_conversations_activity_idx"
   ON "chatpack_conversations" ("last_activity_at", "id");
 
 CREATE TABLE IF NOT EXISTS "chatpack_conversation_participants" (
   "conversation_id" text NOT NULL REFERENCES "chatpack_conversations"("id") ON DELETE CASCADE,
   "user_id" text NOT NULL,
+  "role" text NOT NULL DEFAULT 'member',
   "joined_at" timestamptz NOT NULL,
   "last_read_message_id" text
 );
+ALTER TABLE "chatpack_conversation_participants"
+  ADD COLUMN IF NOT EXISTS "role" text NOT NULL DEFAULT 'member';
+-- Both participants of a DM are admins; the column default is 'member', so
+-- pre-existing rows need a backfill. Idempotent: a second run matches nothing.
+UPDATE "chatpack_conversation_participants" AS p
+  SET "role" = 'admin'
+  WHERE "role" = 'member'
+    AND EXISTS (
+      SELECT 1 FROM "chatpack_conversations" AS c
+      WHERE c."id" = p."conversation_id" AND c."type" = 'direct'
+    );
 CREATE UNIQUE INDEX IF NOT EXISTS "chatpack_participants_conv_user_idx"
   ON "chatpack_conversation_participants" ("conversation_id", "user_id");
 CREATE INDEX IF NOT EXISTS "chatpack_participants_user_idx"
@@ -235,7 +306,11 @@ CREATE INDEX IF NOT EXISTS "chatpack_reactions_message_idx"
 `reply_to_message_id` deliberately has **no foreign key**: a reply must outlive
 its parent, and messages are only ever soft-deleted anyway.
 
-How the reference implementation satisfies the two hard invariants:
+**Existing Postgres deployments must re-run the migration before upgrading** -
+every statement is idempotent, so re-running the whole script is safe and
+preserves data and seq counters.
+
+How the reference implementation satisfies the hard invariants:
 
 - **Atomic `seq`** - one statement, row-locked by Postgres:
 
@@ -251,9 +326,31 @@ How the reference implementation satisfies the two hard invariants:
   cannot express this UPDATE through the client - wrap it in a SQL function
   and call it via RPC.
 
-- **Idempotent pair creation** - `INSERT ... ON CONFLICT (pair_key) DO
-NOTHING`, then re-select by `pair_key`; zero inserted rows means a
-  concurrent call won and both converge on the same row.
+- **Idempotent pair creation** - `INSERT ... ON CONFLICT (pair_key) WHERE
+pair_key IS NOT NULL DO NOTHING`, then re-select by `pair_key`; zero inserted
+  rows means a concurrent call won and both converge on the same row. The
+  `WHERE` clause is load-bearing, not decorative: the index is partial, and
+  Postgres only matches an `ON CONFLICT` target to a partial index when the
+  predicate is repeated. Omit it and **every DM insert** fails with "there is no
+  unique or exclusion constraint matching the ON CONFLICT specification".
+
+- **Group creation** takes the opposite path: a plain `INSERT` with no conflict
+  target (a group is always new) for the conversation plus the participant rows,
+  both inside one `db.transaction`.
+
+- **Idempotent member adds** - the same shape as reactions, keyed on the
+  membership pair:
+
+  ```sql
+  INSERT INTO chatpack_conversation_participants
+    (conversation_id, user_id, role, joined_at)
+  VALUES ($conversationId, $userId, 'member', $now)
+  ON CONFLICT (conversation_id, user_id) DO NOTHING;
+  ```
+
+  `DO NOTHING`, never `DO UPDATE`: a replayed add must not reset an existing
+  admin to `member` (invariant 15). And as with reactions, note what's _absent_ -
+  no `UPDATE chatpack_conversations`.
 
 - **Batched unread counts** - one `GROUP BY` query per page; a LEFT JOIN
   resolves `last_read_message_id` to its `seq` (invariant 10). The unique
@@ -287,15 +384,17 @@ NOTHING`, then re-select by `pair_key`; zero inserted rows means a
 
 ### Non-SQL platforms (Convex, Firestore, ...)
 
-Ignore the SQL; keep the four-collection shape and satisfy the invariants
+Ignore the SQL; keep the five-collection shape and satisfy the invariants
 with your platform's transaction primitive. Example - on Convex, each adapter
 method becomes a Convex query/mutation (DB access only exists inside Convex
 functions) and the `StorageAdapter` object calls them through the Convex
 client; `addMessage` is a single mutation (read counter → increment → insert),
 which is automatically a serializable transaction, satisfying invariant 2 with
 no extra machinery. Enforce invariant 1 with an index/lookup on `pairKey`
-inside one mutation, and invariant 12 with a lookup on the
-`(messageId, userId, emoji)` triple inside the reaction mutation.
+inside one mutation (skipping the check when `pairKey` is null, since groups are
+never deduplicated), invariant 12 with a lookup on the
+`(messageId, userId, emoji)` triple inside the reaction mutation, and
+invariant 14 by writing the group and its participant rows in a single mutation.
 
 ## Skeleton
 
@@ -309,13 +408,38 @@ export function myAdapter(client: MyDbClient): StorageAdapter {
       // 2. On conflict, fetch the existing conversation by pairKey.
       // return { conversation, created };
     },
+    async createGroupConversation({ creatorId, userIds, name, metadata }) {
+      // ALWAYS a new conversation: generate the id, type "group",
+      // pairKey null. One transaction: the conversation row + the creator as
+      // "admin" + each of userIds as "member" (already de-duplicated and
+      // creator-free). Never find-or-create.
+      // return conversation;
+    },
     async getConversation(conversationId) {
-      // Fetch conversation + BOTH participant rows, or return null.
+      // Fetch conversation + ALL participant rows, or return null.
     },
     async listConversations({ userId, limit, cursor }) {
       // Conversations where userId is a participant, most-recently-active
       // first; keyset-paginate; you define the cursor encoding.
       // return { conversations, nextCursor }; // nextCursor: string | null
+    },
+    async updateConversation({ conversationId, name }) {
+      // Set the name (a string or null); throw if the id is unknown.
+      // return updatedConversation; // with participants
+    },
+    async addParticipants({ conversationId, userIds }) {
+      // Insert-on-conflict-DO-NOTHING per id as role "member" - a replayed
+      // add must not demote an existing admin (invariant 15).
+      // return updatedConversation;
+    },
+    async removeParticipant({ conversationId, userId }) {
+      // Delete that one membership row; absent = silent no-op. Leave their
+      // messages alone.
+      // return updatedConversation;
+    },
+    async setParticipantRole({ conversationId, userId, role }) {
+      // Set that participant's role; throw if they are not a participant.
+      // return updatedConversation;
     },
     async addMessage({ conversationId, senderId, body, role, replyToMessageId, metadata }) {
       // Atomically bump the conversation's seq counter and insert the
@@ -409,6 +533,26 @@ Each of these has bitten a real integration:
 - Returning `null` entries or throwing for unknown ids in `getMessagesByIds` /
   `listReactionsByMessageIds` (unknown ids are simply absent), or hitting the
   database at all when the input array is empty.
+- Leaving the pair-key unique index **total** after adding groups, so the second
+  null-keyed group collides - or making it partial but forgetting to repeat the
+  predicate in `ON CONFLICT`, which breaks **every DM** with "no unique or
+  exclusion constraint matching the ON CONFLICT specification" (invariant 1).
+- Making `createGroupConversation` find-or-create, or inserting the conversation
+  and its participants in two separate round trips (a crash between them leaves
+  a group nobody can read, let alone repair).
+- `ON CONFLICT ... DO UPDATE` in `addParticipants`, which demotes an admin every
+  time a client retries the request.
+- Throwing on a duplicate add or an absent removal instead of treating both as
+  no-ops - or hard-deleting a departed member's messages (history outlives
+  membership).
+- Re-checking core's group policy (participant cap, name length, last-admin) in
+  the adapter, or defaulting a DM's participants to `member` (both DM
+  participants are `admin`).
+- Bumping the conversation's activity timestamp or `lastSeq` on a membership
+  change (same trap as reactions: it reorders the list and poisons gap-fill).
+- Returning participants in whatever order the database felt like - with no
+  `ORDER BY`, an N-member group looks like it changed membership on every poll
+  (invariant 6).
 
 ## Verify your adapter
 
@@ -467,9 +611,24 @@ the adapter.
     position and `unreadCount`, add and remove a reaction, re-list: identical
     ordering, identical unread counts, and the next message still gets the
     `seq` it would have had.
-15. **Privilege check (hosted DBs).** With the browser/anon credentials, a
-    direct read of `chatpack_messages` or `chatpack_message_reactions` returns
-    nothing/denied.
+15. **Groups are not deduplicated.** `createGroupConversation` twice with the
+    same members - two distinct ids, both readable, `pairKey: null` on both.
+    Then `getOrCreateConversation(A→B)` still converges on one DM, proving the
+    pair-key constraint survived. This is the check that catches a
+    total-vs-partial index mistake.
+16. **Group membership.** Create a group A(admin)+B, add C - three
+    participants, C a `member`. Promote C to admin, then add C again: still
+    `admin`, still one row. Remove B twice - the second is a silent no-op, B's
+    messages are still in `listMessages`, and B now gets `FORBIDDEN_READ` on
+    the conversation.
+17. **Group unread + list.** With A, B, C in a group, B and C each send one
+    message: A sees `unreadCount: 2`, B sees `1` (never their own). The group
+    appears in all three users' `listConversations`, ordered by activity next to
+    their DMs, and `type` / `name` / `role` survive a restart. Read the
+    conversation twice: `participants` comes back in the same order both times.
+18. **Privilege check (hosted DBs).** With the browser/anon credentials, a
+    direct read of `chatpack_messages`, `chatpack_message_reactions`, or
+    `chatpack_conversation_participants` returns nothing/denied.
 
 ## Real-time plugins and custom adapters
 
@@ -478,7 +637,8 @@ stream - never stored, never replayed - so custom storage adapters need **zero
 changes** to support them.
 
 If you also implement a custom `Transport`, note that `TransportEvent` has
-**three** members - `ChatEvent | ReactionEvent | EphemeralEvent` - so
-`!isEphemeralEvent(e)` no longer means "a message". Branch on `isMessageEvent(e)`
-wherever the message snapshot matters. See
+**four** members - `ChatEvent | ReactionEvent | ConversationEvent |
+EphemeralEvent` - so `!isEphemeralEvent(e)` no longer means "a message". Branch
+on `isMessageEvent(e)` wherever the message snapshot matters, and use
+`isReactionEvent(e)` / `isConversationEvent(e)` for the other two. See
 [Real-time with SSE](/docs/realtime/sse#reaction-events-are-a-third-category).

@@ -16,16 +16,24 @@ Errors are JSON with the shape:
 
 Statuses are mapped from the code:
 
-| Status | Code(s)                                                    | When                                                                           |
-| ------ | ---------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| 401    | `UNAUTHENTICATED`                                          | `auth` returned `null` (or a non-`ChatpackUser`)                               |
-| 400    | `INVALID_INPUT`                                            | bad body/query params                                                          |
-| 403    | `FORBIDDEN_READ`, `FORBIDDEN_WRITE`, `NOT_MESSAGE_SENDER`  | not allowed                                                                    |
-| 404    | `CONVERSATION_NOT_FOUND`, `MESSAGE_NOT_FOUND`, `NOT_FOUND` | missing resource/route                                                         |
-| 409    | `MESSAGE_DELETED`                                          | editing a deleted message                                                      |
-| 422    | `MESSAGE_REJECTED`                                         | a [`beforeMessageSend` hook](/docs/concepts/message-hooks) refused the message |
-| 500    | `INTERNAL_ERROR`                                           | unexpected server error (opaque)                                               |
-| 501    | `SEARCH_UNSUPPORTED`                                       | configured storage adapter has no search capability                            |
+| Status | Code(s)                                                                             | When                                                                           |
+| ------ | ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| 401    | `UNAUTHENTICATED`                                                                   | `auth` returned `null` (or a non-`ChatpackUser`)                               |
+| 400    | `INVALID_INPUT`                                                                     | bad body/query params                                                          |
+| 403    | `FORBIDDEN_READ`, `FORBIDDEN_WRITE`, `NOT_MESSAGE_SENDER`, `NOT_CONVERSATION_ADMIN` | not allowed                                                                    |
+| 404    | `CONVERSATION_NOT_FOUND`, `MESSAGE_NOT_FOUND`, `NOT_FOUND`                          | missing resource/route                                                         |
+| 409    | `MESSAGE_DELETED`, `NOT_GROUP_CONVERSATION`, `LAST_ADMIN_REMAINING`                 | the resource is in the wrong state for the operation                           |
+| 422    | `MESSAGE_REJECTED`                                                                  | a [`beforeMessageSend` hook](/docs/concepts/message-hooks) refused the message |
+| 422    | `GROUP_LIMIT_EXCEEDED`                                                              | the group would exceed 256 participants                                        |
+| 500    | `INTERNAL_ERROR`                                                                    | unexpected server error (opaque)                                               |
+| 501    | `SEARCH_UNSUPPORTED`                                                                | configured storage adapter has no search capability                            |
+
+The three group-specific codes are worth knowing before you hit them:
+`NOT_CONVERSATION_ADMIN` means `canManage` said no (default: you're not an
+admin); `NOT_GROUP_CONVERSATION` means a group-only route was called with a DM's
+id; `LAST_ADMIN_REMAINING` means the write would leave the group with zero
+admins, which Chatpack refuses rather than auto-promoting someone. See
+[Permissions](/docs/concepts/permissions).
 
 <Callout type="info">
   The `401` body's `message` says *why* auth failed - bad hook return shape vs. missing cookie vs.

@@ -54,6 +54,34 @@ An `emoji` is any non-empty string up to 32 characters; `""` or longer comes
 back as `INVALID_INPUT`, and an unknown `messageId` as `MESSAGE_NOT_FOUND` -
 as results, not throws.
 
+## Groups: read yes, manage not yet
+
+Group conversations come back from `conversations.list` and
+`conversations.get` like any other - with `type: "group"`, a `name`, and
+participants carrying `role` - and messages, read-state and reactions work
+identically. Cached conversations pick up renames and role changes on the next
+read.
+
+What the typed namespaces don't cover yet are the five group routes:
+`POST /conversations/group`, `PATCH /conversations/:id`, and the three
+`/conversations/:id/participants` verbs. Call them with `fetch` for now (same
+cookies, same envelope shape), then refetch:
+
+```ts
+await fetch("/api/chat/conversations/group", {
+  method: "POST",
+  credentials: "include",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ name: "Standup", userIds: ["bob", "carol"] }),
+});
+const { data } = await chatClient.conversations.list(); // picks up the new group
+```
+
+The membership SSE events (`participant.added`, `participant.removed`,
+`conversation.updated`) are likewise not in the client's subscribed set yet, so
+they don't update the cache on their own - a polling client sees the change on
+its next tick, and an SSE client after a `conversations.list`.
+
 Methods return a discriminated `{ data, error }` result. Expected HTTP failures
 do not throw. Network failures use `NETWORK_ERROR`; server error codes remain
 available, such as `UNAUTHENTICATED`, `FORBIDDEN_WRITE`, and

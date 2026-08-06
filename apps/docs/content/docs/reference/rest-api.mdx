@@ -10,7 +10,7 @@ All routes are served by the one handler, relative to `basePath` (default
 
 | Method | Path                          | Request body / query                            | Response (200/201)                        |
 | ------ | ----------------------------- | ----------------------------------------------- | ----------------------------------------- |
-| POST   | `/conversations`              | `{ otherUserId, metadata? }`                    | `{ conversation }`                        |
+| POST   | `/conversations`              | `{ otherUserId, metadata? }`                    | `{ conversation }` - DM, find-or-create   |
 | GET    | `/conversations`              | `?limit=&cursor=`                               | `{ conversations, nextCursor }`           |
 | GET    | `/conversations/:id`          | -                                               | `{ conversation }`                        |
 | POST   | `/conversations/:id/messages` | `{ body, role?, replyToMessageId?, metadata? }` | `{ message }` (201)                       |
@@ -22,6 +22,23 @@ All routes are served by the one handler, relative to `basePath` (default
 | POST   | `/messages/:id/reactions`     | `{ emoji }`                                     | `{ message }` (full reaction set)         |
 | DELETE | `/messages/:id/reactions`     | `{ emoji }`                                     | `{ message }` (full reaction set)         |
 | GET    | `/stream`                     | SSE; auto `Last-Event-ID` on reconnect          | `text/event-stream`                       |
+
+## Group routes
+
+Groups and DMs are the same `Conversation` shape, told apart by `type`. These
+routes exist only for `type: "group"` - calling one on a DM is
+`409 NOT_GROUP_CONVERSATION`.
+
+| Method | Path                              | Request body                     | Who                     | Response                 |
+| ------ | --------------------------------- | -------------------------------- | ----------------------- | ------------------------ |
+| POST   | `/conversations/group`            | `{ name?, userIds?, metadata? }` | any signed-in user      | `{ conversation }` (201) |
+| PATCH  | `/conversations/:id`              | `{ name }` (string or `null`)    | admin                   | `{ conversation }`       |
+| POST   | `/conversations/:id/participants` | `{ userIds }`                    | admin                   | `{ conversation }`       |
+| DELETE | `/conversations/:id/participants` | `{ userId }`                     | admin, or self to leave | `{ conversation }`       |
+| PATCH  | `/conversations/:id/participants` | `{ userId, role }`               | admin                   | `{ conversation }`       |
+
+Everything else - messages, read-state, search, reactions, the stream - is
+identical for both types.
 
 ## Plugin routes
 
@@ -46,6 +63,31 @@ These trip up hand-written and generated clients alike:
   list, get): messages newer than their read-state, excluding the viewer's
   own. Soft-deleted messages count - they render as tombstones. Read the
   badge from here instead of counting client-side.
+- **Every conversation carries `type`, `pairKey`, and `name`.** A DM is
+  `type: "direct"` with a `pairKey` and `name: null`; a group is
+  `type: "group"` with `pairKey: null` and an optional `name`. Each participant
+  carries `role: "admin" | "member"` - both DM participants are `"admin"`,
+  which keeps "can this user manage?" one role check on either type.
+- **DMs are find-or-create; groups never are.** `POST /conversations` twice for
+  the same pair returns the same conversation. `POST /conversations/group`
+  twice creates two groups even with identical members, so persist the returned
+  id. `POST /conversations/group` needs no body at all - that creates an empty,
+  unnamed group containing only the creator (an admin).
+- **Group routes return the full conversation** with its complete participant
+  list; replace the cache entry rather than merging a delta. Membership writes
+  are **idempotent**: adding an existing member is a no-op that never demotes an
+  admin, removing a non-member succeeds silently, and setting a role someone
+  already has does nothing.
+- **A group always keeps at least one admin.** Removing or demoting the last one
+  is `409 LAST_ADMIN_REMAINING` - Chatpack refuses instead of silently promoting
+  someone, since picking a successor is a product decision. Promote first, then
+  leave.
+- **A group name is trimmed, 1-200 characters.** `PATCH /conversations/:id` with
+  `{ "name": null }` clears it; omitting `name` entirely is a `400`, because an
+  accidental clear is worse than an error. A group holds at most **256**
+  participants; going over is `422 GROUP_LIMIT_EXCEEDED`.
+- **Participants come back in a stable order** (join order, `userId` breaking
+  ties) so a client can diff the list positionally.
 - **Message lists are newest-first**; reverse for a chronological transcript.
   Paginate by passing `nextCursor` back as `?cursor=`; `nextCursor: null`
   means no more results.
@@ -60,8 +102,9 @@ These trip up hand-written and generated clients alike:
 - **The message text field is `body`** (not `text` / `content`).
 - **Every message carries `reactions` and its reply fields.** `reactions` is
   grouped: `[{ emoji, count, userIds }]`, `userIds` earliest-first (at most two
-  entries, since v0 is 1:1 - enough to render "you reacted" without a second
-  request). `replyToMessageId` is the stored pointer; `replyTo` is a read-only
+  per emoji in a DM, up to the participant count in a group - enough to render
+  "you and 4 others" without a second request). `replyToMessageId` is the stored
+  pointer; `replyTo` is a read-only
   preview `{ id, senderId, excerpt, deleted }` **hydrated per request, never
   stored**, so it can't go stale when the parent is edited and renders even
   when the parent is far outside the loaded page. `excerpt` is the parent's
@@ -88,8 +131,8 @@ These trip up hand-written and generated clients alike:
   is immutable, since `PATCH /messages/:id` only ever changes the body.
 - **`role`** is `"user" | "assistant" | "system"` (default `"user"`) - a
   stored label; core never branches on it. Anything else is a 400.
-- **`otherUserId` is not validated to exist** (Chatpack never owns a users
-  table) - validate recipients in your app.
+- **`otherUserId` and group `userIds` are not validated to exist** (Chatpack
+  never owns a users table) - validate recipients in your app.
 - **Timestamps** are `Date` in server-side calls, ISO 8601 strings over HTTP.
 - **Auth runs before routing** - an unauthenticated request to a wrong path
   still 401s. Fix auth first; then a lingering `404 NOT_FOUND` means your
@@ -180,12 +223,26 @@ curl -X POST /api/chat/conversations \
 {
   "conversation": {
     "id": "conv_1",
+    "type": "direct",
     "pairKey": "alice:bob",
+    "name": null,
     "createdAt": "2026-07-22T19:47:47.945Z",
     "metadata": {},
     "participants": [
-      { "conversationId": "conv_1", "userId": "alice", "joinedAt": "…", "lastReadMessageId": null },
-      { "conversationId": "conv_1", "userId": "bob", "joinedAt": "…", "lastReadMessageId": null }
+      {
+        "conversationId": "conv_1",
+        "userId": "alice",
+        "role": "admin",
+        "joinedAt": "…",
+        "lastReadMessageId": null
+      },
+      {
+        "conversationId": "conv_1",
+        "userId": "bob",
+        "role": "admin",
+        "joinedAt": "…",
+        "lastReadMessageId": null
+      }
     ],
     "unreadCount": 0
   }
@@ -203,17 +260,26 @@ curl '/api/chat/conversations?limit=50'
   "conversations": [
     {
       "id": "conv_1",
+      "type": "direct",
       "pairKey": "alice:bob",
+      "name": null,
       "createdAt": "2026-07-22T19:47:47.945Z",
       "metadata": {},
       "participants": [
         {
           "conversationId": "conv_1",
           "userId": "alice",
+          "role": "admin",
           "joinedAt": "…",
           "lastReadMessageId": null
         },
-        { "conversationId": "conv_1", "userId": "bob", "joinedAt": "…", "lastReadMessageId": null }
+        {
+          "conversationId": "conv_1",
+          "userId": "bob",
+          "role": "admin",
+          "joinedAt": "…",
+          "lastReadMessageId": null
+        }
       ],
       "unreadCount": 2
     }
@@ -224,6 +290,71 @@ curl '/api/chat/conversations?limit=50'
 
 `unreadCount` is viewer-relative: the same conversation fetched as `alice`
 (the sender) shows `0`.
+
+Create a group (as `alice`), then add a member:
+
+```sh
+curl -X POST /api/chat/conversations/group \
+  -H 'content-type: application/json' \
+  -d '{"name": "Launch", "userIds": ["bob", "carol"]}'
+```
+
+```json
+{
+  "conversation": {
+    "id": "conv_2",
+    "type": "group",
+    "pairKey": null,
+    "name": "Launch",
+    "createdAt": "2026-08-05T10:14:02.118Z",
+    "metadata": {},
+    "participants": [
+      {
+        "conversationId": "conv_2",
+        "userId": "alice",
+        "role": "admin",
+        "joinedAt": "…",
+        "lastReadMessageId": null
+      },
+      {
+        "conversationId": "conv_2",
+        "userId": "bob",
+        "role": "member",
+        "joinedAt": "…",
+        "lastReadMessageId": null
+      },
+      {
+        "conversationId": "conv_2",
+        "userId": "carol",
+        "role": "member",
+        "joinedAt": "…",
+        "lastReadMessageId": null
+      }
+    ],
+    "unreadCount": 0
+  }
+}
+```
+
+```sh
+curl -X POST /api/chat/conversations/conv_2/participants \
+  -H 'content-type: application/json' \
+  -d '{"userIds": ["dave"]}'
+```
+
+The response is the whole conversation again, now with four participants. To
+leave, `DELETE` the same path with your own id - no admin rights needed, unless
+you are the last admin, in which case promote a successor first:
+
+```sh
+curl -X PATCH /api/chat/conversations/conv_2/participants \
+  -H 'content-type: application/json' \
+  -d '{"userId": "bob", "role": "admin"}'
+
+curl -X DELETE /api/chat/conversations/conv_2/participants \
+  -H 'content-type: application/json' \
+  -d '{"userId": "alice"}'
+```
 
 ## Errors
 
@@ -238,9 +369,13 @@ JSON with a stable machine-readable code and a mapped HTTP status:
 | 401    | `UNAUTHENTICATED`                                          | `auth` returned `null` (or a non-`ChatpackUser`)    |
 | 400    | `INVALID_INPUT`                                            | bad body/query params                               |
 | 403    | `FORBIDDEN_READ`, `FORBIDDEN_WRITE`, `NOT_MESSAGE_SENDER`  | not allowed                                         |
+| 403    | `NOT_CONVERSATION_ADMIN`                                   | a group management call by a non-admin              |
 | 404    | `CONVERSATION_NOT_FOUND`, `MESSAGE_NOT_FOUND`, `NOT_FOUND` | missing resource/route                              |
 | 409    | `MESSAGE_DELETED`                                          | editing a deleted message                           |
+| 409    | `NOT_GROUP_CONVERSATION`                                   | a group-only call on a DM                           |
+| 409    | `LAST_ADMIN_REMAINING`                                     | removing or demoting a group's only admin           |
 | 422    | `MESSAGE_REJECTED`                                         | a `beforeMessageSend` hook refused the message      |
+| 422    | `GROUP_LIMIT_EXCEEDED`                                     | a group would exceed 256 participants               |
 | 500    | `INTERNAL_ERROR`                                           | unexpected server error (opaque)                    |
 | 501    | `SEARCH_UNSUPPORTED`                                       | configured storage adapter has no search capability |
 
@@ -271,6 +406,34 @@ applying the same event twice is harmless. The trade-off: reactions are **not
 gap-filled**. One applied while a client was offline shows up on its next
 refetch, so refetch cached message pages when the stream reopens after having
 been open. `@chatpack/client` does that for you.
+
+Membership events follow the same no-`id:` rule, for the same reason - a
+membership change allocates no `seq`:
+
+| Event                  | Data                                         | When                                   |
+| ---------------------- | -------------------------------------------- | -------------------------------------- |
+| `participant.added`    | `{ actorId, affectedUserIds, conversation }` | members were added to a group          |
+| `participant.removed`  | `{ actorId, affectedUserIds, conversation }` | a member was removed, or left          |
+| `conversation.updated` | `{ actorId, affectedUserIds, conversation }` | a group was renamed, or a role changed |
+
+`conversation` is the complete post-change snapshot, participants included -
+render from it rather than patching. `actorId` is who did it (an admin, or the
+leaver themselves). `affectedUserIds` names who was added, removed, or had their
+role changed; it is empty for a rename, where the change is visible in
+`conversation.name`.
+
+`participant.removed` is delivered **to the removed user too**: it is the only
+signal telling their client to drop the conversation, and the one place a
+Chatpack event reaches a non-participant. Compare `affectedUserIds` against your
+own id to tell "I was removed" from "someone else was".
+
+Like reactions, these are not gap-filled - refetch the conversation list when
+the stream reopens.
+
+<Callout type="warn">
+  `@chatpack/client` does not subscribe to these three events yet, and has no wrappers for the group
+  routes. Call them with `fetch` and refetch afterwards.
+</Callout>
 
 Ephemeral plugin events (never stored, never replayed, no `id:` field):
 

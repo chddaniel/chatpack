@@ -28,9 +28,10 @@ const chat = chatpack({
     },
 
     // Runs AFTER persistence and the internal live broadcast.
-    afterMessageMutation: async ({ action, message, otherParticipantId }) => {
+    afterMessageMutation: async ({ action, message, recipientIds }) => {
       if (action !== "send") return;
-      await sendPushNotification(otherParticipantId, message);
+      // recipientIds is everyone except the sender - one id in a DM, N in a group.
+      await Promise.all(recipientIds.map((id) => sendPushNotification(id, message)));
     },
   },
 });
@@ -61,10 +62,21 @@ Two guard rails:
 ## `afterMessageMutation` - post-persistence side-effects
 
 Receives the message **exactly as persisted** (rewritten body, assigned `id`
-and `seq`), the conversation, `otherParticipantId`, and the completed action.
-It runs after the storage write and the internal live broadcast. It cannot
-change the message or fail the request. If it throws, Chatpack logs the error
-and the request still succeeds.
+and `seq`), the conversation, `recipientIds`, and the completed action. It runs
+after the storage write and the internal live broadcast. It cannot change the
+message or fail the request. If it throws, Chatpack logs the error and the
+request still succeeds.
+
+`recipientIds` is **every participant except the sender** - one id in a DM, up
+to 255 in a group, and empty when the sender is the only member (a creator-only
+group). It's the field to notify from.
+
+<Callout type="warn">
+  `otherParticipantId` is **deprecated** and removed at 1.0. It's single-valued, so in a group it
+  silently resolves to the *first* non-sender participant and everyone else gets no push. It's still
+  present and still populated so existing DM integrations keep working - migrate to `recipientIds`
+  (ADR 0017 §5).
+</Callout>
 
 | `action` | Meaning               | Internal event    |
 | -------- | --------------------- | ----------------- |
@@ -81,7 +93,8 @@ control UI broadcasts. Your application owns device tokens, users, provider
 calls, retries, and delivery guarantees.
 
 `afterMessageSend` remains available as a deprecated compatibility hook. It
-receives `send` and `edit` only. Use `afterMessageMutation` for new code.
+receives `send` and `edit` only, and carries the same `recipientIds`. Use
+`afterMessageMutation` for new code.
 
 <Callout type="warn">
   Hooks are **in-process functions, not webhooks** - there are no retries or delivery guarantees.

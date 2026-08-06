@@ -172,16 +172,43 @@ curl -X POST /api/chat/conversations \
 {
   "conversation": {
     "id": "conv_1",
+    "type": "direct",
     "pairKey": "alice:bob",
+    "name": null,
     "createdAt": "2026-07-22T19:47:47.945Z",
     "metadata": {},
     "participants": [
-      { "conversationId": "conv_1", "userId": "alice", "joinedAt": "…", "lastReadMessageId": null },
-      { "conversationId": "conv_1", "userId": "bob", "joinedAt": "…", "lastReadMessageId": null }
+      {
+        "conversationId": "conv_1",
+        "userId": "alice",
+        "role": "admin",
+        "joinedAt": "…",
+        "lastReadMessageId": null
+      },
+      {
+        "conversationId": "conv_1",
+        "userId": "bob",
+        "role": "admin",
+        "joinedAt": "…",
+        "lastReadMessageId": null
+      }
     ]
   }
 }
 ```
+
+A group uses a different route - and always creates, since two groups with the
+same members are still two groups:
+
+```sh
+curl -X POST /api/chat/conversations/group \
+  -H 'content-type: application/json' \
+  -d '{"name": "Standup", "userIds": ["bob", "carol"]}'
+```
+
+The caller becomes an `admin`, everyone in `userIds` a `member`. Renaming and
+membership changes are four admin-only routes - see
+[Groups](/docs/concepts/conversations-messages#groups-created-never-found).
 
 Send a message - note the text field is **`body`**:
 

@@ -1,6 +1,6 @@
 /**
- * The Chatpack core engine (M1): 1:1 domain logic, permission checks, and
- * validation, driven through a {@link StorageAdapter}.
+ * The Chatpack core engine (M1): 1:1 and group domain logic, permission
+ * checks, and validation, driven through a {@link StorageAdapter}.
  *
  * @module
  */
@@ -16,7 +16,12 @@ import { ChatpackError } from "./errors";
 import { createHandler, type ChatpackHandler, type HandlerOptions } from "./handler";
 import { createPluginRuntime } from "./plugin";
 import type { StorageAdapter } from "./storage";
-import { inProcessTransport, type ChatEvent, type Transport } from "./transport";
+import {
+  inProcessTransport,
+  type ChatEvent,
+  type ConversationEvent,
+  type Transport,
+} from "./transport";
 import { TelemetryCounters, resolveTelemetryEnabled, startTelemetryFlusher } from "./telemetry";
 import type {
   Conversation,
@@ -26,6 +31,7 @@ import type {
   MessageWithDetails,
   Metadata,
   MessageRole,
+  ParticipantRole,
   Reaction,
   ReactionSummary,
 } from "./types";
@@ -38,6 +44,13 @@ const MAX_LIMIT = 200;
 const MAX_EMOJI_LENGTH = 32;
 /** How much of a quoted parent body a reply preview carries (ADR 0013 §1). */
 const EXCERPT_LENGTH = 140;
+/**
+ * Max participants in one group (ADR 0017 §3). Enforced in core so every
+ * adapter agrees rather than each imposing its own ceiling.
+ */
+export const MAX_GROUP_PARTICIPANTS = 256;
+/** Max length of a group name (ADR 0017 §1). */
+export const MAX_CONVERSATION_NAME_LENGTH = 200;
 
 /**
  * Compute the deterministic pair key for two user ids: sorted and joined with
@@ -56,6 +69,60 @@ export interface GetOrCreateConversationInput {
   otherUserId: string;
   /** Metadata to set if the conversation is created. */
   metadata?: Metadata;
+}
+
+/** Input for {@link ChatpackApi.createGroupConversation} (ADR 0017). */
+export interface CreateGroupConversationApiInput {
+  /** The creator, who becomes the group's first admin. */
+  userId: string;
+  /**
+   * Other members to seed the group with. Optional and may be empty - a group
+   * can start with only its creator, who then invites. Duplicates and the
+   * creator's own id are ignored rather than rejected.
+   */
+  userIds?: string[];
+  /**
+   * Group title. Trimmed; must be non-empty if provided and at most
+   * {@link MAX_CONVERSATION_NAME_LENGTH} characters. Omit for an unnamed group.
+   */
+  name?: string;
+  metadata?: Metadata;
+}
+
+/** Input for {@link ChatpackApi.addParticipants} (ADR 0017). */
+export interface AddParticipantsApiInput {
+  /** The acting user. Must be able to manage the conversation. */
+  userId: string;
+  conversationId: string;
+  /** Users to add. Already-present ids are no-ops, not errors. */
+  userIds: string[];
+}
+
+/** Input for {@link ChatpackApi.removeParticipant} (ADR 0017). */
+export interface RemoveParticipantApiInput {
+  /** The acting user: an admin, or the target themselves (leaving). */
+  userId: string;
+  conversationId: string;
+  /** The user to remove. Equal to `userId` when leaving. */
+  targetUserId: string;
+}
+
+/** Input for {@link ChatpackApi.setParticipantRole} (ADR 0017). */
+export interface SetParticipantRoleApiInput {
+  /** The acting user. Must be able to manage the conversation. */
+  userId: string;
+  conversationId: string;
+  targetUserId: string;
+  role: ParticipantRole;
+}
+
+/** Input for {@link ChatpackApi.updateConversation} (ADR 0017). */
+export interface UpdateConversationApiInput {
+  /** The acting user. Must be able to manage the conversation. */
+  userId: string;
+  conversationId: string;
+  /** The new title, or `null` to clear it. */
+  name: string | null;
 }
 
 /** Input for {@link ChatpackApi.listConversations}. */
@@ -180,6 +247,43 @@ export interface ChatpackApi {
    */
   getOrCreateConversation(input: GetOrCreateConversationInput): Promise<ConversationWithUnread>;
 
+  /**
+   * Create a group conversation with `userId` as its first admin
+   * (`docs/decisions/0017`).
+   *
+   * **Not** idempotent, unlike {@link ChatpackApi.getOrCreateConversation}: two
+   * groups with the same members are two distinct groups.
+   */
+  createGroupConversation(input: CreateGroupConversationApiInput): Promise<ConversationWithUnread>;
+
+  /**
+   * Add members to a group. Requires manage permission (admin by default).
+   * Ids that are already members are skipped silently, so a replayed request
+   * is harmless.
+   */
+  addParticipants(input: AddParticipantsApiInput): Promise<ConversationWithUnread>;
+
+  /**
+   * Remove a member from a group, or leave it (`targetUserId === userId`).
+   * Removing someone else requires manage permission; leaving never does.
+   *
+   * Throws `LAST_ADMIN_REMAINING` if this would leave the group with no admin -
+   * promote someone first. Removing a non-member is a silent no-op.
+   */
+  removeParticipant(input: RemoveParticipantApiInput): Promise<ConversationWithUnread>;
+
+  /**
+   * Promote or demote a member. Requires manage permission. Demoting the only
+   * admin throws `LAST_ADMIN_REMAINING`.
+   */
+  setParticipantRole(input: SetParticipantRoleApiInput): Promise<ConversationWithUnread>;
+
+  /**
+   * Rename a group (or clear its name with `null`). Requires manage
+   * permission. Throws `NOT_GROUP_CONVERSATION` for a DM.
+   */
+  updateConversation(input: UpdateConversationApiInput): Promise<ConversationWithUnread>;
+
   /** List the conversations `userId` participates in, most-recently-active first. */
   listConversations(input: ListConversationsApiInput): Promise<ListConversationsApiResult>;
 
@@ -296,6 +400,13 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
 
   const canRead = options.permissions?.canRead ?? defaultPermission;
   const canWrite = options.permissions?.canWrite ?? defaultPermission;
+  // Manage authority is admin-only by default (ADR 0017 §3) - a strictly
+  // narrower default than read/write, so it cannot be the shared
+  // `defaultPermission`.
+  const canManage =
+    options.permissions?.canManage ??
+    ((ctx: PermissionContext): boolean =>
+      ctx.conversation.participants.some((p) => p.userId === ctx.user.id && p.role === "admin"));
 
   function toPermissionContext(userId: string, conversation: Conversation): PermissionContext {
     const user: ChatpackUser = { id: userId };
@@ -308,15 +419,96 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
     };
   }
 
-  function getOtherParticipantId(conversation: Conversation, userId: string): string {
-    const other = conversation.participants.find((participant) => participant.userId !== userId);
-    if (!other) {
+  /** Everyone in the conversation except `userId` (ADR 0017 §5). */
+  function recipientsExcluding(conversation: Conversation, userId: string): string[] {
+    return conversation.participants
+      .map((participant) => participant.userId)
+      .filter((id) => id !== userId);
+  }
+
+  /**
+   * Membership and rename only apply to groups: a DM's participants are fixed
+   * by its `pairKey` (ADR 0002), and it has no name.
+   */
+  function requireGroup(conversation: Conversation): void {
+    if (conversation.type !== "group") {
       throw new ChatpackError(
-        "INVALID_INPUT",
-        `Conversation "${conversation.id}" does not have another participant.`,
+        "NOT_GROUP_CONVERSATION",
+        `Conversation "${conversation.id}" is a direct conversation - membership and name are fixed.`,
       );
     }
-    return other.userId;
+  }
+
+  async function requireManage(userId: string, conversation: Conversation): Promise<void> {
+    const allowed = await canManage(toPermissionContext(userId, conversation));
+    if (!allowed) {
+      throw new ChatpackError(
+        "NOT_CONVERSATION_ADMIN",
+        `User "${userId}" may not administer conversation "${conversation.id}".`,
+      );
+    }
+  }
+
+  /**
+   * Validate a group name: trimmed, non-empty, length-capped (ADR 0017 §1).
+   * `null`/`undefined` means "no name", which is legitimate for a group.
+   */
+  function normalizeGroupName(value: string | null | undefined): string | null {
+    if (value === undefined || value === null) return null;
+    if (typeof value !== "string") {
+      throw new ChatpackError("INVALID_INPUT", `"name" must be a string or null.`);
+    }
+    const name = value.trim();
+    if (name === "") {
+      throw new ChatpackError(
+        "INVALID_INPUT",
+        `"name" must be non-empty when provided - pass null to clear it.`,
+      );
+    }
+    if (name.length > MAX_CONVERSATION_NAME_LENGTH) {
+      throw new ChatpackError(
+        "INVALID_INPUT",
+        `"name" must be at most ${MAX_CONVERSATION_NAME_LENGTH} characters, got ${name.length}.`,
+      );
+    }
+    return name;
+  }
+
+  /**
+   * De-duplicate a member id list and validate each entry, dropping ids in
+   * `exclude` (the creator on create, existing members on add). Duplicates are
+   * dropped rather than rejected - a client sending the same id twice means one
+   * member, not an error.
+   */
+  function normalizeUserIds(userIds: unknown, field: string, exclude: Set<string> = new Set()) {
+    if (userIds === undefined) return [];
+    if (!Array.isArray(userIds)) {
+      throw new ChatpackError("INVALID_INPUT", `"${field}" must be an array of user ids.`);
+    }
+    const seen = new Set<string>();
+    for (const id of userIds) {
+      requireNonEmptyId(id, `${field}[]`);
+      if (!exclude.has(id)) seen.add(id);
+    }
+    return [...seen];
+  }
+
+  /**
+   * Enforce "a group always has at least one admin" (ADR 0017 §3).
+   *
+   * Chatpack refuses rather than auto-promoting: every selection rule (oldest
+   * member? next in insertion order?) is a policy decision the application
+   * owns. `nextRoles` is the membership as it would be after the change.
+   */
+  function requireAdminRemains(
+    conversation: Conversation,
+    nextRoles: { userId: string; role: ParticipantRole }[],
+  ): void {
+    if (nextRoles.some((participant) => participant.role === "admin")) return;
+    throw new ChatpackError(
+      "LAST_ADMIN_REMAINING",
+      `Conversation "${conversation.id}" must keep at least one admin - promote another member first.`,
+    );
   }
 
   async function requireConversation(conversationId: string): Promise<Conversation> {
@@ -404,6 +596,28 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
       conversationId: conversation.id,
       recipientIds: conversation.participants.map((p) => p.userId),
       message,
+    });
+  }
+
+  /**
+   * Publish a membership or rename change (ADR 0017 §4). Carries the full
+   * post-change conversation, and no `id:` frame is emitted for it - a
+   * membership change allocates no `seq`, so it must not disturb gap-fill.
+   */
+  function publishConversation(
+    type: ConversationEvent["type"],
+    conversation: Conversation,
+    actorId: string,
+    affectedUserIds: string[],
+    recipientIds: string[],
+  ): void {
+    transport.publish({
+      type,
+      conversationId: conversation.id,
+      recipientIds,
+      actorId,
+      affectedUserIds,
+      conversation,
     });
   }
 
@@ -596,28 +810,27 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
    * The deprecated hook receives only send/edit actions for compatibility.
    */
   async function runAfterMessageMutation(
-    ctx: Omit<AfterMessageMutationContext, "otherParticipantId">,
+    ctx: Omit<AfterMessageMutationContext, "otherParticipantId" | "recipientIds">,
   ): Promise<void> {
     const hook = options.hooks?.afterMessageMutation;
     const deprecatedHook = ctx.action === "delete" ? undefined : options.hooks?.afterMessageSend;
     if (!hook && !deprecatedHook) return;
 
-    let otherParticipantId: string;
-    try {
-      otherParticipantId = getOtherParticipantId(ctx.conversation, ctx.message.senderId);
-    } catch (err) {
-      console.error(
-        hook
-          ? "chatpack: afterMessageMutation hook failed"
-          : "chatpack: afterMessageSend hook failed",
-        err,
-      );
-      return;
-    }
+    // Correct for both conversation types, and the field integrations should
+    // use (ADR 0017 §5). For a 1:1 `recipientIds[0]` is exactly what
+    // `getOtherParticipantId` returned in 0.6.0, and for a group it is the same
+    // "first non-sender participant" - so the deprecated field keeps its
+    // shipped meaning without a second lookup that can throw.
+    const recipientIds = recipientsExcluding(ctx.conversation, ctx.message.senderId);
+    const otherParticipantId = recipientIds[0];
 
     if (hook) {
       try {
-        await hook({ ...ctx, otherParticipantId });
+        // A creator-only group has no recipients. The modern hook still fires
+        // with an empty list - analytics and queue integrations care about the
+        // message, not just the notification - so the deprecated single-valued
+        // field degrades to "" rather than suppressing the whole hook.
+        await hook({ ...ctx, recipientIds, otherParticipantId: otherParticipantId ?? "" });
       } catch (err) {
         console.error("chatpack: afterMessageMutation hook failed", err);
       }
@@ -625,11 +838,16 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
     }
 
     if (ctx.action === "delete" || !deprecatedHook) return;
+    // The deprecated hook predates groups and its contract promises a real id,
+    // so it stays suppressed when there is no other participant - exactly the
+    // 0.6.0 behavior (`ea605ae`).
+    if (otherParticipantId === undefined) return;
 
     try {
       await deprecatedHook({
         message: ctx.message,
         conversation: ctx.conversation,
+        recipientIds,
         otherParticipantId,
         action: ctx.action,
       });
@@ -662,6 +880,187 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
 
       if (created) telemetry.increment("conversationsCreated");
       return withUnreadOne(input.userId, conversation);
+    },
+
+    async createGroupConversation(input) {
+      requireNonEmptyId(input.userId, "userId");
+      const name = normalizeGroupName(input.name);
+      // The creator is always a member, so passing their own id is redundant
+      // rather than wrong - drop it instead of erroring.
+      const userIds = normalizeUserIds(input.userIds, "userIds", new Set([input.userId]));
+
+      // +1 for the creator.
+      if (userIds.length + 1 > MAX_GROUP_PARTICIPANTS) {
+        throw new ChatpackError(
+          "GROUP_LIMIT_EXCEEDED",
+          `A group may hold at most ${MAX_GROUP_PARTICIPANTS} participants, got ${userIds.length + 1}.`,
+        );
+      }
+
+      const conversation = await storage.createGroupConversation({
+        creatorId: input.userId,
+        userIds,
+        name,
+        metadata: input.metadata ?? {},
+      });
+
+      telemetry.increment("conversationsCreated");
+      // Seeded members learn about the group the same way later ones do, so a
+      // client that is already streaming does not need to poll for it.
+      if (userIds.length > 0) {
+        publishConversation(
+          "participant.added",
+          conversation,
+          input.userId,
+          userIds,
+          conversation.participants.map((p) => p.userId),
+        );
+      }
+      return withUnreadOne(input.userId, conversation);
+    },
+
+    async addParticipants(input) {
+      requireNonEmptyId(input.userId, "userId");
+      const conversation = await requireConversation(input.conversationId);
+      requireGroup(conversation);
+      await requireManage(input.userId, conversation);
+
+      const existing = new Set(conversation.participants.map((p) => p.userId));
+      const userIds = normalizeUserIds(input.userIds, "userIds", existing);
+      if (userIds.length === 0) {
+        // Everyone requested is already a member: idempotent no-op, and no
+        // event - nothing changed, so notifying would be a lie.
+        return withUnreadOne(input.userId, conversation);
+      }
+
+      if (existing.size + userIds.length > MAX_GROUP_PARTICIPANTS) {
+        throw new ChatpackError(
+          "GROUP_LIMIT_EXCEEDED",
+          `A group may hold at most ${MAX_GROUP_PARTICIPANTS} participants, got ${existing.size + userIds.length}.`,
+        );
+      }
+
+      const updated = await storage.addParticipants({
+        conversationId: conversation.id,
+        userIds,
+      });
+      publishConversation(
+        "participant.added",
+        updated,
+        input.userId,
+        userIds,
+        updated.participants.map((p) => p.userId),
+      );
+      return withUnreadOne(input.userId, updated);
+    },
+
+    async removeParticipant(input) {
+      requireNonEmptyId(input.userId, "userId");
+      requireNonEmptyId(input.targetUserId, "targetUserId");
+      const conversation = await requireConversation(input.conversationId);
+      requireGroup(conversation);
+
+      // Leaving is always allowed; removing someone else needs authority.
+      const isLeaving = input.targetUserId === input.userId;
+      if (!isLeaving) await requireManage(input.userId, conversation);
+
+      const target = conversation.participants.find((p) => p.userId === input.targetUserId);
+      if (!target) {
+        // Idempotent: removing a non-member is a silent no-op so a replayed
+        // request cannot fail (ADR 0017 §3).
+        return withUnreadOne(input.userId, conversation);
+      }
+
+      requireAdminRemains(
+        conversation,
+        conversation.participants.filter((p) => p.userId !== input.targetUserId),
+      );
+
+      // Captured BEFORE the write: the removed user must receive this event -
+      // it is the only signal telling their client to drop the conversation
+      // (ADR 0017 §4).
+      const recipientIds = conversation.participants.map((p) => p.userId);
+
+      const updated = await storage.removeParticipant({
+        conversationId: conversation.id,
+        userId: input.targetUserId,
+      });
+      publishConversation(
+        "participant.removed",
+        updated,
+        input.userId,
+        [input.targetUserId],
+        recipientIds,
+      );
+      return withUnreadOne(input.userId, updated);
+    },
+
+    async setParticipantRole(input) {
+      requireNonEmptyId(input.userId, "userId");
+      requireNonEmptyId(input.targetUserId, "targetUserId");
+      if (input.role !== "admin" && input.role !== "member") {
+        throw new ChatpackError("INVALID_INPUT", `"role" must be "admin" or "member".`);
+      }
+
+      const conversation = await requireConversation(input.conversationId);
+      requireGroup(conversation);
+      await requireManage(input.userId, conversation);
+
+      const target = conversation.participants.find((p) => p.userId === input.targetUserId);
+      if (!target) {
+        throw new ChatpackError(
+          "INVALID_INPUT",
+          `User "${input.targetUserId}" is not a participant of conversation "${conversation.id}".`,
+        );
+      }
+      if (target.role === input.role) {
+        // Already in the requested role: no write, no event.
+        return withUnreadOne(input.userId, conversation);
+      }
+
+      requireAdminRemains(
+        conversation,
+        conversation.participants.map((p) =>
+          p.userId === input.targetUserId ? { ...p, role: input.role } : p,
+        ),
+      );
+
+      const updated = await storage.setParticipantRole({
+        conversationId: conversation.id,
+        userId: input.targetUserId,
+        role: input.role,
+      });
+      // A role change is conversation metadata, not membership - clients
+      // re-render permissions from the snapshot.
+      publishConversation(
+        "conversation.updated",
+        updated,
+        input.userId,
+        [input.targetUserId],
+        updated.participants.map((p) => p.userId),
+      );
+      return withUnreadOne(input.userId, updated);
+    },
+
+    async updateConversation(input) {
+      requireNonEmptyId(input.userId, "userId");
+      const conversation = await requireConversation(input.conversationId);
+      requireGroup(conversation);
+      await requireManage(input.userId, conversation);
+
+      const name = normalizeGroupName(input.name);
+      const updated = await storage.updateConversation({
+        conversationId: conversation.id,
+        name,
+      });
+      publishConversation(
+        "conversation.updated",
+        updated,
+        input.userId,
+        [],
+        updated.participants.map((p) => p.userId),
+      );
+      return withUnreadOne(input.userId, updated);
     },
 
     async listConversations(input) {

@@ -189,10 +189,21 @@ server plugin route discovery remain outside this package.
 
 ## Scope
 
-The package covers the public 1:1 REST API, SSE message reconciliation with a
+The package covers the public REST API, SSE message reconciliation with a
 polling fallback, ephemeral event subscriptions, and React hooks. It does not
-provide auth, uploads, groups, optimistic state, persistence, or WebSocket
-transport.
+provide auth, uploads, optimistic state, persistence, or WebSocket transport.
+
+**Groups: reading works, managing doesn't (yet).** Group conversations come back
+from `conversations.list` and `conversations.get` like any other - the
+conversation type carries `type`, `name`, `pairKey: null`, and each
+participant's `role` - and their messages, unread counts, and `message.*` events
+all flow through unchanged. What isn't wrapped are the five mutations:
+`conversations.create` is DM-only, and there are no methods for creating a group,
+adding or removing participants, changing a role, or renaming. Call those routes
+with `fetch` and refetch afterwards; the client does not yet subscribe to
+`participant.added` / `participant.removed` / `conversation.updated`, so a
+membership change made elsewhere won't reach the cache until the next list
+refetch (or the next poll tick).
 
 ## Source layout
 

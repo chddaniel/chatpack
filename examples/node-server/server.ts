@@ -49,9 +49,10 @@ const chat = chatpack({
     return userId ? { id: userId } : null;
   },
   hooks: {
-    afterMessageMutation: async ({ action, message, otherParticipantId }) => {
+    afterMessageMutation: async ({ action, message, recipientIds }) => {
       if (action !== "send") return;
-      await sendPushNotification(otherParticipantId, message);
+      // recipientIds is everyone but the sender: one id in a DM, N in a group.
+      await Promise.all(recipientIds.map((userId) => sendPushNotification(userId, message)));
     },
   },
 });

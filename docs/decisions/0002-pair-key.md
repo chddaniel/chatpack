@@ -2,6 +2,7 @@
 
 - Status: accepted
 - Date: 2026-07-22
+- Amended: 2026-08-06 (groups landed - see the note under Consequences)
 
 ## Context
 
@@ -29,6 +30,16 @@ insert-on-conflict-select).
 - The pair key is derived purely from user ids - no extra lookups needed.
 - When groups land, group conversations simply won't carry a pair key; the
   1:1 path is unaffected (MVP §8).
+
+> **Amendment (2026-08-06, groups shipped - ADR 0017).** The prediction above
+> held: groups carry `pairKey: null` and the DM path is unchanged. One
+> consequence needs restating precisely, because "a unique index on `pair_key`"
+> is no longer sufficient advice. The index must be **partial**
+> (`WHERE pair_key IS NOT NULL`) or the second null-keyed group collides - and in
+> Postgres a partial index is only matched by `ON CONFLICT` when the insert
+> **repeats the predicate**, so the DM upsert carries the same `WHERE` clause.
+> The uniqueness rule is therefore "one conversation per pair key **among
+> direct conversations**", not "globally unique `pair_key` column".
 
 ## Alternatives considered
 

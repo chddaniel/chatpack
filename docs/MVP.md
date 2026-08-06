@@ -4,6 +4,15 @@
 > (`@chatpack/core@0.2.0`). This doc is the original plan; see §4 for what
 > landed after v0.
 > Scope principle: **v0 is backend-only, 1:1-only, and as minimal as possible.** When in doubt, cut it.
+>
+> ⚠️ **This is a historical planning document, not current policy.** The
+> non-goals below describe what v0 deliberately cut in order to ship - several
+> have since shipped on purpose (search, reactions and quote-replies, the Redis
+> transport, the first-party client, and **group conversations with membership
+> and admin roles**, ADR 0017). For what Chatpack does today, read
+> [`llms.txt`](../llms.txt) and the [roadmap](../apps/docs/content/docs/project/roadmap.mdx);
+> for where it's going, read `docs/STATUS.md`. Treat this file as the record of
+> a decision, not as a list of things Chatpack refuses to do.
 
 ## 1. What v0 is
 
@@ -70,7 +79,12 @@ WhatsApp-style extras feel related to 1:1 because consumer apps bundle them. Cha
 
 **Still deferred to a later release:**
 
-- **Group conversations** (N members, roles, invites)
+- ~~Group conversations (N members, roles, invites)~~ - membership and roles
+  shipped (ADR 0017): `type: "group"`, an optional `name`, 1..256 participants,
+  `admin`/`member` roles, and `participant.*` / `conversation.updated` events.
+  Only **invites** remain deferred - invite links and join requests need a
+  pending-membership state, which is a new entity rather than a column. Adding
+  someone is still an admin action, not an invitation.
 - ~~React client + hooks~~ - shipped as `@chatpack/client` and
   `@chatpack/client/react` in the client milestone.
 

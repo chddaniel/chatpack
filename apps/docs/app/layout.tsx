@@ -14,7 +14,7 @@ export const metadata: Metadata = {
     default: "Chatpack - open-source chat infrastructure for developers",
   },
   description:
-    "Install a package, wire up your database and auth, and get a production-ready 1:1 chat backend - conversations, messages, permissions, read-state, and real-time delivery.",
+    "Install a package, wire up your database and auth, and get a production-ready chat backend - 1:1 and group conversations, messages, permissions, read-state, and real-time delivery.",
 };
 
 export default function Layout({ children }: LayoutProps<"/">) {

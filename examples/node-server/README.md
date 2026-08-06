@@ -10,14 +10,14 @@ curl. Runs on in-memory storage by default, or real Postgres with one env var.
 ## Push notification hook
 
 `server.ts` includes a provider-neutral `afterMessageMutation` example. It
-filters to new messages, then receives the persisted message and the other
-participant's id:
+filters to new messages, then receives the persisted message and every
+recipient's id - one in a DM, N in a group:
 
 ```ts
 hooks: {
-  afterMessageMutation: async ({ action, message, otherParticipantId }) => {
+  afterMessageMutation: async ({ action, message, recipientIds }) => {
     if (action !== "send") return;
-    await sendPushNotification(otherParticipantId, message);
+    await Promise.all(recipientIds.map((userId) => sendPushNotification(userId, message)));
   },
 }
 ```

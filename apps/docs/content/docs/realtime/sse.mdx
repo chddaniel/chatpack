@@ -4,9 +4,10 @@ description: One EventSource - live messages, automatic reconnection, and missed
 ---
 
 `GET /stream` is a Server-Sent Events endpoint. Each connected user receives
-`message.created` / `message.updated` / `message.deleted` plus
-`reaction.added` / `reaction.removed` events for **their conversations only** -
-participation is re-checked server-side per event.
+`message.created` / `message.updated` / `message.deleted`, `reaction.added` /
+`reaction.removed`, and `participant.added` / `participant.removed` /
+`conversation.updated` events for **their conversations only** - participation
+is re-checked server-side per event.
 
 No WebSocket server, no Socket.IO, no reconnect code to write.
 
@@ -43,6 +44,14 @@ events.addEventListener("reaction.added", (e) => {
   // `message.reactions` is the COMPLETE set after the change - replace, don't merge
 });
 // reaction.removed carries the same shape
+
+events.addEventListener("participant.removed", (e) => {
+  const { actorId, affectedUserIds, conversation } = JSON.parse((e as MessageEvent).data);
+  // If affectedUserIds includes YOU, this is your removal - drop the
+  // conversation. It's the last event you'll get for it.
+  // Otherwise: replace your cached copy with `conversation`.
+});
+// participant.added and conversation.updated carry the same shape
 
 events.onerror = () => {
   if (events.readyState === EventSource.CLOSED) {

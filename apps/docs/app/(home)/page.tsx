@@ -11,6 +11,10 @@ const features = [
     body: "A single Web-standard handler serves conversations, messages, read-state, and the live stream.",
   },
   {
+    title: "DMs and group chats",
+    body: "The same conversation shape either way - groups add members, admin roles, and rename, up to 256 people.",
+  },
+  {
     title: "Real-time built in",
     body: "One EventSource. Automatic reconnection and missed-message backfill - no WebSocket server.",
   },
@@ -36,8 +40,8 @@ export default function HomePage() {
           Open-source chat infrastructure for developers
         </h1>
         <p className="mt-6 text-lg text-fd-muted-foreground max-w-2xl">
-          Install a package, wire up your database and auth, and get a production-ready 1:1 chat
-          backend - conversations, messages, permissions, read-state, and real-time delivery -
+          Install a package, wire up your database and auth, and get a production-ready chat backend
+          - 1:1 and group conversations, messages, permissions, read-state, and real-time delivery -
           without rebuilding it from scratch.
         </p>
         <div className="mt-8 flex flex-wrap items-center justify-center gap-3">

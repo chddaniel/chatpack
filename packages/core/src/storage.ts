@@ -24,7 +24,68 @@
  * @module
  */
 
-import type { Conversation, Message, Metadata, MessageRole, Reaction } from "./types";
+import type {
+  Conversation,
+  Message,
+  Metadata,
+  MessageRole,
+  ParticipantRole,
+  Reaction,
+} from "./types";
+
+/** Input for {@link StorageAdapter.createGroupConversation}. */
+export interface CreateGroupConversationInput {
+  /**
+   * The creator, who becomes the group's first `admin`
+   * (`docs/decisions/0017`).
+   */
+  creatorId: string;
+  /**
+   * Other members to seed the group with, already validated and de-duplicated
+   * by core (never contains `creatorId`). May be empty - a group can start
+   * with only its creator.
+   */
+  userIds: string[];
+  /** Group title, already trimmed and length-checked by core, or `null`. */
+  name: string | null;
+  /** Metadata to set on the new conversation. */
+  metadata: Metadata;
+}
+
+/** Input for {@link StorageAdapter.addParticipants}. */
+export interface AddParticipantsInput {
+  conversationId: string;
+  /**
+   * Users to add as `member`s, de-duplicated by core. Adding someone who is
+   * already a participant must be a **no-op**, not an error - membership
+   * requests can be replayed (`docs/decisions/0017`).
+   */
+  userIds: string[];
+}
+
+/** Input for {@link StorageAdapter.removeParticipant}. */
+export interface RemoveParticipantInput {
+  conversationId: string;
+  /**
+   * The user to remove. Removing someone who is not a participant must be a
+   * silent **no-op**, not an error (`docs/decisions/0017`).
+   */
+  userId: string;
+}
+
+/** Input for {@link StorageAdapter.setParticipantRole}. */
+export interface SetParticipantRoleInput {
+  conversationId: string;
+  userId: string;
+  role: ParticipantRole;
+}
+
+/** Input for {@link StorageAdapter.updateConversation}. */
+export interface UpdateConversationInput {
+  conversationId: string;
+  /** The new group title, or `null` to clear it. */
+  name: string | null;
+}
 
 /** Input for {@link StorageAdapter.getOrCreateDirectConversation}. */
 export interface GetOrCreateDirectConversationInput {
@@ -191,6 +252,48 @@ export interface StorageAdapter {
   getOrCreateDirectConversation(
     input: GetOrCreateDirectConversationInput,
   ): Promise<GetOrCreateDirectConversationResult>;
+
+  /**
+   * Create a group conversation (`docs/decisions/0017`). Unlike
+   * {@link StorageAdapter.getOrCreateDirectConversation} this is **not**
+   * find-or-create: two groups with identical membership are two distinct
+   * groups, so every call creates a new row.
+   *
+   * Store `type: "group"` and `pairKey: null`. The creator is persisted with
+   * `role: "admin"`, everyone in `userIds` with `role: "member"`.
+   */
+  createGroupConversation(input: CreateGroupConversationInput): Promise<Conversation>;
+
+  /**
+   * Add members to a group, returning the **full updated conversation** so core
+   * can publish a complete snapshot without a second read (the same contract
+   * `addReaction` uses, `docs/decisions/0013`).
+   *
+   * Must be idempotent: ids that are already participants are skipped, not
+   * duplicated and not an error. New participants get `role: "member"`.
+   */
+  addParticipants(input: AddParticipantsInput): Promise<Conversation>;
+
+  /**
+   * Remove one member from a group, returning the full updated conversation.
+   *
+   * Must be idempotent: removing a non-participant is a silent no-op. Core has
+   * already checked permissions and the last-admin invariant. Leave the
+   * removed user's messages in place - history is not rewritten by departure.
+   */
+  removeParticipant(input: RemoveParticipantInput): Promise<Conversation>;
+
+  /**
+   * Change one participant's role, returning the full updated conversation.
+   * Core has already enforced that this cannot demote the last admin.
+   */
+  setParticipantRole(input: SetParticipantRoleInput): Promise<Conversation>;
+
+  /**
+   * Update a group's mutable fields (currently just `name`), returning the full
+   * updated conversation. Core has already validated and trimmed the name.
+   */
+  updateConversation(input: UpdateConversationInput): Promise<Conversation>;
 
   /** Fetch a conversation (with participants) by id, or `null` if unknown. */
   getConversation(conversationId: string): Promise<Conversation | null>;

@@ -18,6 +18,11 @@ Durable messages are reconciled by id and sequence and remain newest-first.
 `message.created`, `message.updated`, `message.deleted`, `reaction.added`, and
 `reaction.removed` all update the cache.
 
+The server's membership events (`participant.added`, `participant.removed`,
+`conversation.updated`) are **not** in the client's subscribed set yet, so they
+don't reach `subscribe` or the cache. Until they are, refetch after a group
+change you initiated, or let the polling loop pick it up.
+
 ## The conversations list stays live too
 
 A `message.created` event for any conversation updates the cached list, not just
@@ -128,7 +133,9 @@ Four things the loop does that a hand-rolled one usually doesn't:
 
 Polled pages merge rather than replace: unchanged data notifies no subscribers
 (so an idle interval causes no re-renders), pagination you've loaded is never
-truncated, and a polled message never double-counts against `unreadCount`.
+truncated, and a polled message never double-counts against `unreadCount`. The
+comparison covers a conversation's `name` and its participants' `role`s too, so
+a group rename or a promotion made elsewhere re-renders on the next tick.
 
 ### Typing, presence and receipts don't work while polling
 

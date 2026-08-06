@@ -11,8 +11,11 @@ deterministic tests.
 > has its own memory, so this adapter effectively stores nothing there.
 
 This package is also the **reference implementation** of the `StorageAdapter`
-contract: writing your own adapter? Start by reading
-[`src/index.ts`](./src/index.ts).
+contract - all nineteen required methods, including the five that groups added
+(`createGroupConversation`, `addParticipants`, `removeParticipant`,
+`setParticipantRole`, `updateConversation`) - plus optional search. Writing your
+own adapter? Start by reading [`src/index.ts`](./src/index.ts), then follow
+Part 2 of [`llms.txt`](../../llms.txt) for the invariants it demonstrates.
 
 ## Install
 
