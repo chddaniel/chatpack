@@ -1,5 +1,15 @@
 # @chatpack/adapter-memory
 
+## 0.4.1
+
+### Patch Changes
+
+- Fix an unresolvable `@chatpack/core` dependency. 0.4.0 was published with the
+  literal `workspace:^` protocol string in its manifest instead of a real semver
+  range, so `npm install @chatpack/adapter-memory@0.4.0` failed outright with
+  `EUNSUPPORTEDPROTOCOL`. 0.4.0 is deprecated on the registry; there are no code
+  changes here, only the corrected dependency range.
+
 ## 0.4.0
 
 ### Minor Changes
