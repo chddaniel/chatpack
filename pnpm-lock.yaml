@@ -33,11 +33,11 @@ importers:
   apps/demo-api:
     dependencies:
       '@chatpack/adapter-memory':
-        specifier: 0.4.1
-        version: 0.4.1
+        specifier: 0.4.2
+        version: 0.4.2
       '@chatpack/core':
-        specifier: 0.7.0
-        version: 0.7.0
+        specifier: 0.8.0
+        version: 0.8.0
       next:
         specifier: 16.2.12
         version: 16.2.12(@babel/core@7.29.7)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -534,11 +534,11 @@ packages:
   '@changesets/write@0.4.0':
     resolution: {integrity: sha512-CdTLvIOPiCNuH71pyDu3rA+Q0n65cmAbXnwWH84rKGiFumFzkmHNT8KHTMEchcxN+Kl8I54xGUhJ7l3E7X396Q==}
 
-  '@chatpack/adapter-memory@0.4.1':
-    resolution: {integrity: sha512-0UCYDneKB6Lh5FTXwzjst1wo++VGAdoWpiTZptimB5fOe5ZBWV78sZajHLjEuUbCE15hMFPuaPAOL4z+dMd8zw==}
+  '@chatpack/adapter-memory@0.4.2':
+    resolution: {integrity: sha512-KHCYAXt3O4KJeIz+S0Vf3bRk2tiAU7rq3LokZ8vl3yCUyWUsYnctoFqO5/QFe2Bf5XsvfCEvuA5QihX8VsI4Aw==}
 
-  '@chatpack/core@0.7.0':
-    resolution: {integrity: sha512-aptdkz60gQNRzqf8kpJF8eO2eGnVKWP1OVmnO8wseTkbM/Wbeyvi0nTgeaH1pQI3qjAzG5KNxHDrRKqz/oqI4Q==}
+  '@chatpack/core@0.8.0':
+    resolution: {integrity: sha512-XCHAHNUdiniWXPXYy1pQN52KbiQ7htwqtH9c6ziedyyo/AamSxycv8/arugPaimoCGFrzduUv3n1BUCsm2ESrg==}
 
   '@electric-sql/pglite@0.5.4':
     resolution: {integrity: sha512-yYZUyyXrHU7tPlCjwZQJ6hIG9DscdCCn7Uk0mYKwC1FeHX286AbcmFveMiRBEak8e9iPupjsoVImN3yJZVed2g==}
@@ -4818,11 +4818,11 @@ snapshots:
       human-id: 4.2.0
       prettier: 2.8.8
 
-  '@chatpack/adapter-memory@0.4.1':
+  '@chatpack/adapter-memory@0.4.2':
     dependencies:
-      '@chatpack/core': 0.7.0
+      '@chatpack/core': 0.8.0
 
-  '@chatpack/core@0.7.0': {}
+  '@chatpack/core@0.8.0': {}
 
   '@electric-sql/pglite@0.5.4': {}
 
