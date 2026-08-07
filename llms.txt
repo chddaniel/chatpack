@@ -296,35 +296,57 @@ events.addEventListener("message.created", (e) => {
 ```
 
 Groups use the same messages/stream routes - only creation and membership
-differ (the creator becomes the group's first admin). `@chatpack/client` does
-not wrap the group routes yet (`conversations.create` is DM-only) and does not
-subscribe to `participant.*` / `conversation.updated`, so **call these with
-plain `fetch` and refetch the conversation afterwards**:
+differ (the creator becomes the group's first admin). Since client 0.5.0,
+`@chatpack/client` wraps all five group mutations and subscribes to
+`participant.*` / `conversation.updated`, so **use the client methods; do not
+hand-roll `fetch` calls for these**:
 
 ```ts
-// Create a group. This is NOT find-or-create - keep the returned id.
-const { conversation: group } = await fetch("/api/chat/conversations/group", {
-  method: "POST",
-  headers: { "content-type": "application/json" },
-  body: JSON.stringify({ name: "Launch", userIds: ["bob", "carol"] }),
-}).then((r) => r.json());
-
-// Add a member (admin only). Returns the FULL conversation - replace, don't merge.
-await fetch(`/api/chat/conversations/${group.id}/participants`, {
-  method: "POST",
-  headers: { "content-type": "application/json" },
-  body: JSON.stringify({ userIds: ["dave"] }),
+// Create a group. This is NOT find-or-create - every call makes a new group.
+// You become its first admin. (conversations.create stays DM-only.)
+const group = await chatClient.conversations.createGroup({
+  name: "Launch",
+  userIds: ["bob", "carol"],
 });
 
-// Leave: DELETE with your own id (no admin rights needed). Promote a successor
-// first if you are the last admin, or this is 409 LAST_ADMIN_REMAINING.
-await fetch(`/api/chat/conversations/${group.id}/participants`, {
-  method: "DELETE",
-  headers: { "content-type": "application/json" },
-  body: JSON.stringify({ userId: me }),
+// Add members (admin only; already-present ids are no-ops).
+await chatClient.conversations.addParticipants({
+  conversationId: group.data.id,
+  userIds: ["dave"],
 });
 
-// Membership changes arrive on the same stream (no `id:` line, so no gap-fill).
+// Rename, or clear the title with name: null (admin only).
+await chatClient.conversations.update({ conversationId: group.data.id, name: "Launch v2" });
+
+// Promote or demote (admin only).
+await chatClient.conversations.setParticipantRole({
+  conversationId: group.data.id,
+  userId: "bob",
+  role: "admin",
+});
+
+// Remove a member (admin), or LEAVE by passing your own id (no admin needed).
+// Removing/demoting the last admin is 409 LAST_ADMIN_REMAINING - promote a
+// successor first.
+await chatClient.conversations.removeParticipant({
+  conversationId: group.data.id,
+  userId: me,
+});
+```
+
+Membership changes update the cache automatically: renames, role changes and
+membership land on the conversations list and single-conversation queries;
+being **added** to a group fetches and prepends it; being **removed** drops the
+conversation from the cache entirely (you receive your own
+`participant.removed` - it is the only signal you get). Polling clients get
+the same outcomes on the next tick: snapshot changes through the list poll,
+and removal via the `FORBIDDEN_READ` their next thread poll returns.
+Membership events carry no `id:` line, so they are not replayed after a
+reconnect - the client refetches conversations on stream reopen anyway.
+
+Only wire the stream by hand if you are not using `@chatpack/client`:
+
+```ts
 events.addEventListener("participant.removed", (e) => {
   const { conversationId, affectedUserIds, conversation } = JSON.parse((e as MessageEvent).data);
   // You receive this even when YOU were removed - drop the conversation then.

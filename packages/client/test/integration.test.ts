@@ -270,4 +270,169 @@ describe("client and handler integration", () => {
     alice.dispose();
     bob.dispose();
   });
+
+  it("runs the five group mutations through the real handler, converging all members (ADR 0017)", async () => {
+    const chat = chatpack({
+      storage: memoryAdapter(),
+      auth: (request) => {
+        const userId = request.headers.get("x-user-id");
+        return userId === null ? null : { id: userId };
+      },
+    });
+    const handler = chat.handler({ heartbeatIntervalMs: 0 });
+    const streams = new Map<string, ScriptedEventSource>();
+    const clientFor = (userId: string) => {
+      const stream = new ScriptedEventSource(userId);
+      streams.set(userId, stream);
+      return createChatClient({
+        userId,
+        fetch: async (input, init) => {
+          const requestURL = new URL(input instanceof Request ? input.url : input);
+          const headers = new Headers(init?.headers);
+          headers.set("x-user-id", userId);
+          return handler.fetch(
+            new Request("http://chatpack.invalid" + requestURL.pathname + requestURL.search, {
+              ...init,
+              headers,
+            }),
+          );
+        },
+        eventSource: () => stream,
+      });
+    };
+
+    const alice = clientFor("alice");
+    const bob = clientFor("bob");
+    chat.transport.subscribe((event) => {
+      for (const stream of streams.values()) stream.deliver(event);
+    });
+
+    // Everyone loads their (empty) list first, then opens their stream, so
+    // there is a loaded cache for the events to land in.
+    await alice.conversations.list();
+    await bob.conversations.list();
+    alice.realtime.connect();
+    bob.realtime.connect();
+
+    // createGroup: never find-or-create, creator is the first admin, and the
+    // local echo prepends it to the creator's list without any stream event.
+    const group = await alice.conversations.createGroup({ name: "Standup" });
+    expect(group.error).toBeNull();
+    if (group.error !== null) throw new Error("createGroup failed");
+    const groupId = group.data.id;
+    expect(group.data.type).toBe("group");
+    expect(group.data.pairKey).toBeNull();
+    expect(group.data.participants).toEqual([
+      expect.objectContaining({ userId: "alice", role: "admin" }),
+    ]);
+    expect(alice.$store.getSnapshot().conversations.data?.conversations.map((c) => c.id)).toEqual([
+      groupId,
+    ]);
+
+    // addParticipants: bob's client learns about the group purely from the
+    // participant.added event naming him - the backfill fetches the full row.
+    const added = await alice.conversations.addParticipants({
+      conversationId: groupId,
+      userIds: ["bob"],
+    });
+    expect(added.error).toBeNull();
+    await vi.waitFor(() => {
+      const bobList = bob.$store.getSnapshot().conversations.data?.conversations;
+      expect(bobList?.map((c) => c.id)).toEqual([groupId]);
+      expect(bobList?.[0]?.name).toBe("Standup");
+    });
+
+    // update (rename): admin-only, converges on both caches over the stream.
+    const renamed = await alice.conversations.update({
+      conversationId: groupId,
+      name: "Daily standup",
+    });
+    expect(renamed.error).toBeNull();
+    expect(renamed.data?.name).toBe("Daily standup");
+    await vi.waitFor(() => {
+      const bobRow = bob.$store
+        .getSnapshot()
+        .conversations.data?.conversations.find((c) => c.id === groupId);
+      expect(bobRow?.name).toBe("Daily standup");
+    });
+
+    // A member hitting an admin-only route surfaces the server's code.
+    const forbidden = await bob.conversations.update({
+      conversationId: groupId,
+      name: "bob's room",
+    });
+    expect(forbidden.error?.code).toBe("NOT_CONVERSATION_ADMIN");
+
+    // setParticipantRole: promotion lands in every cache as a role change.
+    const promoted = await alice.conversations.setParticipantRole({
+      conversationId: groupId,
+      userId: "bob",
+      role: "admin",
+    });
+    expect(promoted.error).toBeNull();
+    await vi.waitFor(() => {
+      const bobRow = bob.$store
+        .getSnapshot()
+        .conversations.data?.conversations.find((c) => c.id === groupId);
+      expect(bobRow?.participants.find((p) => p.userId === "bob")?.role).toBe("admin");
+    });
+
+    // The last-admin invariant surfaces as a result, not a throw. (Bob is an
+    // admin now, so alice demotes him first to recreate the guard.)
+    await alice.conversations.setParticipantRole({
+      conversationId: groupId,
+      userId: "bob",
+      role: "member",
+    });
+    const lastAdmin = await alice.conversations.removeParticipant({
+      conversationId: groupId,
+      userId: "alice",
+    });
+    expect(lastAdmin.error?.code).toBe("LAST_ADMIN_REMAINING");
+
+    // removeParticipant: bob is removed; the participant.removed event is the
+    // only signal his client gets, and it drops the conversation everywhere.
+    await bob.messages.list({ conversationId: groupId });
+    const removed = await alice.conversations.removeParticipant({
+      conversationId: groupId,
+      userId: "bob",
+    });
+    expect(removed.error).toBeNull();
+    expect(removed.data?.participants.map((p) => p.userId)).toEqual(["alice"]);
+    await vi.waitFor(() => {
+      const bobSnapshot = bob.$store.getSnapshot();
+      expect(bobSnapshot.conversations.data?.conversations).toEqual([]);
+      expect(bobSnapshot.conversationsById[groupId]).toBeUndefined();
+      expect(bobSnapshot.messagesByConversation[groupId]).toBeUndefined();
+    });
+    // Alice's cache saw the same event but keeps the (shrunken) group.
+    expect(
+      alice.$store
+        .getSnapshot()
+        .conversations.data?.conversations.find((c) => c.id === groupId)
+        ?.participants.map((p) => p.userId),
+    ).toEqual(["alice"]);
+
+    // Leaving (removing yourself) drops the group from your own cache via the
+    // local echo - no stream needed. Carol joins, then leaves.
+    const carol = clientFor("carol");
+    await carol.conversations.list();
+    carol.realtime.connect();
+    await alice.conversations.addParticipants({ conversationId: groupId, userIds: ["carol"] });
+    await vi.waitFor(() => {
+      expect(carol.$store.getSnapshot().conversations.data?.conversations.map((c) => c.id)).toEqual(
+        [groupId],
+      );
+    });
+    const left = await carol.conversations.removeParticipant({
+      conversationId: groupId,
+      userId: "carol",
+    });
+    expect(left.error).toBeNull();
+    expect(carol.$store.getSnapshot().conversations.data?.conversations).toEqual([]);
+
+    alice.dispose();
+    bob.dispose();
+    carol.dispose();
+  });
 });

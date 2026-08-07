@@ -1,10 +1,17 @@
 /** Per-client cache contracts for REST results and durable stream updates. */
 import type { ChatClientResult, ChatpackClientError } from "./errors";
-import { isReactionChatEvent, type DurableChatEvent, type ChatpackEvent } from "./realtime";
+import {
+  isConversationChatEvent,
+  isReactionChatEvent,
+  type ConversationChatEvent,
+  type DurableChatEvent,
+  type ChatpackEvent,
+} from "./realtime";
 import { createStore, type ReadonlyStore, type Store } from "./store";
 import type {
   ClientConversation,
   ClientConversationPage,
+  ClientConversationSnapshot,
   ClientMessage,
   ClientMessagePage,
 } from "./wire";
@@ -91,6 +98,42 @@ export interface ChatpackCache extends ReadonlyStore<ChatpackCacheSnapshot> {
    * snapshot. A no-op when the message is not in a loaded page.
    */
   applyReactions(conversationId: string, message: ClientMessage): void;
+  /**
+   * Merge a conversation snapshot from a `participant.*` /
+   * `conversation.updated` event or a group mutation's response into every
+   * cached copy (ADR 0017).
+   *
+   * Only the mutable fields land (`name`, `metadata`, `participants`);
+   * `unreadCount` is deliberately kept from the cache, because the event's
+   * snapshot has none - it fans out to every recipient while unread counts are
+   * viewer-relative (ADR 0009). A no-op for conversations the cache has never
+   * loaded: splicing an unranked conversation into a paginated list is the
+   * backfill path's job, which fetches the viewer's real `unreadCount` too.
+   */
+  applyConversationSnapshot(conversation: ClientConversationSnapshot): void;
+  /**
+   * Apply a `participant.removed` event or the local echo of a
+   * remove/leave call (ADR 0017).
+   *
+   * When the removed user is the viewer, the conversation is dropped from
+   * every cache surface - the event is the only signal their client gets, and
+   * any later request for it would be `FORBIDDEN_READ`. Requires the cache to
+   * know the viewer (the `userId` option, or inferred from a sent message);
+   * without it the snapshot still merges, and the stale entry lasts until the
+   * next refetch fails. When the removed user is someone else this is just
+   * {@link applyConversationSnapshot}.
+   */
+  applyParticipantRemoved(
+    removedUserIds: readonly string[],
+    conversation: ClientConversationSnapshot,
+  ): void;
+  /**
+   * Drop one conversation from every cache surface. Used when the viewer was
+   * removed from it (ADR 0017) - directly when a poll or refetch comes back
+   * `FORBIDDEN_READ`, and via {@link applyParticipantRemoved} for the stream
+   * event and the local echo of leaving.
+   */
+  dropConversation(conversationId: string): void;
   /** Clears the viewer's unread count after a successful `markRead`. */
   applyRead(conversationId: string, messageId: string): void;
   /** Adds a conversation the list has not seen yet at the most-recent end. */
@@ -185,18 +228,49 @@ function sameMessage(left: ClientMessage, right: ClientMessage): boolean {
  * Participant order is stable across reads (an adapter contract), so comparing
  * positionally is safe rather than flapping.
  */
-function sameConversation(left: ClientConversation, right: ClientConversation): boolean {
-  if (left.unreadCount !== right.unreadCount) return false;
-  if (left.name !== right.name) return false;
-  if (left.participants.length !== right.participants.length) return false;
-  return left.participants.every((participant, index) => {
-    const other = right.participants[index]!;
+function sameParticipants(
+  left: readonly ClientConversation["participants"][number][],
+  right: readonly ClientConversation["participants"][number][],
+): boolean {
+  if (left.length !== right.length) return false;
+  return left.every((participant, index) => {
+    const other = right[index]!;
     return (
       participant.userId === other.userId &&
       participant.role === other.role &&
       participant.lastReadMessageId === other.lastReadMessageId
     );
   });
+}
+
+function sameConversation(left: ClientConversation, right: ClientConversation): boolean {
+  if (left.unreadCount !== right.unreadCount) return false;
+  if (left.name !== right.name) return false;
+  return sameParticipants(left.participants, right.participants);
+}
+
+/**
+ * Fold an event's conversation snapshot into a cached conversation, or return
+ * the cached object untouched when nothing visible changed (ADR 0017).
+ *
+ * Only the fields a membership or rename event can move are taken from the
+ * snapshot (`name`, `participants`); `unreadCount` stays the cache's, because
+ * the snapshot has none - it fans out identically to every recipient while
+ * unread counts are viewer-relative (ADR 0009). Returning the same object on
+ * no change is load-bearing: events are at-least-once, so a redelivered
+ * snapshot must not re-render every mounted component.
+ */
+function mergeConversationSnapshot(
+  cached: ClientConversation,
+  snapshot: ClientConversationSnapshot,
+): ClientConversation {
+  if (
+    cached.name === snapshot.name &&
+    sameParticipants(cached.participants, snapshot.participants)
+  ) {
+    return cached;
+  }
+  return { ...cached, name: snapshot.name, participants: snapshot.participants };
 }
 
 /**
@@ -332,8 +406,102 @@ export function createChatpackCache(options: ChatpackCacheOptions = {}): Chatpac
     });
   }
 
+  /** Shared by conversation stream events and group mutations' local echoes. */
+  function applyConversationSnapshot(conversation: ClientConversationSnapshot): void {
+    store.update((current) => {
+      let next = current;
+
+      const list = current.conversations.data;
+      const index = list?.conversations.findIndex((item) => item.id === conversation.id) ?? -1;
+      if (list != null && index !== -1) {
+        const merged = mergeConversationSnapshot(list.conversations[index]!, conversation);
+        if (merged !== list.conversations[index]) {
+          next = {
+            ...next,
+            conversations: {
+              ...next.conversations,
+              data: {
+                ...list,
+                conversations: list.conversations.map((item, itemIndex) =>
+                  itemIndex === index ? merged : item,
+                ),
+              },
+            },
+          };
+        }
+      }
+
+      const one = next.conversationsById[conversation.id];
+      if (one?.data != null) {
+        const merged = mergeConversationSnapshot(one.data, conversation);
+        if (merged !== one.data) {
+          next = {
+            ...next,
+            conversationsById: {
+              ...next.conversationsById,
+              [conversation.id]: { ...one, data: merged },
+            },
+          };
+        }
+      }
+
+      return next;
+    });
+  }
+
+  /**
+   * Drop one conversation from every cache surface - the viewer was removed
+   * from it (ADR 0017), so every copy is now unreadable.
+   */
+  function dropConversation(conversationId: string): void {
+    seenSeq.delete(conversationId);
+    store.update((current) => {
+      let next = current;
+
+      const list = current.conversations.data;
+      if (list != null && list.conversations.some((item) => item.id === conversationId)) {
+        next = {
+          ...next,
+          conversations: {
+            ...next.conversations,
+            data: {
+              ...list,
+              conversations: list.conversations.filter((item) => item.id !== conversationId),
+            },
+          },
+        };
+      }
+
+      if (conversationId in next.conversationsById) {
+        const { [conversationId]: _dropped, ...conversationsById } = next.conversationsById;
+        next = { ...next, conversationsById };
+      }
+      if (conversationId in next.messagesByConversation) {
+        const { [conversationId]: _dropped, ...messagesByConversation } =
+          next.messagesByConversation;
+        next = { ...next, messagesByConversation };
+      }
+
+      return next;
+    });
+  }
+
+  function applyParticipantRemoved(
+    removedUserIds: readonly string[],
+    conversation: ClientConversationSnapshot,
+  ): void {
+    if (viewerId !== undefined && removedUserIds.includes(viewerId)) {
+      dropConversation(conversation.id);
+      return;
+    }
+    applyConversationSnapshot(conversation);
+  }
+
   return {
     applyReactions,
+    applyConversationSnapshot,
+    applyParticipantRemoved,
+    dropConversation,
     getSnapshot: store.getSnapshot,
     subscribe: store.subscribe,
     applyPolledConversations(page) {
@@ -498,6 +666,21 @@ export function createChatpackCache(options: ChatpackCacheOptions = {}): Chatpac
       // never bumps `unreadCount`, and never advances the seq baseline.
       if (isReactionChatEvent(event)) {
         applyReactions(event.conversationId, event.message);
+        return;
+      }
+
+      // Same for membership and renames (ADR 0017): the snapshot merges in
+      // place, and a removal of the viewer drops the conversation entirely.
+      if (isConversationChatEvent(event)) {
+        const conversationEvent: ConversationChatEvent = event;
+        if (conversationEvent.type === "participant.removed") {
+          applyParticipantRemoved(
+            conversationEvent.affectedUserIds,
+            conversationEvent.conversation,
+          );
+        } else {
+          applyConversationSnapshot(conversationEvent.conversation);
+        }
         return;
       }
       // Re-bound as a const so the narrowing above survives into the closures

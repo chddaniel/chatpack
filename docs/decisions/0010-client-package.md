@@ -54,3 +54,11 @@ groups, attachments, and WebSockets are explicitly out of scope.
 > meant "no client at all on serverless, buffering proxies, or React Native" -
 > the deferral cost the platforms Chatpack most wanted to reach. Everything else
 > on this list still stands.
+
+> **Amended (client 0.5.0):** groups are no longer deferred. Once
+> [ADR 0017](./0017-group-conversations.md) shipped them server-side, the
+> client gap meant every group app had to hand-roll `fetch` calls and membership
+> event handling - the exact protocol duplication this package exists to
+> prevent. The client wraps the five group mutations and applies
+> `participant.*` / `conversation.updated` to its cache. Attachments and
+> WebSockets remain deferred, as does the rest of the list above.

@@ -1,5 +1,6 @@
 /** REST request construction, response parsing, and error mapping. */
 
+import type { ChatpackErrorCode } from "@chatpack/core";
 import type { ChatpackFetch, ChatpackHeaders, ChatpackRequestContext } from "./config";
 import {
   createClientError,
@@ -48,19 +49,41 @@ function errorCodeForStatus(status: number): ChatpackClientErrorCode {
   return "HTTP_ERROR";
 }
 
-const clientErrorCodes: Record<string, ChatpackClientErrorCode> = {
-  FORBIDDEN_READ: "FORBIDDEN_READ",
-  FORBIDDEN_WRITE: "FORBIDDEN_WRITE",
-  CONVERSATION_NOT_FOUND: "CONVERSATION_NOT_FOUND",
-  MESSAGE_NOT_FOUND: "MESSAGE_NOT_FOUND",
-  NOT_MESSAGE_SENDER: "NOT_MESSAGE_SENDER",
-  MESSAGE_DELETED: "MESSAGE_DELETED",
-  INVALID_INPUT: "INVALID_INPUT",
+/**
+ * Every server error code, passed through verbatim. `satisfies` makes this
+ * exhaustive over `ChatpackErrorCode` the way `STATUS_BY_CODE` is in core's
+ * handler: when core adds a code, this fails typecheck instead of silently
+ * flattening the new code to `HTTP_ERROR` (which is how the four group codes
+ * and `MESSAGE_REJECTED` went missing before ADR 0017's client work).
+ */
+const serverErrorCodes = {
+  SEARCH_UNSUPPORTED: true,
+  FORBIDDEN_READ: true,
+  FORBIDDEN_WRITE: true,
+  CONVERSATION_NOT_FOUND: true,
+  MESSAGE_NOT_FOUND: true,
+  NOT_MESSAGE_SENDER: true,
+  MESSAGE_DELETED: true,
+  MESSAGE_REJECTED: true,
+  NOT_CONVERSATION_ADMIN: true,
+  NOT_GROUP_CONVERSATION: true,
+  LAST_ADMIN_REMAINING: true,
+  GROUP_LIMIT_EXCEEDED: true,
+  INVALID_INPUT: true,
+} satisfies Record<ChatpackErrorCode, true>;
+
+/** Client-side codes a proxy or gateway may also legitimately produce. */
+const clientOnlyErrorCodes: Partial<Record<string, ChatpackClientErrorCode>> = {
   UNAUTHENTICATED: "UNAUTHENTICATED",
   NOT_FOUND: "NOT_FOUND",
   INTERNAL_ERROR: "INTERNAL_ERROR",
   HTTP_ERROR: "HTTP_ERROR",
 };
+
+function knownErrorCode(code: string): ChatpackClientErrorCode | undefined {
+  if (Object.hasOwn(serverErrorCodes, code)) return code as ChatpackErrorCode;
+  return clientOnlyErrorCodes[code];
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -143,7 +166,7 @@ export function createRequester(options: {
       if (!response.ok) {
         const payload = readErrorPayload(body.value);
         const code = payload.code ?? errorCodeForStatus(response.status);
-        const knownCode = clientErrorCodes[code] ?? "HTTP_ERROR";
+        const knownCode = knownErrorCode(code) ?? "HTTP_ERROR";
         return failure<T>(
           createClientError(
             knownCode,

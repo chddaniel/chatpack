@@ -163,6 +163,46 @@ describe("polling fallback (ADR 0016)", () => {
     carol.dispose();
   });
 
+  it("drops a group when a poll finds the viewer was removed (ADR 0017)", async () => {
+    vi.useFakeTimers();
+    const { fetchAs } = backend();
+
+    const alice = createChatClient({ userId: "alice", fetch: fetchAs("alice") });
+    const bob = createChatClient({
+      userId: "bob",
+      fetch: fetchAs("bob"),
+      eventSource: () => {
+        throw new ReferenceError("EventSource is not defined");
+      },
+      realtime: { mode: "auto", intervalMs: 1000 },
+    });
+
+    const group = await alice.conversations.createGroup({ name: "Standup", userIds: ["bob"] });
+    if (group.error !== null) throw new Error("setup failed");
+    const conversationId = group.data.id;
+
+    await bob.conversations.list();
+    await bob.messages.list({ conversationId });
+    bob.realtime.connect();
+    expect(bob.realtime.getSnapshot().status).toBe("polling");
+    expect(bob.$store.getSnapshot().conversations.data!.conversations.map((c) => c.id)).toEqual([
+      conversationId,
+    ]);
+
+    // A polling client never receives participant.removed - the 403 on the
+    // next thread poll is its only signal.
+    const removed = await alice.conversations.removeParticipant({ conversationId, userId: "bob" });
+    if (removed.error !== null) throw new Error("remove failed");
+    await vi.advanceTimersByTimeAsync(1000);
+
+    const snapshot = bob.$store.getSnapshot();
+    expect(snapshot.conversations.data!.conversations).toEqual([]);
+    expect(snapshot.messagesByConversation[conversationId]).toBeUndefined();
+
+    alice.dispose();
+    bob.dispose();
+  });
+
   it("stops polling when the stream opens, and resumes when it drops", async () => {
     vi.useFakeTimers();
     const { fetchAs } = backend();

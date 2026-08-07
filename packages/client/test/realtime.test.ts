@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { createRealtime, isReactionChatEvent, type ChatpackEvent } from "../src/realtime";
+import {
+  createRealtime,
+  isConversationChatEvent,
+  isReactionChatEvent,
+  type ChatpackEvent,
+} from "../src/realtime";
 import type { ChatpackEventSource } from "../src/config";
 
 class MockEventSource implements ChatpackEventSource {
@@ -132,6 +137,77 @@ describe("realtime", () => {
       actorId: "bob",
       emoji: "👍",
       message: { id: "m1" },
+    });
+    expect(received).toHaveLength(1);
+
+    realtime.disconnect();
+  });
+
+  it("parses conversation events and rejects malformed ones (ADR 0017)", () => {
+    const source = new MockEventSource();
+    const received: ChatpackEvent[] = [];
+    const realtime = createRealtime({
+      url: "/api/chat/stream",
+      credentials: "same-origin",
+      eventSource: () => source,
+      eventTypes: ["participant.added", "participant.removed", "conversation.updated"],
+      onEvent: (event) => received.push(event),
+    });
+    realtime.connect();
+
+    const conversation = {
+      id: "c1",
+      type: "group",
+      pairKey: null,
+      name: "Standup",
+      metadata: {},
+      createdAt: "2026-01-01T00:00:00.000Z",
+      participants: [
+        {
+          conversationId: "c1",
+          userId: "alice",
+          role: "admin",
+          joinedAt: "2026-01-01T00:00:00.000Z",
+          lastReadMessageId: null,
+        },
+        {
+          conversationId: "c1",
+          userId: "bob",
+          role: "member",
+          joinedAt: "2026-01-01T00:00:00.000Z",
+          lastReadMessageId: null,
+        },
+      ],
+    };
+    source.emit("participant.added", {
+      type: "participant.added",
+      conversationId: "c1",
+      actorId: "alice",
+      affectedUserIds: ["bob"],
+      conversation,
+    });
+
+    expect(received).toHaveLength(1);
+    const event = received[0]!;
+    expect(isConversationChatEvent(event)).toBe(true);
+    if (!isConversationChatEvent(event)) throw new Error("expected a conversation event");
+    expect(event.actorId).toBe("alice");
+    expect(event.affectedUserIds).toEqual(["bob"]);
+    expect(event.conversation.name).toBe("Standup");
+    expect(event.conversation.participants.map((p) => p.role)).toEqual(["admin", "member"]);
+
+    // A frame missing any required field is dropped, never half-applied.
+    source.emit("participant.added", {
+      type: "participant.added",
+      conversationId: "c1",
+      conversation,
+    });
+    source.emit("conversation.updated", {
+      type: "conversation.updated",
+      conversationId: "c1",
+      actorId: "alice",
+      affectedUserIds: [],
+      conversation: { id: "c1" },
     });
     expect(received).toHaveLength(1);
 

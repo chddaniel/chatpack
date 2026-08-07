@@ -421,6 +421,11 @@ Native - the client falls back to refetching on an interval by itself, so a
 serverless deploy needs no frontend change. Typing, presence and receipts are
 unavailable while polling, since ephemeral events are never stored.
 
+Group management is wrapped too (client 0.5.0+): `conversations.createGroup`,
+`addParticipants`, `removeParticipant` (your own id = leave),
+`setParticipantRole`, and `update` for renames - and membership events keep
+the cache in sync, including dropping a conversation you were removed from.
+
 See [`@chatpack/client`](./packages/client) for the framework-agnostic API,
 React hooks, the polling fallback, and client plugin usage.
 

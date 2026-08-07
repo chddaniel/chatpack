@@ -194,17 +194,20 @@ The package covers the public REST API, SSE message reconciliation with a
 polling fallback, ephemeral event subscriptions, and React hooks. It does not
 provide auth, uploads, optimistic state, persistence, or WebSocket transport.
 
-**Groups: reading works, managing doesn't (yet).** Group conversations come back
-from `conversations.list` and `conversations.get` like any other - the
-conversation type carries `type`, `name`, `pairKey: null`, and each
-participant's `role` - and their messages, unread counts, and `message.*` events
-all flow through unchanged. What isn't wrapped are the five mutations:
-`conversations.create` is DM-only, and there are no methods for creating a group,
-adding or removing participants, changing a role, or renaming. Call those routes
-with `fetch` and refetch afterwards; the client does not yet subscribe to
-`participant.added` / `participant.removed` / `conversation.updated`, so a
-membership change made elsewhere won't reach the cache until the next list
-refetch (or the next poll tick).
+**Groups (client 0.5.0+).** Group conversations come back from
+`conversations.list` and `conversations.get` like any other - the conversation
+type carries `type`, `name`, `pairKey: null`, and each participant's `role` -
+and their messages, unread counts, and `message.*` events all flow through
+unchanged. The five group mutations are wrapped: `conversations.createGroup`
+(never find-or-create; the caller becomes the first admin),
+`conversations.addParticipants`, `conversations.removeParticipant` (your own
+id = leave), `conversations.setParticipantRole`, and `conversations.update`
+(rename; `name: null` clears). The client subscribes to `participant.added` /
+`participant.removed` / `conversation.updated` and applies them to the cache:
+renames and role changes merge in place, being added to a group backfills it
+into the list, and being removed drops the conversation from every cache
+surface - the polling fallback converges the same way on its next tick,
+treating a thread poll's `FORBIDDEN_READ` as the removal signal.
 
 ## Source layout
 

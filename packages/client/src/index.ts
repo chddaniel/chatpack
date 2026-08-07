@@ -8,6 +8,8 @@ export type {
   ConversationCreateInput,
   ConversationGetInput,
   ConversationListInput,
+  ConversationUpdateInput,
+  GroupCreateInput,
   MarkReadInput,
   MessageActions,
   MessageDeleteInput,
@@ -15,6 +17,9 @@ export type {
   MessageListInput,
   MessageReactInput,
   MessageSendInput,
+  ParticipantAddInput,
+  ParticipantRemoveInput,
+  ParticipantRoleInput,
 } from "./client";
 export type {
   ChatClientOptions,
@@ -33,8 +38,9 @@ export type {
   PluginSurfaces,
 } from "./plugin";
 export type { ClientRequestInit } from "./request";
-export { isReactionChatEvent } from "./realtime";
+export { isConversationChatEvent, isReactionChatEvent } from "./realtime";
 export type {
+  ConversationChatEvent,
   DurableChatEvent,
   EphemeralChatEvent,
   ReactionChatEvent,
@@ -54,6 +60,7 @@ export type {
 export type {
   ClientConversation,
   ClientConversationPage,
+  ClientConversationSnapshot,
   ClientMessage,
   ClientMessagePage,
   ClientMessageReference,

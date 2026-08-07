@@ -611,3 +611,185 @@ describe("polled page merges (ADR 0016)", () => {
     expect(notifications).toBe(1);
   });
 });
+
+describe("conversation events (ADR 0017)", () => {
+  const groupSnapshot = (name: string | null, userIds: [string, string][]) => ({
+    id: "c1",
+    type: "group" as const,
+    pairKey: null,
+    name,
+    metadata: {},
+    createdAt: "2026-01-01T00:00:00.000Z",
+    participants: userIds.map(([userId, role]) => ({
+      conversationId: "c1",
+      userId,
+      role: role as "admin" | "member",
+      joinedAt: "2026-01-01T00:00:00.000Z",
+      lastReadMessageId: null,
+    })),
+  });
+
+  function groupCache(unread = 3): ChatpackCache {
+    const cache = createChatpackCache({ userId: "alice" });
+    const loaded: ClientConversation = {
+      ...groupSnapshot("Old name", [["alice", "admin"]]),
+      unreadCount: unread,
+    };
+    cache.setConversations(
+      {
+        data: { conversations: [loaded, makeConversation("c2", 1)], nextCursor: null },
+        error: null,
+      },
+      false,
+    );
+    cache.setConversation("c1", { data: loaded, error: null });
+    return cache;
+  }
+
+  it("merges a rename into the list and the single query, keeping unreadCount", () => {
+    const cache = groupCache(3);
+    cache.applyEvent({
+      type: "conversation.updated",
+      conversationId: "c1",
+      actorId: "alice",
+      affectedUserIds: [],
+      conversation: groupSnapshot("New name", [["alice", "admin"]]),
+    });
+    const snapshot = cache.getSnapshot();
+    const inList = snapshot.conversations.data!.conversations.find((c) => c.id === "c1")!;
+    // The event snapshot carries no unreadCount (it fans out to everyone), so
+    // the viewer's cached count must survive the merge.
+    expect(inList.name).toBe("New name");
+    expect(inList.unreadCount).toBe(3);
+    expect(snapshot.conversationsById["c1"]!.data!.name).toBe("New name");
+    expect(snapshot.conversationsById["c1"]!.data!.unreadCount).toBe(3);
+  });
+
+  it("merges membership and role changes without reordering the list", () => {
+    const cache = groupCache();
+    cache.applyEvent({
+      type: "participant.added",
+      conversationId: "c1",
+      actorId: "alice",
+      affectedUserIds: ["bob"],
+      conversation: groupSnapshot("Old name", [
+        ["alice", "admin"],
+        ["bob", "member"],
+      ]),
+    });
+    const list = cache.getSnapshot().conversations.data!.conversations;
+    // Membership changes bump no server-side activity, so the order must hold.
+    expect(list.map((c) => c.id)).toEqual(["c1", "c2"]);
+    expect(list[0]!.participants.map((p) => p.userId)).toEqual(["alice", "bob"]);
+  });
+
+  it("does not notify subscribers for a redelivered identical snapshot", () => {
+    const cache = groupCache();
+    const event = {
+      type: "participant.added" as const,
+      conversationId: "c1",
+      actorId: "alice",
+      affectedUserIds: ["bob"],
+      conversation: groupSnapshot("Old name", [
+        ["alice", "admin"],
+        ["bob", "member"],
+      ]),
+    };
+    cache.applyEvent(event);
+    let notifications = 0;
+    cache.subscribe(() => {
+      notifications += 1;
+    });
+    // At-least-once delivery: the same event again must change nothing.
+    cache.applyEvent(event);
+    expect(notifications).toBe(0);
+  });
+
+  it("ignores snapshots for conversations the cache never loaded", () => {
+    const cache = cacheWithList();
+    let notifications = 0;
+    cache.subscribe(() => {
+      notifications += 1;
+    });
+    cache.applyEvent({
+      type: "conversation.updated",
+      conversationId: "c_unknown",
+      actorId: "alice",
+      affectedUserIds: [],
+      conversation: { ...groupSnapshot("Elsewhere", [["alice", "admin"]]), id: "c_unknown" },
+    });
+    expect(notifications).toBe(0);
+  });
+
+  it("drops the conversation everywhere when the viewer is removed", () => {
+    const cache = groupCache();
+    cache.setMessages(
+      "c1",
+      { data: { messages: page.messages, nextCursor: null }, error: null },
+      false,
+    );
+    cache.applyEvent({
+      type: "participant.removed",
+      conversationId: "c1",
+      actorId: "bob",
+      affectedUserIds: ["alice"],
+      conversation: groupSnapshot("Old name", [["bob", "admin"]]),
+    });
+    const snapshot = cache.getSnapshot();
+    expect(snapshot.conversations.data!.conversations.map((c) => c.id)).toEqual(["c2"]);
+    expect(snapshot.conversationsById["c1"]).toBeUndefined();
+    expect(snapshot.messagesByConversation["c1"]).toBeUndefined();
+  });
+
+  it("keeps the conversation when someone else is removed", () => {
+    const cache = groupCache();
+    cache.applyEvent({
+      type: "participant.added",
+      conversationId: "c1",
+      actorId: "alice",
+      affectedUserIds: ["bob"],
+      conversation: groupSnapshot("Old name", [
+        ["alice", "admin"],
+        ["bob", "member"],
+      ]),
+    });
+    cache.applyEvent({
+      type: "participant.removed",
+      conversationId: "c1",
+      actorId: "alice",
+      affectedUserIds: ["bob"],
+      conversation: groupSnapshot("Old name", [["alice", "admin"]]),
+    });
+    const inList = cache
+      .getSnapshot()
+      .conversations.data!.conversations.find((c) => c.id === "c1")!;
+    expect(inList.participants.map((p) => p.userId)).toEqual(["alice"]);
+  });
+
+  it("keeps (not drops) the conversation when the viewer is unknown", () => {
+    const cache = createChatpackCache();
+    const loaded: ClientConversation = {
+      ...groupSnapshot("Old name", [
+        ["alice", "admin"],
+        ["bob", "member"],
+      ]),
+      unreadCount: 0,
+    };
+    cache.setConversations(
+      { data: { conversations: [loaded], nextCursor: null }, error: null },
+      false,
+    );
+    // Without a viewer id the cache cannot tell "alice left" from "I left" -
+    // merging the snapshot is the safe wrong-at-worst-until-refetch choice.
+    cache.applyEvent({
+      type: "participant.removed",
+      conversationId: "c1",
+      actorId: "alice",
+      affectedUserIds: ["alice"],
+      conversation: groupSnapshot("Old name", [["bob", "admin"]]),
+    });
+    const list = cache.getSnapshot().conversations.data!.conversations;
+    expect(list.map((c) => c.id)).toEqual(["c1"]);
+    expect(list[0]!.participants.map((p) => p.userId)).toEqual(["bob"]);
+  });
+});

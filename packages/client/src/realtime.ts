@@ -3,7 +3,7 @@ import type { ChatRealtimeMode, ChatpackEventSource, EventSourceFactory } from "
 import { createClientError, type ChatpackClientError } from "./errors";
 import { createPoller, DEFAULT_POLL_INTERVAL_MS } from "./polling";
 import { createStore, type ReadonlyStore, type Store } from "./store";
-import type { ClientMessage } from "./wire";
+import type { ClientConversationSnapshot, ClientMessage } from "./wire";
 
 /** Durable message event delivered by the Chatpack stream. */
 export interface DurableChatEvent {
@@ -29,6 +29,34 @@ export interface ReactionChatEvent {
   message: ClientMessage;
 }
 
+/**
+ * Durable membership or metadata event delivered by the Chatpack stream
+ * (ADR 0017): someone was added, removed (or left), a role changed, or the
+ * group was renamed.
+ *
+ * Carries the **full post-change conversation** (participants included), so
+ * applying the same event twice is harmless. Like reactions it is not
+ * gap-filled on reconnect: a membership change allocates no `seq`, so a client
+ * that was offline recovers by refetching the conversation.
+ *
+ * `participant.removed` is also delivered to the removed user themselves - it
+ * is the only signal telling their client to drop the conversation.
+ */
+export interface ConversationChatEvent {
+  type: "participant.added" | "participant.removed" | "conversation.updated";
+  conversationId: string;
+  /** Who performed the change (an admin, or the leaver themselves). */
+  actorId: string;
+  /**
+   * The users the change was about: those added, removed, or whose role
+   * changed. Empty for a rename - that change is visible in
+   * `conversation.name`.
+   */
+  affectedUserIds: string[];
+  /** Full conversation snapshot after the change. No `unreadCount` - see {@link ClientConversationSnapshot}. */
+  conversation: ClientConversationSnapshot;
+}
+
 /** Ephemeral plugin event delivered by the Chatpack stream. */
 export interface EphemeralChatEvent {
   type: string;
@@ -39,8 +67,9 @@ export interface EphemeralChatEvent {
   at: string;
 }
 
-/** Union of durable core events, reaction events, and ephemeral plugin events. */
-export type ChatpackEvent = DurableChatEvent | ReactionChatEvent | EphemeralChatEvent;
+/** Union of durable core events, reaction events, conversation events, and ephemeral plugin events. */
+export type ChatpackEvent =
+  DurableChatEvent | ReactionChatEvent | ConversationChatEvent | EphemeralChatEvent;
 
 /**
  * True for the two reaction events (ADR 0013), mirroring `isReactionEvent` on
@@ -50,6 +79,19 @@ export type ChatpackEvent = DurableChatEvent | ReactionChatEvent | EphemeralChat
  */
 export function isReactionChatEvent(event: ChatpackEvent): event is ReactionChatEvent {
   return event.type === "reaction.added" || event.type === "reaction.removed";
+}
+
+/**
+ * True for the three membership/metadata events (ADR 0017), mirroring
+ * `isConversationEvent` on the server. A predicate for the same reason
+ * {@link isReactionChatEvent} is one.
+ */
+export function isConversationChatEvent(event: ChatpackEvent): event is ConversationChatEvent {
+  return (
+    event.type === "participant.added" ||
+    event.type === "participant.removed" ||
+    event.type === "conversation.updated"
+  );
 }
 /**
  * Lifecycle states for the realtime connection.
@@ -101,6 +143,25 @@ function isMessage(value: unknown): value is ClientMessage {
   );
 }
 
+function isConversationSnapshot(value: unknown): value is ClientConversationSnapshot {
+  if (!isRecord(value)) return false;
+  return (
+    typeof value.id === "string" &&
+    typeof value.type === "string" &&
+    Array.isArray(value.participants) &&
+    value.participants.every(
+      (participant: unknown) =>
+        isRecord(participant) &&
+        typeof participant.userId === "string" &&
+        typeof participant.role === "string",
+    )
+  );
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((item) => typeof item === "string");
+}
+
 function parseEvent(event: Event): ChatpackEvent | null {
   if (!("data" in event) || typeof event.data !== "string") return null;
   let parsed: unknown;
@@ -128,6 +189,28 @@ function parseEvent(event: Event): ChatpackEvent | null {
       senderId: parsed.senderId,
       payload: parsed.payload,
       at: parsed.at,
+    };
+  }
+
+  if (
+    parsed.type === "participant.added" ||
+    parsed.type === "participant.removed" ||
+    parsed.type === "conversation.updated"
+  ) {
+    if (
+      typeof parsed.conversationId !== "string" ||
+      typeof parsed.actorId !== "string" ||
+      !isStringArray(parsed.affectedUserIds) ||
+      !isConversationSnapshot(parsed.conversation)
+    ) {
+      return null;
+    }
+    return {
+      type: parsed.type,
+      conversationId: parsed.conversationId,
+      actorId: parsed.actorId,
+      affectedUserIds: parsed.affectedUserIds,
+      conversation: parsed.conversation,
     };
   }
 

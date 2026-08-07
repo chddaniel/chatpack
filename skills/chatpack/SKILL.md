@@ -220,37 +220,40 @@ events.addEventListener("reaction.added", (e) => {
 ```
 
 **Groups** reuse every messages/stream route above - only creation and membership
-differ. The client package doesn't wrap these five yet, so use `fetch`:
+differ. Since `@chatpack/client` 0.5.0 all five are wrapped, so use the client
+methods (hand-rolled `fetch` is only for integrations without the client):
 
 ```ts
 // create - NOT find-or-create, so keep the id (creator becomes the first admin)
-const { conversation: group } = await fetch("/api/chat/conversations/group", {
-  method: "POST",
-  headers: { "content-type": "application/json" },
-  body: JSON.stringify({ name: "Launch", userIds: ["bob", "carol"] }),
-}).then((r) => r.json());
+const group = await chatClient.conversations.createGroup({
+  name: "Launch",
+  userIds: ["bob", "carol"],
+});
 
 // add members / set a role / rename: admin only, all return the FULL conversation
-await fetch(`/api/chat/conversations/${group.id}/participants`, {
-  method: "POST",
-  headers: { "content-type": "application/json" },
-  body: JSON.stringify({ userIds: ["dave"] }),
+await chatClient.conversations.addParticipants({
+  conversationId: group.data.id,
+  userIds: ["dave"],
 });
-
-// leave: DELETE your own id (no admin rights needed). Promote a successor first
-// if you're the last admin, or it's 409 LAST_ADMIN_REMAINING.
-await fetch(`/api/chat/conversations/${group.id}/participants`, {
-  method: "DELETE",
-  headers: { "content-type": "application/json" },
-  body: JSON.stringify({ userId: me }),
+await chatClient.conversations.setParticipantRole({
+  conversationId: group.data.id,
+  userId: "bob",
+  role: "admin",
 });
+await chatClient.conversations.update({ conversationId: group.data.id, name: "Launch v2" });
 
-// membership changes arrive on the same stream (no `id:` line, so no gap-fill)
-events.addEventListener("participant.removed", (e) => {
-  const { affectedUserIds, conversation } = JSON.parse((e as MessageEvent).data);
-  // you get this even when YOU were removed - drop the conversation in that case
+// leave: removeParticipant with your own id (no admin rights needed). Promote a
+// successor first if you're the last admin, or it's 409 LAST_ADMIN_REMAINING.
+await chatClient.conversations.removeParticipant({
+  conversationId: group.data.id,
+  userId: me,
 });
 ```
+
+Membership changes update the client cache automatically - including being
+added (the group appears in the list) and being removed (the conversation is
+dropped; your own `participant.removed` is the only signal you get). These
+events carry no `id:` line, so they are not gap-filled after a reconnect.
 
 Client semantics that trip up generated code:
 

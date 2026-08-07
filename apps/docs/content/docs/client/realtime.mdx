@@ -15,13 +15,29 @@ unsubscribe();
 `realtime` owns one lazy `EventSource`. Native browser reconnect behavior sends
 `Last-Event-ID`; the client does not implement a second cursor protocol.
 Durable messages are reconciled by id and sequence and remain newest-first.
-`message.created`, `message.updated`, `message.deleted`, `reaction.added`, and
-`reaction.removed` all update the cache.
+`message.created`, `message.updated`, `message.deleted`, `reaction.added`,
+`reaction.removed`, `participant.added`, `participant.removed`, and
+`conversation.updated` all update the cache.
 
-The server's membership events (`participant.added`, `participant.removed`,
-`conversation.updated`) are **not** in the client's subscribed set yet, so they
-don't reach `subscribe` or the cache. Until they are, refetch after a group
-change you initiated, or let the polling loop pick it up.
+## Membership events
+
+The three conversation events (ADR 0017) carry the full post-change
+conversation and merge it into the cached list and single-conversation
+queries - a rename or a role change lands in place without reordering the
+list, since membership changes don't bump server-side activity. Two cases do
+more than merge:
+
+- **You were added to a group**: a `participant.added` naming the viewer
+  arrives for a conversation the list has never seen; the client fetches it
+  once and prepends it (the fetch carries your real `unreadCount`, which the
+  event snapshot doesn't).
+- **You were removed (or left)**: your own `participant.removed` is the last
+  event you receive for that conversation, and the client drops it from every
+  cache surface - any later request for it would be `FORBIDDEN_READ`.
+
+Like reactions, these events carry no `id:` line and are not gap-filled after
+a reconnect: a membership change allocates no `seq`, so replaying it would
+rewind `Last-Event-ID`. Refetch conversations when the stream reopens.
 
 ## The conversations list stays live too
 

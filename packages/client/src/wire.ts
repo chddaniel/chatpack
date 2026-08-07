@@ -1,6 +1,7 @@
 /** JSON wire types returned by the Chatpack HTTP handler. */
 
 import type {
+  Conversation,
   ConversationWithUnread,
   MessageReference,
   MessageWithDetails,
@@ -20,6 +21,13 @@ export type Jsonify<T> = T extends Date
 
 /** Conversation shape returned over HTTP. */
 export type ClientConversation = Jsonify<ConversationWithUnread>;
+/**
+ * Conversation shape carried by a `participant.*` / `conversation.updated`
+ * stream event (ADR 0017). Unlike {@link ClientConversation} it has no
+ * `unreadCount`: that field is viewer-relative and computed per request
+ * (ADR 0009), while one stream event fans out to every recipient.
+ */
+export type ClientConversationSnapshot = Jsonify<Conversation>;
 /**
  * Message shape returned over HTTP, including the server-hydrated `replyTo`
  * preview and `reactions` summary (ADR 0013).
