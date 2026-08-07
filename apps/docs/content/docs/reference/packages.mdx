@@ -105,8 +105,8 @@ dependency on `drizzle-orm`.
 
 Next.js App Router integration - sugar for mounting the handler.
 
-| Export                                | What it is                                                        |
-| ------------------------------------- | ----------------------------------------------------------------- |
+| Export                                | What it is                                                             |
+| ------------------------------------- | ---------------------------------------------------------------------- |
 | `toNextRouteHandlers(chat, options?)` | Returns `{ GET, POST, PATCH, DELETE, PUT }` for a catch-all route file |
 
 → [Next.js guide](/docs/integrations/nextjs)
@@ -160,13 +160,13 @@ Chatpack stores only stable references
 (`{ filepack: { version: 1, attachments: [{ id, name, contentType, size }] } }`)
 in message metadata - never bytes, signed URLs, or object keys.
 
-| Export                              | What it is                                                       |
-| ----------------------------------- | ----------------------------------------------------------------- |
-| `createFileAttachmentPlugin(opts)`  | The plugin: nested Filepack routes + blocking message hook         |
-| `createFileAttachmentMessageHook`   | Just the `beforeMessageSend` validation hook                       |
-| `createFileAttachmentMetadata`      | Build the metadata namespace from ready Filepack files             |
-| `parseFileAttachmentMetadata`       | Validate the namespace in arbitrary message metadata               |
-| `@chatpack/file/client`             | Browser wrapper over `@filepack/client` (uploads, resume, media)   |
+| Export                             | What it is                                                       |
+| ---------------------------------- | ---------------------------------------------------------------- |
+| `createFileAttachmentPlugin(opts)` | The plugin: nested Filepack routes + blocking message hook       |
+| `createFileAttachmentMessageHook`  | Just the `beforeMessageSend` validation hook                     |
+| `createFileAttachmentMetadata`     | Build the metadata namespace from ready Filepack files           |
+| `parseFileAttachmentMetadata`      | Validate the namespace in arbitrary message metadata             |
+| `@chatpack/file/client`            | Browser wrapper over `@filepack/client` (uploads, resume, media) |
 
 Requires a [Filepack](https://github.com/chddaniel/filepack) instance
 (`@filepack/core` + a storage provider) and an `authorizeUpload` host policy.
