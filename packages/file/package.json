@@ -51,13 +51,14 @@
     "lint": "eslint src",
     "prepack": "node -e \"require('fs').copyFileSync('../../llms.txt','llms.txt')\""
   },
+  "dependencies": {
+    "@chatpack/core": "workspace:^"
+  },
   "peerDependencies": {
-    "@chatpack/core": "workspace:^",
     "@filepack/client": "^0.1.0",
     "@filepack/core": "^0.1.0"
   },
   "devDependencies": {
-    "@chatpack/core": "workspace:^",
     "@filepack/adapter-memory": "^0.1.0",
     "@filepack/storage-local": "^0.1.0",
     "tsup": "^8.3.5",

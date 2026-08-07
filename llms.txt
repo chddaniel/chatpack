@@ -21,18 +21,68 @@ Packages (all on npm):
 | `@chatpack/client`         | Framework-agnostic REST + SSE client (+ React hooks)   |
 | `@chatpack/cli`            | Safe project setup CLI (`chatpack init`)              |
 | `@chatpack/transport-redis`| Redis pub/sub transport - multi-node SSE fan-out       |
+| `@chatpack/file`           | Filepack-backed message attachments (uploads, media)   |
 
 Current releases include direct and group conversations, text messages,
 permissions, read state and unread counts, SSE with reconnect gap-fill, memory
 and Drizzle adapters, Redis event fan-out, typing/presence/receipts, reactions,
 quote-replies, participant-scoped search, `afterMessageMutation`, the browser
-client with React hooks and polling fallback, and `@chatpack/cli init`.
+client with React hooks and polling fallback, `@chatpack/cli init`, and
+Filepack-backed file attachments via `@chatpack/file`.
 
-File attachments are pending in
-[PR #7](https://github.com/chddaniel/chatpack/pull/7). `@chatpack/file` is not
-part of current `main` or the package list. True message threads, push
-notification providers, reusable React UI components, and multi-node presence
-have not shipped.
+True message threads, push notification providers, reusable React UI
+components, and multi-node presence have not shipped.
+
+## File attachments (`@chatpack/file`)
+
+Attachments are an optional plugin backed by
+[Filepack](https://github.com/chddaniel/filepack) (npm `@filepack/*`) -
+Chatpack never stores bytes, signed URLs, or object keys. A message carries
+only stable references in its metadata:
+
+```ts
+{ filepack: { version: 1, attachments: [{ id, name, contentType, size }] } }
+```
+
+Server (mounts Filepack routes below the Chatpack handler, default
+`/api/chat/files`, and validates every referenced file before a message
+persists):
+
+```ts
+import { createFileAttachmentPlugin } from "@chatpack/file";
+
+const chat = chatpack({
+  storage, auth,
+  plugins: [createFileAttachmentPlugin({
+    filepack,                                  // your FilepackApi instance
+    authorizeUpload: ({ actor, conversationId }) =>
+      isParticipant(actor.id, conversationId), // host policy - REQUIRED
+  })],
+});
+```
+
+Browser: `createChatFileClient` from `@chatpack/file/client` wraps
+`@filepack/client` for uploads, resume, and inline-vs-attachment delivery.
+
+Rules:
+
+- Every attachment reference is validated on send AND edit, before
+  persistence: the file must be ready, bound to that conversation (Filepack
+  route metadata `conversationId`), authorized, and matching its reference
+  (`name`/`contentType`/`size`). Otherwise → `422 MESSAGE_REJECTED`.
+- File reads (`GET files/files?conversationId=`, metadata, downloads) require
+  the caller to be a Chatpack participant of that conversation AND the file
+  to belong to it; everything else is `404 FILE_UNAVAILABLE`.
+- Exact Filepack byte-transfer routes (`PUT .../content`, versioned
+  `GET files/downloads/v1.*`) authenticate by Filepack's own short-lived
+  capability instead of the app session - required so `<img>`/`<video>` tags
+  and upload XHRs work without auth headers. All control routes stay behind
+  normal Chatpack auth.
+- Deleting a message never deletes its files; configure Filepack lifecycle
+  cleanup separately. `DELETE` of a file through the chat mount is not
+  forwarded.
+- Mount `PUT` too:
+  `export const { GET, POST, PATCH, DELETE, PUT } = chat.handler()`.
 
 ## Chatpack CLI
 
@@ -330,8 +380,8 @@ Do not put tokens in the `/stream` query string (they leak into logs/history).
 // app/api/chat/[...chatpack]/route.ts
 import { toNextRouteHandlers } from "@chatpack/next";
 import { chat } from "@/lib/chat.server";
-export const { GET, POST, PATCH, DELETE } = toNextRouteHandlers(chat);
-// (equivalent without @chatpack/next: export const { GET, POST, PATCH, DELETE } = chat.handler();)
+export const { GET, POST, PATCH, DELETE, PUT } = toNextRouteHandlers(chat);
+// (equivalent without @chatpack/next: export const { GET, POST, PATCH, DELETE, PUT } = chat.handler();)
 ```
 
 **TanStack Start** (Lovable's default stack):

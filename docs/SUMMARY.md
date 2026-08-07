@@ -36,9 +36,9 @@ The API remains `0.x`. Minor breaking changes can occur before `1.0`.
 
 Chatpack stays headless and provider-neutral.
 
-- File attachments are pending work in
-  [PR #7](https://github.com/chddaniel/chatpack/pull/7). `@chatpack/file` is not
-  part of current `main` or the current package list.
+- File attachments ship as the optional `@chatpack/file` plugin, backed by
+  [Filepack](https://github.com/chddaniel/filepack). Chatpack itself stores
+  only stable references in message metadata - never bytes or signed URLs.
 - Quote-replies are flat message pointers. True message threads have not
   shipped.
 - Applications can use `afterMessageMutation` to start notification work.

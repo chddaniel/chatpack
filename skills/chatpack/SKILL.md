@@ -139,7 +139,7 @@ webhooks.
 // app/api/chat/[...chatpack]/route.ts
 import { toNextRouteHandlers } from "@chatpack/next"; // npm install @chatpack/next
 import { chat } from "@/lib/chat.server";
-export const { GET, POST, PATCH, DELETE } = toNextRouteHandlers(chat);
+export const { GET, POST, PATCH, DELETE, PUT } = toNextRouteHandlers(chat);
 ```
 
 **TanStack Start** (Lovable's default stack) - the `$` catch-all segment is required:
@@ -154,7 +154,7 @@ async function handle({ request }: { request: Request }) {
 }
 
 export const Route = createFileRoute("/api/chat/$")({
-  server: { handlers: { GET: handle, POST: handle, PATCH: handle, DELETE: handle } },
+  server: { handlers: { GET: handle, POST: handle, PATCH: handle, DELETE: handle, PUT: handle } },
 });
 ```
 

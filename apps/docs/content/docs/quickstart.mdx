@@ -124,13 +124,13 @@ serves many sub-paths under `basePath` (default `/api/chat`).
 
 ```ts tab="Next.js" title="app/api/chat/[...chatpack]/route.ts"
 import { chat } from "@/lib/chat";
-export const { GET, POST, PATCH, DELETE } = chat.handler();
+export const { GET, POST, PATCH, DELETE, PUT } = chat.handler();
 ```
 
 ```ts tab="@chatpack/next" title="app/api/chat/[...chatpack]/route.ts"
 import { toNextRouteHandlers } from "@chatpack/next";
 import { chat } from "@/lib/chat";
-export const { GET, POST, PATCH, DELETE } = toNextRouteHandlers(chat);
+export const { GET, POST, PATCH, DELETE, PUT } = toNextRouteHandlers(chat);
 ```
 
 ```ts tab="Bun / Deno / Workers"

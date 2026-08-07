@@ -308,6 +308,9 @@ importers:
 
   packages/file:
     dependencies:
+      '@chatpack/core':
+        specifier: workspace:^
+        version: link:../core
       '@filepack/client':
         specifier: ^0.1.0
         version: 0.1.0
@@ -315,9 +318,6 @@ importers:
         specifier: ^0.1.0
         version: 0.1.0
     devDependencies:
-      '@chatpack/core':
-        specifier: workspace:^
-        version: link:../core
       '@filepack/adapter-memory':
         specifier: ^0.1.0
         version: 0.1.0

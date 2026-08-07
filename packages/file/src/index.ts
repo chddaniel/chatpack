@@ -265,17 +265,16 @@ export function createFileAttachmentPlugin<TRouter extends FilepackRouter>(
         if (conversationId === null || !(await canReadConversation(context, conversationId))) {
           return unavailableResponse();
         }
-        const page = await options.filepack.listFiles({
+        const cursor = query.cursor !== undefined ? parseListCursor(query.cursor) : { skip: 0 };
+        if (cursor === null) return errorResponse(400, "INVALID_REQUEST");
+        const page = await collectConversationFiles(
+          options.filepack,
           actor,
-          ...(query.cursor !== undefined ? { cursor: query.cursor } : {}),
-          ...(query.limit !== undefined ? { limit: query.limit } : {}),
-        });
-        return jsonResponse({
-          files: page.files.filter((file) =>
-            hasConversationAssociation(file.routeMetadata, conversationId),
-          ),
-          ...(page.nextCursor !== undefined ? { nextCursor: page.nextCursor } : {}),
-        });
+          conversationId,
+          cursor,
+          query.limit ?? 50,
+        );
+        return jsonResponse(page);
       }
 
       const fileId = rest[0] === "files" && rest[1] !== undefined ? decodeSegment(rest[1]) : null;
@@ -467,6 +466,101 @@ async function canReadConversation(
   } catch {
     return false;
   }
+}
+
+/**
+ * Where a conversation list stopped inside the actor-wide Filepack list:
+ * the Filepack page being scanned plus how many matches were already
+ * returned from it (a page can end mid-scan when the response fills up).
+ */
+interface ListCursor {
+  readonly fp?: string;
+  readonly skip: number;
+}
+
+const MAX_LIST_SCAN_PAGES = 20;
+const FILEPACK_PAGE_LIMIT = 100;
+
+// JSON, not base64: the handler is Web-standard (ADR 0005) and `Buffer`
+// isn't available on Workers/Deno. The cursor stays opaque by contract.
+function encodeListCursor(cursor: ListCursor): string {
+  return JSON.stringify(cursor);
+}
+
+function parseListCursor(value: string): ListCursor | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(value);
+  } catch {
+    return null;
+  }
+  if (!isRecord(parsed)) return null;
+  for (const key of Object.keys(parsed)) {
+    if (key !== "fp" && key !== "skip") return null;
+  }
+  if (parsed.fp !== undefined && (typeof parsed.fp !== "string" || parsed.fp.length === 0)) {
+    return null;
+  }
+  if (typeof parsed.skip !== "number" || !Number.isSafeInteger(parsed.skip) || parsed.skip < 0) {
+    return null;
+  }
+  return { ...(parsed.fp !== undefined ? { fp: parsed.fp } : {}), skip: parsed.skip };
+}
+
+/**
+ * Fills a conversation page from Filepack's actor-wide list. Scanning is
+ * bounded per request; a `nextCursor` with an empty or short `files` array
+ * means "more to scan", not "no more files".
+ */
+async function collectConversationFiles<TRouter extends FilepackRouter>(
+  filepack: FilepackApi<TRouter>,
+  actor: FilepackActor,
+  conversationId: string,
+  start: ListCursor,
+  limit: number,
+): Promise<{ files: FilepackFile[]; nextCursor?: string }> {
+  const files: FilepackFile[] = [];
+  let pageCursor = start.fp;
+  let skip = start.skip;
+  for (let scanned = 0; scanned < MAX_LIST_SCAN_PAGES; scanned++) {
+    const page = await filepack.listFiles({
+      actor,
+      ...(pageCursor !== undefined ? { cursor: pageCursor } : {}),
+      limit: FILEPACK_PAGE_LIMIT,
+    });
+    const matches = page.files.filter((file) =>
+      hasConversationAssociation(file.routeMetadata, conversationId),
+    );
+    const fresh = matches.slice(skip);
+    const take = Math.min(fresh.length, limit - files.length);
+    files.push(...fresh.slice(0, take));
+    if (files.length === limit) {
+      const consumed = skip + take;
+      if (consumed < matches.length) {
+        return {
+          files,
+          nextCursor: encodeListCursor({
+            ...(pageCursor !== undefined ? { fp: pageCursor } : {}),
+            skip: consumed,
+          }),
+        };
+      }
+      if (page.nextCursor !== undefined) {
+        return { files, nextCursor: encodeListCursor({ fp: page.nextCursor, skip: 0 }) };
+      }
+      return { files };
+    }
+    if (page.nextCursor === undefined) return { files };
+    pageCursor = page.nextCursor;
+    skip = 0;
+  }
+  return {
+    files,
+    nextCursor: encodeListCursor({
+      ...(pageCursor !== undefined ? { fp: pageCursor } : {}),
+      skip,
+    }),
+  };
 }
 
 async function fileBelongsToConversation<TRouter extends FilepackRouter>(

@@ -127,7 +127,7 @@ describe("Filepack nested plugin", () => {
     expect(forwarded).not.toHaveBeenCalled();
   });
 
-  it("forwards list pagination and returns the requested second page", async () => {
+  it("pages the conversation list with opaque cursors across Filepack pages", async () => {
     const secondFile: FilepackFile = { ...file, id: "file-2", name: "second.png" };
     const foreignFile: FilepackFile = {
       ...file,
@@ -158,24 +158,92 @@ describe("Filepack nested plugin", () => {
         ["files", "files"],
       ),
     );
+    const firstBody = (await first?.json()) as { files: unknown[]; nextCursor: string };
+    expect(firstBody.files).toEqual([JSON.parse(JSON.stringify(file))]);
+    expect(typeof firstBody.nextCursor).toBe("string");
+
     const second = await plugin.handleRequest!(
       context(
         new Request(
-          "https://example.test/api/chat/files/files?conversationId=conversation-1&cursor=page-2&limit=1",
+          `https://example.test/api/chat/files/files?conversationId=conversation-1&cursor=${encodeURIComponent(firstBody.nextCursor)}&limit=1`,
         ),
         api,
         ["files", "files"],
       ),
     );
+    expect(await second?.json()).toEqual({ files: [JSON.parse(JSON.stringify(secondFile))] });
+  });
 
-    expect(await first?.json()).toEqual({ files: [file], nextCursor: "page-2" });
-    expect(await second?.json()).toEqual({ files: [secondFile] });
-    expect(listFiles).toHaveBeenNthCalledWith(1, { actor: { id: "alice" }, limit: 1 });
-    expect(listFiles).toHaveBeenNthCalledWith(2, {
-      actor: { id: "alice" },
-      cursor: "page-2",
-      limit: 1,
-    });
+  it("fills a page even when the conversation's files sit deep in the actor's list", async () => {
+    // 120 foreign files first (more than one internal Filepack page), then
+    // 5 for this conversation - the filter-after-fetch bug returned an empty
+    // first page with a nextCursor here.
+    const foreign = Array.from({ length: 120 }, (_, i) => ({
+      ...file,
+      id: `foreign-${i}`,
+      routeMetadata: { conversationId: "conversation-2" },
+    }));
+    const mine = Array.from({ length: 5 }, (_, i) => ({ ...file, id: `mine-${i}` }));
+    const all = [...foreign, ...mine];
+    const listFiles = vi.fn(
+      async (input: { readonly cursor?: string; readonly limit?: number }) => {
+        const start = input.cursor === undefined ? 0 : Number(input.cursor);
+        const size = input.limit ?? 50;
+        const nextStart = start + size;
+        return {
+          files: all.slice(start, nextStart),
+          ...(nextStart < all.length ? { nextCursor: String(nextStart) } : {}),
+        };
+      },
+    );
+    const filepack = fakeApi(
+      async () => new Response("not used", { status: 500 }),
+      undefined,
+      listFiles,
+    );
+    const api = {
+      getConversation: vi.fn(async () => ({ id: "conversation-1" })),
+    } as unknown as ChatpackApi;
+    const plugin = createFileAttachmentPlugin({ filepack, authorizeUpload: () => true });
+
+    const response = await plugin.handleRequest!(
+      context(
+        new Request(
+          "https://example.test/api/chat/files/files?conversationId=conversation-1&limit=10",
+        ),
+        api,
+        ["files", "files"],
+      ),
+    );
+    const body = (await response?.json()) as { files: { id: string }[]; nextCursor?: string };
+    expect(body.files.map((f) => f.id)).toEqual(["mine-0", "mine-1", "mine-2", "mine-3", "mine-4"]);
+    expect(body.nextCursor).toBeUndefined();
+  });
+
+  it("rejects a malformed list cursor", async () => {
+    const listFiles = vi.fn(async () => ({ files: [file] }));
+    const filepack = fakeApi(
+      async () => new Response("not used", { status: 500 }),
+      undefined,
+      listFiles,
+    );
+    const api = {
+      getConversation: vi.fn(async () => ({ id: "conversation-1" })),
+    } as unknown as ChatpackApi;
+    const plugin = createFileAttachmentPlugin({ filepack, authorizeUpload: () => true });
+
+    const response = await plugin.handleRequest!(
+      context(
+        new Request(
+          "https://example.test/api/chat/files/files?conversationId=conversation-1&cursor=raw-filepack-cursor",
+        ),
+        api,
+        ["files", "files"],
+      ),
+    );
+    expect(response?.status).toBe(400);
+    await expect(response?.json()).resolves.toMatchObject({ error: { code: "INVALID_REQUEST" } });
+    expect(listFiles).not.toHaveBeenCalled();
   });
 
   it.each(["", "0", "01", "1.5", "101", "999999999999999999999999"])(
