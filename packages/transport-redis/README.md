@@ -96,7 +96,7 @@ Redis pub/sub is at-most-once (no replay buffer), which is why durable events
 remain replayable from storage and ephemeral ones are defined as droppable.
 Reaction and conversation events sit in between: they're stored, but they have no
 `seq`, so `Last-Event-ID` can't replay them either - a reaction or a membership
-change missed during an outage shows up on the next refetch of that thread
+change missed during an outage shows up on the next conversation refetch
 ([ADR 0013](../../docs/decisions/0013-reactions-and-replies.md),
 [ADR 0017](../../docs/decisions/0017-group-conversations.md)).
 
