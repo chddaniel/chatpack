@@ -1,5 +1,12 @@
 # @chatpack/adapter-drizzle
 
+## 0.5.1
+
+### Patch Changes
+
+- Updated dependencies [06b4e67]
+  - @chatpack/core@0.8.0
+
 ## 0.5.0
 
 ### Minor Changes

@@ -1,5 +1,12 @@
 # @chatpack/client
 
+## 0.4.3
+
+### Patch Changes
+
+- Updated dependencies [06b4e67]
+  - @chatpack/core@0.8.0
+
 ## 0.4.2
 
 ### Patch Changes
