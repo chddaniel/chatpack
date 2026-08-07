@@ -122,6 +122,8 @@ export type {
   ChatpackPlugin,
   PluginContext,
   PluginRequestContext,
+  PluginCapabilityRequestContext,
+  PluginBeforeMessageSendContext,
   PluginStreamContext,
   PluginMarkReadContext,
   PluginEventDeliveredContext,

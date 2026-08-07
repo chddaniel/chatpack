@@ -10,14 +10,11 @@ The current package set covers direct and group conversations, text messages,
 permissions, read state and unread counts, SSE with gap-fill, memory and
 Drizzle storage, Redis event fan-out, typing/presence/receipts, reactions,
 quote-replies, participant-scoped search, the post-persistence mutation hook,
-the browser client with React hooks and polling fallback, and project setup
-with `@chatpack/cli init`.
+the browser client with React hooks and polling fallback, Filepack-backed
+file attachments, and project setup with `@chatpack/cli init`.
 
-File attachments remain pending in
-[PR #7](https://github.com/chddaniel/chatpack/pull/7). No attachment package is
-part of current `main` or the published package list below. Push notification
-providers, reusable React UI components, true message threads, and multi-node
-presence have not shipped.
+Push notification providers, reusable React UI components, true message
+threads, and multi-node presence have not shipped.
 
 ## `@chatpack/core`
 
@@ -110,7 +107,7 @@ Next.js App Router integration - sugar for mounting the handler.
 
 | Export                                | What it is                                                        |
 | ------------------------------------- | ----------------------------------------------------------------- |
-| `toNextRouteHandlers(chat, options?)` | Returns `{ GET, POST, PATCH, DELETE }` for a catch-all route file |
+| `toNextRouteHandlers(chat, options?)` | Returns `{ GET, POST, PATCH, DELETE, PUT }` for a catch-all route file |
 
 → [Next.js guide](/docs/integrations/nextjs)
 
@@ -153,6 +150,27 @@ dependency. Two separate connections are required, since a client in subscriber
 mode cannot `PUBLISH`.
 
 → [Multi-node fan-out](/docs/realtime/multi-node)
+
+## `@chatpack/file`
+
+Filepack-backed message attachments. Mounts Filepack's upload/download routes
+below the Chatpack handler (default `/api/chat/files`) and validates every
+attachment reference against the conversation before a message persists.
+Chatpack stores only stable references
+(`{ filepack: { version: 1, attachments: [{ id, name, contentType, size }] } }`)
+in message metadata - never bytes, signed URLs, or object keys.
+
+| Export                              | What it is                                                       |
+| ----------------------------------- | ----------------------------------------------------------------- |
+| `createFileAttachmentPlugin(opts)`  | The plugin: nested Filepack routes + blocking message hook         |
+| `createFileAttachmentMessageHook`   | Just the `beforeMessageSend` validation hook                       |
+| `createFileAttachmentMetadata`      | Build the metadata namespace from ready Filepack files             |
+| `parseFileAttachmentMetadata`       | Validate the namespace in arbitrary message metadata               |
+| `@chatpack/file/client`             | Browser wrapper over `@filepack/client` (uploads, resume, media)   |
+
+Requires a [Filepack](https://github.com/chddaniel/filepack) instance
+(`@filepack/core` + a storage provider) and an `authorizeUpload` host policy.
+Remember to also export `PUT` from the catch-all route.
 
 ## llms.txt in every tarball
 

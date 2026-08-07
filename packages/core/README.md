@@ -162,7 +162,7 @@ bridge (see [`examples/node-server`](../../examples/node-server)).
 ```ts
 // app/api/chat/[...chatpack]/route.ts  (Next.js App Router)
 import { chat } from "@/lib/chat";
-export const { GET, POST, PATCH, DELETE } = chat.handler();
+export const { GET, POST, PATCH, DELETE, PUT } = chat.handler();
 ```
 
 > **Mount on a catch-all route.** Chatpack serves many sub-paths under
@@ -170,7 +170,7 @@ export const { GET, POST, PATCH, DELETE } = chat.handler();
 > `[...chatpack]` in Next.js, `chat.$` in TanStack Start, `/api/chat/*` in
 > Hono/Elysia. A single exact `/api/chat` route will 404 every sub-path.
 
-`GET`/`POST`/`PATCH`/`DELETE`/`fetch` on the returned handler are **all the
+`GET`/`POST`/`PATCH`/`DELETE`/`PUT`/`fetch` on the returned handler are **all the
 same function** - the method names only exist so they can be re-exported from
 a Next.js route file. Any of them serves every route, including `/stream`.
 For any other Web-standard runtime or router, use `fetch`:
@@ -194,7 +194,7 @@ const handler = chat.handler();
 const handle = ({ request }: { request: Request }) => handler.fetch(request);
 
 export const Route = createFileRoute("/api/chat/$")({
-  server: { handlers: { GET: handle, POST: handle, PATCH: handle, DELETE: handle } },
+  server: { handlers: { GET: handle, POST: handle, PATCH: handle, DELETE: handle, PUT: handle } },
 });
 ```
 

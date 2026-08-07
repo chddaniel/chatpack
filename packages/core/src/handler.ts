@@ -68,7 +68,7 @@ export interface HandlerOptions {
 /**
  * The value returned by `chat.handler()`.
  *
- * `GET`/`POST`/`PATCH`/`DELETE` are the same function - named so they can be
+ * `GET`/`POST`/`PATCH`/`DELETE`/`PUT` are the same function - named so they can be
  * re-exported directly from a Next.js App Router route file. `fetch` is the
  * same function again, named for generic Web-standard servers (Bun, Deno,
  * Workers).
@@ -78,6 +78,7 @@ export interface ChatpackHandler {
   POST: (request: Request) => Promise<Response>;
   PATCH: (request: Request) => Promise<Response>;
   DELETE: (request: Request) => Promise<Response>;
+  PUT: (request: Request) => Promise<Response>;
   /** Generic entry point: `Bun.serve({ fetch: chat.handler().fetch })`. */
   fetch: (request: Request) => Promise<Response>;
 }
@@ -433,15 +434,33 @@ export function createHandler(
       .split("/")
       .filter((s) => s !== "");
 
-    // Authenticate - the only auth touchpoint (MVP §2).
-    const user = await resolveUser(request);
-    if (!user || typeof user.id !== "string" || user.id === "") {
-      return unauthenticatedResponse(request, user);
-    }
-    const userId = user.id;
     const method = request.method.toUpperCase();
 
     try {
+      // Capability routes may be claimed before auth. A null response falls
+      // through to the normal authenticated request path.
+      if (plugins?.hasPlugins) {
+        try {
+          const capabilityResponse = await plugins.handleCapabilityRequest({
+            request,
+            url,
+            method,
+            segments,
+            basePath,
+          });
+          if (capabilityResponse !== null) return capabilityResponse;
+        } catch (cause) {
+          throw new Error("Capability request hook failed.", { cause });
+        }
+      }
+
+      // Authenticate - the only auth touchpoint (MVP §2).
+      const user = await resolveUser(request);
+      if (!user || typeof user.id !== "string" || user.id === "") {
+        return unauthenticatedResponse(request, user);
+      }
+      const userId = user.id;
+
       // GET /stream - SSE live events (M3)
       if (method === "GET" && segments.length === 1 && segments[0] === "stream") {
         return openStream(request, url, userId);
@@ -718,7 +737,9 @@ export function createHandler(
           url,
           method,
           segments,
+          basePath,
           userId,
+          user,
         });
         if (pluginResponse !== null) return pluginResponse;
       }
@@ -734,5 +755,5 @@ export function createHandler(
     }
   }
 
-  return { GET: handle, POST: handle, PATCH: handle, DELETE: handle, fetch: handle };
+  return { GET: handle, POST: handle, PATCH: handle, DELETE: handle, PUT: handle, fetch: handle };
 }

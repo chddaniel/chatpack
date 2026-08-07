@@ -174,7 +174,7 @@ export const chat = chatpack({
 ```ts
 // app/api/chat/[...chatpack]/route.ts
 import { chat } from "@/lib/chat";
-export const { GET, POST, PATCH, DELETE } = chat.handler();
+export const { GET, POST, PATCH, DELETE, PUT } = chat.handler();
 ```
 
 Or, with the [`@chatpack/next`](./packages/next) helper (same result, reads
@@ -183,7 +183,7 @@ better):
 ```ts
 import { toNextRouteHandlers } from "@chatpack/next";
 import { chat } from "@/lib/chat";
-export const { GET, POST, PATCH, DELETE } = toNextRouteHandlers(chat);
+export const { GET, POST, PATCH, DELETE, PUT } = toNextRouteHandlers(chat);
 ```
 
 > **The route file must be a catch-all** (`[...chatpack]` in Next.js) -
@@ -200,7 +200,7 @@ send/list/edit/delete messages, read-state, and a **live SSE stream** at
 `/api/chat/stream`, with your auth enforced on every request.
 
 Not on Next.js? The handler is Web-standard (`Request` → `Response`) and
-`GET`/`POST`/`PATCH`/`DELETE`/`fetch` are **all the same function** - the
+`GET`/`POST`/`PATCH`/`DELETE`/`PUT`/`fetch` are **all the same function** - the
 method names only exist so they can be re-exported from a Next.js route file.
 Any of them serves every route, including `/stream`:
 
@@ -690,13 +690,11 @@ Want to write your own plugin? The seam is public - see `ChatpackPlugin` in
 | Post-persistence message mutation hook  | ✅ Done (v0.next) |
 | `@chatpack/cli init`                    | ✅ Done (v0.next) |
 | Group chats: membership, roles, admin   | ✅ Done (v0.next) |
+| File attachments (`@chatpack/file`)     | ✅ Done (v0.next) |
 
-File attachments are pending in
-[PR #7](https://github.com/chddaniel/chatpack/pull/7). `@chatpack/file` is not
-part of current `main` or the package list. Push notification providers,
-reusable UI components, true message threads, and multi-node presence have not
-shipped. Replies are flat pointers, not threads. See
-[docs/MVP.md](./docs/MVP.md) for the full scope and reasoning.
+Push notification providers, reusable UI components, true message threads,
+and multi-node presence have not shipped. Replies are flat pointers, not
+threads. See [docs/MVP.md](./docs/MVP.md) for the full scope and reasoning.
 
 ## Packages
 
@@ -709,6 +707,7 @@ shipped. Replies are flat pointers, not threads. See
 | [`@chatpack/client`](./packages/client)                   | Typed REST, SSE, React hooks, and client plugins |
 | [`@chatpack/cli`](./packages/cli)                         | Safe project setup CLI (`chatpack init`)         |
 | [`@chatpack/transport-redis`](./packages/transport-redis) | Redis pub/sub transport (multi-node SSE)         |
+| [`@chatpack/file`](./packages/file)                       | Filepack-backed message attachments              |
 
 ## Examples
 

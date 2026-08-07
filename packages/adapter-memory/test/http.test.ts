@@ -8,7 +8,7 @@
  */
 import { describe, expect, it } from "vitest";
 
-import { chatpack, type ChatpackHandler } from "@chatpack/core";
+import { chatpack, type ChatpackHandler, type ChatpackPlugin } from "@chatpack/core";
 import { memoryAdapter } from "../src/index";
 
 const BASE = "http://test.local/api/chat";
@@ -525,5 +525,41 @@ describe("remaining routes", () => {
       { body: "hi" },
     );
     expect(accepted.status).toBe(201);
+  });
+
+  it("a plugin beforeMessageSend rejection maps to 422 MESSAGE_REJECTED", async () => {
+    const plugin: ChatpackPlugin = {
+      name: "filepack",
+      beforeMessageSend: () => {
+        throw new Error("Attachment is not ready.");
+      },
+    };
+    const chat = chatpack({
+      storage: memoryAdapter(),
+      telemetry: false,
+      auth: (request) => {
+        const userId = request.headers.get("x-user-id");
+        return userId ? { id: userId } : null;
+      },
+      plugins: [plugin],
+    });
+    const handler = chat.handler();
+
+    const createRes = await send(handler, "POST", "/conversations", "alice", {
+      otherUserId: "bob",
+    });
+    const { conversation } = (await createRes.json()) as { conversation: { id: string } };
+    const response = await send(
+      handler,
+      "POST",
+      `/conversations/${conversation.id}/messages`,
+      "alice",
+      { body: "hello" },
+    );
+
+    expect(response.status).toBe(422);
+    expect(await response.json()).toEqual({
+      error: { code: "MESSAGE_REJECTED", message: "Attachment is not ready." },
+    });
   });
 });

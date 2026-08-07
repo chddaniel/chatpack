@@ -14,7 +14,7 @@ import type {
 } from "./config";
 import { ChatpackError } from "./errors";
 import { createHandler, type ChatpackHandler, type HandlerOptions } from "./handler";
-import { createPluginRuntime } from "./plugin";
+import { createPluginRuntime, type PluginRuntime } from "./plugin";
 import type { StorageAdapter } from "./storage";
 import {
   inProcessTransport,
@@ -351,7 +351,7 @@ export interface ChatpackInstance {
    * ```ts
    * // app/api/chat/[...chatpack]/route.ts
    * import { chat } from "@/lib/chat";
-   * export const { GET, POST, PATCH, DELETE } = chat.handler();
+   * export const { GET, POST, PATCH, DELETE, PUT } = chat.handler();
    * ```
    */
   handler(options?: HandlerOptions): ChatpackHandler;
@@ -782,27 +782,49 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
     ctx: BeforeMessageSendContext,
   ): Promise<{ body: string; metadata: Metadata }> {
     const hook = options.hooks?.beforeMessageSend;
-    if (!hook) return { body: ctx.body, metadata: ctx.metadata };
+    let accepted = { body: ctx.body, metadata: ctx.metadata };
+    if (hook) {
+      let result;
+      try {
+        result = await hook(ctx);
+      } catch (err) {
+        if (err instanceof ChatpackError) throw err;
+        throw new ChatpackError(
+          "MESSAGE_REJECTED",
+          err instanceof Error && err.message ? err.message : "Message rejected.",
+        );
+      }
 
-    let result;
-    try {
-      result = await hook(ctx);
-    } catch (err) {
-      if (err instanceof ChatpackError) throw err;
-      throw new ChatpackError(
-        "MESSAGE_REJECTED",
-        err instanceof Error && err.message ? err.message : "Message rejected.",
-      );
+      const body = result?.body ?? ctx.body;
+      if (typeof body !== "string" || body.trim() === "") {
+        throw new ChatpackError(
+          "INVALID_INPUT",
+          "beforeMessageSend returned an empty body - throw to reject a message instead.",
+        );
+      }
+      accepted = { body, metadata: result?.metadata ?? ctx.metadata };
     }
 
-    const body = result?.body ?? ctx.body;
+    const body = accepted.body;
     if (typeof body !== "string" || body.trim() === "") {
+      throw new ChatpackError("INVALID_INPUT", "Message body must be a non-empty string.");
+    }
+    if (!pluginRuntime.hasPlugins) return accepted;
+
+    const pluginAccepted = await pluginRuntime.runBeforeMessageSend({
+      ...ctx,
+      ...accepted,
+    });
+    if (typeof pluginAccepted.body !== "string" || pluginAccepted.body.trim() === "") {
       throw new ChatpackError(
         "INVALID_INPUT",
-        "beforeMessageSend returned an empty body - throw to reject a message instead.",
+        "A plugin beforeMessageSend hook returned an empty body - throw to reject a message instead.",
       );
     }
-    return { body, metadata: result?.metadata ?? ctx.metadata };
+    return {
+      body: pluginAccepted.body,
+      metadata: pluginAccepted.metadata ?? accepted.metadata,
+    };
   }
 
   /**
@@ -1363,7 +1385,7 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
     },
   };
 
-  const pluginRuntime = createPluginRuntime(options.plugins ?? [], api, transport);
+  const pluginRuntime: PluginRuntime = createPluginRuntime(options.plugins ?? [], api, transport);
 
   return {
     api,

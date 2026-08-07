@@ -1,0 +1,71 @@
+{
+  "name": "@chatpack/file",
+  "version": "0.0.0",
+  "description": "Chatpack integration for Filepack-backed attachments",
+  "license": "MIT",
+  "homepage": "https://github.com/chddaniel/chatpack#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chddaniel/chatpack.git",
+    "directory": "packages/file"
+  },
+  "bugs": {
+    "url": "https://github.com/chddaniel/chatpack/issues"
+  },
+  "keywords": [
+    "chat",
+    "chatpack",
+    "filepack",
+    "attachments",
+    "file-upload"
+  ],
+  "sideEffects": false,
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./client": {
+      "types": "./dist/client/index.d.ts",
+      "import": "./dist/client/index.js",
+      "require": "./dist/client/index.cjs"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "prepack": "node -e \"require('fs').copyFileSync('../../llms.txt','llms.txt')\""
+  },
+  "dependencies": {
+    "@chatpack/core": "workspace:^"
+  },
+  "peerDependencies": {
+    "@filepack/client": "^0.1.0",
+    "@filepack/core": "^0.1.0"
+  },
+  "devDependencies": {
+    "@filepack/adapter-memory": "^0.1.0",
+    "@filepack/storage-local": "^0.1.0",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2",
+    "vitest": "^3.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

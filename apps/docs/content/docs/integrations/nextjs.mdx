@@ -16,7 +16,7 @@ many sub-paths under `basePath` (default `/api/chat`), so a single
 ```ts title="app/api/chat/[...chatpack]/route.ts"
 import { chat } from "@/lib/chat";
 
-export const { GET, POST, PATCH, DELETE } = chat.handler();
+export const { GET, POST, PATCH, DELETE, PUT } = chat.handler();
 ```
 
 </Tab>
@@ -33,7 +33,7 @@ npm install @chatpack/next
 import { toNextRouteHandlers } from "@chatpack/next";
 import { chat } from "@/lib/chat";
 
-export const { GET, POST, PATCH, DELETE } = toNextRouteHandlers(chat);
+export const { GET, POST, PATCH, DELETE, PUT } = toNextRouteHandlers(chat);
 ```
 
 </Tab>
@@ -68,7 +68,7 @@ export const chat = (g.__chatpack__ ??= chatpack({
 Mounting somewhere other than `/api/chat`? Tell the handler:
 
 ```ts title="app/api/messaging/[...chatpack]/route.ts"
-export const { GET, POST, PATCH, DELETE } = chat.handler({
+export const { GET, POST, PATCH, DELETE, PUT } = chat.handler({
   basePath: "/api/messaging",
 });
 ```

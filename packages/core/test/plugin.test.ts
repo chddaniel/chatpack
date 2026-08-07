@@ -9,6 +9,8 @@
 import { describe, expect, it, vi } from "vitest";
 
 import type { ChatpackApi } from "../src/chatpack";
+import { ChatpackError } from "../src/errors";
+import { createHandler } from "../src/handler";
 import { createPluginRuntime, type ChatpackPlugin } from "../src/plugin";
 import {
   inProcessTransport,
@@ -156,7 +158,14 @@ describe("createPluginRuntime", () => {
 
   it("handleRequest: first plugin response wins, null passes through", async () => {
     const transport = inProcessTransport();
-    const passes: ChatpackPlugin = { name: "passes", handleRequest: () => null };
+    const basePaths: string[] = [];
+    const passes: ChatpackPlugin = {
+      name: "passes",
+      handleRequest: (ctx) => {
+        basePaths.push(ctx.basePath);
+        return null;
+      },
+    };
     const answers: ChatpackPlugin = {
       name: "answers",
       handleRequest: () => new Response("claimed", { status: 200 }),
@@ -173,7 +182,9 @@ describe("createPluginRuntime", () => {
       url,
       method: "GET",
       segments: ["custom"],
+      basePath: "/api/chat",
       userId: "alice",
+      user: { id: "alice" },
     });
 
     expect(response).not.toBeNull();
@@ -184,8 +195,194 @@ describe("createPluginRuntime", () => {
       url,
       method: "GET",
       segments: ["custom"],
+      basePath: "/api/chat",
       userId: "alice",
+      user: { id: "alice" },
     });
     expect(unclaimed).toBeNull();
+    expect(basePaths).toEqual(["/api/chat", "/api/chat"]);
+  });
+
+  it("handleCapabilityRequest: first response wins and context excludes auth/domain state", async () => {
+    const transport = inProcessTransport();
+    const calls: string[] = [];
+    const seenKeys: string[][] = [];
+    const first: ChatpackPlugin = {
+      name: "first",
+      handleCapabilityRequest: (ctx) => {
+        calls.push("first");
+        seenKeys.push(Object.keys(ctx).sort());
+        expect(ctx.method).toBe("GET");
+        expect(ctx.segments).toEqual(["assets", "downloads", "v1.capability"]);
+        return null;
+      },
+    };
+    const second: ChatpackPlugin = {
+      name: "second",
+      handleCapabilityRequest: () => {
+        calls.push("second");
+        return new Response("claimed", { status: 200 });
+      },
+    };
+    const never: ChatpackPlugin = {
+      name: "never",
+      handleCapabilityRequest: () => {
+        calls.push("never");
+        return new Response("too late", { status: 200 });
+      },
+    };
+
+    const url = new URL("http://test.local/chat/assets/downloads/v1.capability");
+    const response = await createPluginRuntime(
+      [first, second, never],
+      fakeApi,
+      transport,
+    ).handleCapabilityRequest({
+      request: new Request(url),
+      url,
+      method: "GET",
+      segments: ["assets", "downloads", "v1.capability"],
+      basePath: "/chat",
+    });
+
+    expect(await response?.text()).toBe("claimed");
+    expect(calls).toEqual(["first", "second"]);
+    expect(seenKeys).toEqual([["basePath", "method", "request", "segments", "url"]]);
+  });
+
+  it.each([
+    ["ordinary errors", () => new Error("secret capability detail")],
+    ["Chatpack errors", () => new ChatpackError("FORBIDDEN_READ", "private capability denial")],
+  ])("capability hook %s return opaque 500 and do not fall through", async (_case, fail) => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const auth = vi.fn(() => null);
+      const failure = fail();
+      const runtime = createPluginRuntime(
+        [
+          {
+            name: "broken-capability-plugin",
+            handleCapabilityRequest: () => {
+              throw failure;
+            },
+          },
+        ],
+        fakeApi,
+        inProcessTransport(),
+      );
+      const handler = createHandler(fakeApi, auth, {}, undefined, runtime);
+
+      const response = await handler.GET(new Request("http://test.local/api/chat/public"));
+
+      expect(response.status).toBe(500);
+      const body = await response.json();
+      expect(body).toEqual({
+        error: { code: "INTERNAL_ERROR", message: "Something went wrong." },
+      });
+      expect(JSON.stringify(body)).not.toContain("secret capability detail");
+      expect(JSON.stringify(body)).not.toContain("private capability denial");
+      expect(JSON.stringify(body)).not.toContain("FORBIDDEN_READ");
+      expect(auth).not.toHaveBeenCalled();
+      expect(errorSpy).toHaveBeenCalledOnce();
+      const loggedError = errorSpy.mock.calls[0]?.[1] as Error & { cause?: unknown };
+      expect(loggedError.cause).toBe(failure);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
+  it("plugins without a capability hook remain behind normal auth", async () => {
+    const handleRequest = vi.fn(() => new Response("private", { status: 200 }));
+    const auth = vi.fn(() => null);
+    const runtime = createPluginRuntime(
+      [{ name: "ordinary", handleRequest }],
+      fakeApi,
+      inProcessTransport(),
+    );
+    const handler = createHandler(fakeApi, auth, {}, undefined, runtime);
+
+    const response = await handler.GET(new Request("http://test.local/api/chat/custom"));
+
+    expect(response.status).toBe(401);
+    expect(handleRequest).not.toHaveBeenCalled();
+  });
+
+  it("runs blocking message hooks in registration order and rewrites sequentially", async () => {
+    const calls: string[] = [];
+    const runtime = createPluginRuntime(
+      [
+        {
+          name: "first",
+          beforeMessageSend: ({ body }) => {
+            calls.push(`first:${body}`);
+            return { body: `${body}!` };
+          },
+        },
+        {
+          name: "second",
+          beforeMessageSend: ({ body }) => {
+            calls.push(`second:${body}`);
+          },
+        },
+      ],
+      fakeApi,
+      inProcessTransport(),
+    );
+
+    await expect(
+      runtime.runBeforeMessageSend({
+        user: { id: "alice" },
+        conversation: {
+          id: "c1",
+          type: "direct",
+          name: null,
+          pairKey: "alice:bob",
+          createdAt: new Date(),
+          metadata: {},
+          participants: [],
+          participantIds: ["alice", "bob"],
+        },
+        body: "hello",
+        metadata: {},
+        role: "user",
+        action: "send",
+      }),
+    ).resolves.toMatchObject({ body: "hello!", metadata: {} });
+    expect(calls).toEqual(["first:hello", "second:hello!"]);
+  });
+
+  it("maps non-Chatpack plugin validation errors to MESSAGE_REJECTED", async () => {
+    const runtime = createPluginRuntime(
+      [
+        {
+          name: "validator",
+          beforeMessageSend: () => {
+            throw new Error("File is not ready.");
+          },
+        },
+      ],
+      fakeApi,
+      inProcessTransport(),
+    );
+
+    await expect(
+      runtime.runBeforeMessageSend({
+        user: { id: "alice" },
+        conversation: {
+          id: "c1",
+          type: "direct",
+          name: null,
+          pairKey: "alice:bob",
+          createdAt: new Date(),
+          metadata: {},
+          participants: [],
+          participantIds: ["alice", "bob"],
+        },
+        body: "hello",
+        metadata: {},
+        role: "user",
+        action: "send",
+      }),
+    ).rejects.toMatchObject({ code: "MESSAGE_REJECTED", message: "File is not ready." });
   });
 });

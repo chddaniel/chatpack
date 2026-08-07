@@ -113,6 +113,37 @@ function request(
   );
 }
 
+it("passes custom handler basePath to a PUT plugin route", async () => {
+  const seen: string[] = [];
+  const chat = chatpack({
+    storage: memoryAdapter(),
+    telemetry: false,
+    auth: () => ({ id: "alice" }),
+    plugins: [
+      {
+        name: "filepack",
+        handleRequest(ctx) {
+          seen.push(ctx.basePath);
+          return ctx.method === "PUT" ? new Response("uploaded", { status: 200 }) : null;
+        },
+      },
+    ],
+  });
+  const handler = chat.handler({ basePath: "/api/messaging", heartbeatIntervalMs: 0 });
+
+  const response = await handler.PUT(
+    new Request("http://test.local/api/messaging/uploads/attempt-1/content", {
+      method: "PUT",
+      headers: { "x-user-id": "alice" },
+      body: "bytes",
+    }),
+  );
+
+  expect(response.status).toBe(200);
+  expect(await response.text()).toBe("uploaded");
+  expect(seen).toEqual(["/api/messaging"]);
+});
+
 const openClients: SseClient[] = [];
 afterEach(async () => {
   await Promise.all(openClients.map((c) => c.close()));

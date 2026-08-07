@@ -27,6 +27,7 @@ description: What shipped in v0, what's deliberately out of scope, and where Cha
 | Post-persistence message mutation hook   | ✅ Done (v0.next) |
 | `@chatpack/cli init`                     | ✅ Done (v0.next) |
 | Group chats: membership, roles, admin    | ✅ Done (v0.next) |
+| File attachments (`@chatpack/file`)      | ✅ Done (v0.next) |
 
 ## Deliberately not in scope yet
 
@@ -39,10 +40,6 @@ description: What shipped in v0, what's deliberately out of scope, and where Cha
   message, not a thread tree: no thread ids, no per-thread reply counts, no
   nested pagination. See
   [Conversations & messages](/docs/concepts/conversations-messages).
-- **File uploads / attachments** - pending work in
-  [PR #7](https://github.com/chddaniel/chatpack/pull/7), not part of current
-  `main` or the current package list. Use `metadata` to point at files you
-  host.
 - **Push notification providers** - applications can start their own delivery
   work from `afterMessageMutation`, but Chatpack does not ship providers.
 - **React UI components** - Chatpack is headless; bring your own frontend.

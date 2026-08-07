@@ -216,10 +216,10 @@ versions and read changelogs when upgrading.
 
 <Accordion title="File uploads? Push notifications? React components?">
 
-File attachments are pending work in
-[PR #7](https://github.com/chddaniel/chatpack/pull/7). `@chatpack/file` is not
-part of current `main` or the current package list. Until that work merges,
-attachments can point at files you host via `metadata`.
+File attachments ship as the optional
+[`@chatpack/file`](/docs/reference/packages#chatpackfile) plugin, backed by
+[Filepack](https://github.com/chddaniel/filepack). Prefer plain `metadata`
+pointers if you already host files elsewhere.
 
 Chatpack does not ship push notification providers or reusable React UI
 components. Applications can start notification delivery from
