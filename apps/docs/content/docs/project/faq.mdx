@@ -129,8 +129,8 @@ by `payload.messageId`; treat `lastReadMessageId` as the durable truth.
 
 By design. Reactions are stored, but they have no `seq`, so their SSE frames
 carry no `id:` (emitting one would rewind `Last-Event-ID` and replay messages)
-and `Last-Event-ID` gap-fill can't replay them. Refetch the thread when the
-stream reopens - `@chatpack/client` users get the reactions on the next
+and `Last-Event-ID` gap-fill can't replay them. Refetch the conversation when
+the stream reopens - `@chatpack/client` users get the reactions on the next
 `messages.list`. Details in
 [Real-time with SSE](/docs/realtime/sse#reaction-events-are-a-third-category).
 
@@ -216,9 +216,16 @@ versions and read changelogs when upgrading.
 
 <Accordion title="File uploads? Push notifications? React components?">
 
-All deliberately out of scope - see [Roadmap](/docs/project/roadmap).
-Attachments can point at files you host via `metadata`. Reactions,
-quote-replies, and group chats **did** ship - each fit the existing seams.
+File attachments are pending work in
+[PR #7](https://github.com/chddaniel/chatpack/pull/7). `@chatpack/file` is not
+part of current `main` or the current package list. Until that work merges,
+attachments can point at files you host via `metadata`.
+
+Chatpack does not ship push notification providers or reusable React UI
+components. Applications can start notification delivery from
+`afterMessageMutation`, and `@chatpack/client/react` provides headless hooks.
+Reactions, quote-replies, and group chats **did** ship - each fit the existing
+seams. See [Roadmap](/docs/project/roadmap).
 
 </Accordion>
 

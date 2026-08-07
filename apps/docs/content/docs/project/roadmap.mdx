@@ -14,14 +14,18 @@ description: What shipped in v0, what's deliberately out of scope, and where Cha
 | In-memory storage adapter                | ✅ Done (M1)      |
 | HTTP handler (Next.js App Router)        | ✅ Done (M2)      |
 | Real-time delivery (SSE)                 | ✅ Done (M3)      |
+| SSE reconnect gap-fill                   | ✅ Done (M3)      |
 | Drizzle/Postgres adapter                 | ✅ Done (M4)      |
 | Launch polish + npm release              | ✅ Done (M5)      |
 | Typing / presence / read-tick plugins    | ✅ Done (v0.next) |
 | Unread counts (`unreadCount`)            | ✅ Done (v0.next) |
 | Redis transport (multi-node SSE)         | ✅ Done (v0.next) |
 | Browser client + React hooks             | ✅ Done (v0.next) |
+| Client polling fallback                  | ✅ Done (v0.next) |
 | Reactions + quote-replies                | ✅ Done (v0.next) |
 | Participant-scoped ranked message search | ✅ Done (v0.next) |
+| Post-persistence message mutation hook   | ✅ Done (v0.next) |
+| `@chatpack/cli init`                     | ✅ Done (v0.next) |
 | Group chats: membership, roles, admin    | ✅ Done (v0.next) |
 
 ## Deliberately not in scope yet
@@ -35,8 +39,12 @@ description: What shipped in v0, what's deliberately out of scope, and where Cha
   message, not a thread tree: no thread ids, no per-thread reply counts, no
   nested pagination. See
   [Conversations & messages](/docs/concepts/conversations-messages).
-- **File uploads / attachments** - use `metadata` to point at files you host.
-- **Push notifications** - your app's job for now.
+- **File uploads / attachments** - pending work in
+  [PR #7](https://github.com/chddaniel/chatpack/pull/7), not part of current
+  `main` or the current package list. Use `metadata` to point at files you
+  host.
+- **Push notification providers** - applications can start their own delivery
+  work from `afterMessageMutation`, but Chatpack does not ship providers.
 - **React UI components** - Chatpack is headless; bring your own frontend.
 - **Non-participant search access** - the initial search implementation scopes
   storage results to participant conversations; dynamic `canRead` access for

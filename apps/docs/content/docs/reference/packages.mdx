@@ -6,6 +6,19 @@ description: Every @chatpack/* package, what it exports, and when you need it.
 All packages are MIT-licensed and published to npm. Everything is `0.x` until
 the public API stabilizes - expect minor breaking changes before `1.0`.
 
+The current package set covers direct and group conversations, text messages,
+permissions, read state and unread counts, SSE with gap-fill, memory and
+Drizzle storage, Redis event fan-out, typing/presence/receipts, reactions,
+quote-replies, participant-scoped search, the post-persistence mutation hook,
+the browser client with React hooks and polling fallback, and project setup
+with `@chatpack/cli init`.
+
+File attachments remain pending in
+[PR #7](https://github.com/chddaniel/chatpack/pull/7). No attachment package is
+part of current `main` or the published package list below. Push notification
+providers, reusable React UI components, true message threads, and multi-node
+presence have not shipped.
+
 ## `@chatpack/core`
 
 The engine: domain logic, permissions, HTTP handler, SSE, plugins, telemetry.

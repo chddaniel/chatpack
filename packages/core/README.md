@@ -421,7 +421,7 @@ ephemeral plugin events) but reactions have no `seq`, so their SSE frames carry
 **no `id:` line** - emitting one would rewind `Last-Event-ID` and replay
 messages the client already has. The trade-off: reactions are **not
 gap-filled**. A reaction applied while a client was disconnected shows up on
-the next refetch of that thread, not as a replayed frame. The payload is
+the next refetch of that conversation, not as a replayed frame. The payload is
 `{ type, message, actorId, emoji }`, where `message.reactions` is the complete
 set after the change - replace that field, don't merge into it. Design
 rationale:

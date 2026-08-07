@@ -20,8 +20,8 @@ full REST reference. (Source in [`apps/docs`](./apps/docs); run locally with
 
 ---
 
-> **Status: `0.6.x` - v0 MVP + real-time plugins + unread counts + browser
-> client + reactions + group chats, live on npm.** The v0 MVP (core engine,
+> **Status: `0.x` - v0 MVP + real-time plugins + unread counts + browser
+> client + reactions + search + group chats, live on npm.** The v0 MVP (core engine,
 > HTTP handler, real-time SSE, Postgres adapter) plus the opt-in real-time
 > plugins - **`typing()`, `presence()`, and `receipts()`, all shipping today
 > inside `@chatpack/core` under the `@chatpack/core/plugins` subpath** (see
@@ -474,7 +474,7 @@ Four things to know before going live:
   `reaction.removed` are stored, unlike ephemeral plugin events, but reactions
   have no `seq` - so their frames carry no `id:` (emitting one would rewind
   `Last-Event-ID`) and they are **not** gap-filled. A reaction applied while the
-  client was offline appears on the next refetch of that thread.
+  client was offline appears on the next refetch of that conversation.
 - **Browser auth must be cookie-based for SSE** - `EventSource` can't send
   custom headers, so your `auth` hook needs to resolve the user from a session
   cookie (sent automatically same-origin). Bearer-token headers work for the
@@ -657,8 +657,10 @@ Notes that keep the design honest:
   Ticks are at-least-once - dedupe by `payload.messageId`. Each tick is
   **per-user**, so in a group collect `senderId`s rather than treating one tick
   as "everyone read it". The durable truth is still `lastReadMessageId`.
-- Like the default transport, plugin state is **in-memory and single-node**
-  (MVP §5). Multi-node fan-out is a future transport, not an API change.
+- Plugin state is **in-memory and single-node** (MVP §5).
+  [`@chatpack/transport-redis`](./packages/transport-redis) relays events
+  between nodes, but `presence()` connection state remains local to each
+  process.
 
 Want to write your own plugin? The seam is public - see `ChatpackPlugin` in
 [`@chatpack/core`](./packages/core) and
@@ -675,16 +677,25 @@ Want to write your own plugin? The seam is public - see `ChatpackPlugin` in
 | In-memory storage adapter               | ✅ Done (M1)      |
 | HTTP handler (Next.js App Router)       | ✅ Done (M2)      |
 | Real-time delivery (SSE)                | ✅ Done (M3)      |
+| SSE reconnect gap-fill                  | ✅ Done (M3)      |
 | Drizzle/Postgres adapter                | ✅ Done (M4)      |
 | Launch polish + npm release             | ✅ Done (M5)      |
 | Typing / presence / read-tick plugins   | ✅ Done (v0.next) |
 | Unread counts (`unreadCount`)           | ✅ Done (v0.next) |
+| Redis transport (multi-node SSE)        | ✅ Done (v0.next) |
 | Browser client + React hooks            | ✅ Done (v0.next) |
+| Client polling fallback                 | ✅ Done (v0.next) |
 | Reactions + quote-replies               | ✅ Done (v0.next) |
+| Participant-scoped message search       | ✅ Done (v0.next) |
+| Post-persistence message mutation hook  | ✅ Done (v0.next) |
+| `@chatpack/cli init`                    | ✅ Done (v0.next) |
 | Group chats: membership, roles, admin   | ✅ Done (v0.next) |
 
-Deliberately **not** in scope yet: file uploads, push notification delivery, UI
-components, message threads (replies are flat pointers, not threads). See
+File attachments are pending in
+[PR #7](https://github.com/chddaniel/chatpack/pull/7). `@chatpack/file` is not
+part of current `main` or the package list. Push notification providers,
+reusable UI components, true message threads, and multi-node presence have not
+shipped. Replies are flat pointers, not threads. See
 [docs/MVP.md](./docs/MVP.md) for the full scope and reasoning.
 
 ## Packages
