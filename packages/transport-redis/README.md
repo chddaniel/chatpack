@@ -64,10 +64,13 @@ close, since this package did not open them).
 ## What you get, and what you don't
 
 **Multi-node:** messages (`message.created` / `updated` / `deleted`), reactions
-(`reaction.added` / `reaction.removed`), typing indicators, and read receipts.
-All of them travel on the transport - `TransportEvent` has three members
-(`ChatEvent`, `ReactionEvent`, `EphemeralEvent`) and this package relays all
-three, reviving the `Date` fields on the message each event carries.
+(`reaction.added` / `reaction.removed`), group membership changes
+(`participant.added` / `participant.removed` / `conversation.updated`), typing
+indicators, and read receipts. All of them travel on the transport -
+`TransportEvent` has four members (`ChatEvent`, `ReactionEvent`,
+`ConversationEvent`, `EphemeralEvent`) and this package relays all four, reviving
+the `Date` fields on whichever snapshot the event carries: a message, or a
+conversation and its participants.
 
 **Still per-node: `presence()`.** It counts live SSE connections in an
 in-process `Map`, so each node only knows its own. `GET /presence` answers for
@@ -91,10 +94,11 @@ point `Last-Event-ID` gap-fill replays what they missed from storage.
 
 Redis pub/sub is at-most-once (no replay buffer), which is why durable events
 remain replayable from storage and ephemeral ones are defined as droppable.
-Reaction events sit in between: they're stored, but they have no `seq`, so
-`Last-Event-ID` can't replay them either - a reaction missed during an outage
-shows up on the next refetch of that thread
-([ADR 0012](../../docs/decisions/0012-reactions-and-replies.md)).
+Reaction and conversation events sit in between: they're stored, but they have no
+`seq`, so `Last-Event-ID` can't replay them either - a reaction or a membership
+change missed during an outage shows up on the next refetch of that thread
+([ADR 0013](../../docs/decisions/0013-reactions-and-replies.md),
+[ADR 0017](../../docs/decisions/0017-group-conversations.md)).
 
 ## Notes
 

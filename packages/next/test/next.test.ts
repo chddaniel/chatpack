@@ -10,12 +10,15 @@ const stubStorage = {
     return {
       conversation: {
         id: "conv_1",
+        type: "direct",
         pairKey: input.pairKey,
+        name: null,
         createdAt: now,
         metadata: {},
         participants: input.userIds.map((userId) => ({
           conversationId: "conv_1",
           userId,
+          role: "admin" as const,
           joinedAt: now,
           lastReadMessageId: null,
         })),
@@ -62,6 +65,24 @@ const stubStorage = {
   },
   async listReactionsByMessageIds() {
     return [];
+  },
+  // Group writes (ADR 0017). This package only forwards routes, so the stub
+  // never reaches them - but they are required contract methods, so the stub
+  // has to declare them to still typecheck as a StorageAdapter.
+  async createGroupConversation() {
+    throw new Error("not needed");
+  },
+  async addParticipants() {
+    throw new Error("not needed");
+  },
+  async removeParticipant() {
+    throw new Error("not needed");
+  },
+  async setParticipantRole() {
+    throw new Error("not needed");
+  },
+  async updateConversation() {
+    throw new Error("not needed");
   },
 } satisfies StorageAdapter;
 

@@ -7,7 +7,9 @@
  * `JSON.stringify` turns them into strings, so the receiving node has to revive
  * them before handing the event to subscribers. Without this, a message that
  * crossed nodes would reach the SSE layer with `createdAt` as a string and
- * quietly break anything that calls a `Date` method on it.
+ * quietly break anything that calls a `Date` method on it. Conversation events
+ * carry a `Conversation` instead of a message, so its `createdAt` and each
+ * participant's `joinedAt` get the same treatment (`docs/decisions/0017`).
  *
  * `EphemeralEvent.at` is an ISO **string** by contract (`docs/decisions/0008`),
  * so it is left exactly as-is.
@@ -15,7 +17,7 @@
  * @module
  */
 
-import { isEphemeralEvent, type TransportEvent } from "@chatpack/core";
+import { isConversationEvent, isEphemeralEvent, type TransportEvent } from "@chatpack/core";
 
 /** The envelope actually published to Redis. */
 export interface EventEnvelope {
@@ -33,6 +35,10 @@ export interface EventEnvelope {
 
 /** Message fields that are `Date | null` on the wire and must be revived. */
 const MESSAGE_DATE_FIELDS = ["createdAt", "editedAt", "deletedAt"] as const;
+
+/** `Conversation` and `Participant` date fields (`docs/decisions/0017`). */
+const CONVERSATION_DATE_FIELDS = ["createdAt"] as const;
+const PARTICIPANT_DATE_FIELDS = ["joinedAt"] as const;
 
 /** Encode an event for publishing. */
 export function encodeEnvelope(nodeId: string, event: TransportEvent): string {
@@ -80,7 +86,25 @@ export function decodeEnvelope(payload: string): EventEnvelope | null {
   const eventRecord = event as Record<string, unknown>;
   if (typeof eventRecord["type"] !== "string") return null;
 
-  if (!isEphemeralEvent(event as TransportEvent)) {
+  if (isConversationEvent(event as TransportEvent)) {
+    // Membership change or rename: carries a `conversation`, not a message
+    // (ADR 0017). Revive its `createdAt` and every participant's `joinedAt`.
+    const conversation = eventRecord["conversation"];
+    if (typeof conversation !== "object" || conversation === null || Array.isArray(conversation)) {
+      return null;
+    }
+    const conversationRecord = conversation as Record<string, unknown>;
+    for (const field of CONVERSATION_DATE_FIELDS) reviveDate(conversationRecord, field);
+    const participants = conversationRecord["participants"];
+    if (!Array.isArray(participants)) return null;
+    for (const participant of participants) {
+      if (typeof participant !== "object" || participant === null || Array.isArray(participant)) {
+        return null;
+      }
+      const participantRecord = participant as Record<string, unknown>;
+      for (const field of PARTICIPANT_DATE_FIELDS) reviveDate(participantRecord, field);
+    }
+  } else if (!isEphemeralEvent(event as TransportEvent)) {
     // Message or reaction event: both carry a message, so both need its Date
     // fields revived (ADR 0013). `replyTo` and `reactions` are plain JSON.
     const message = eventRecord["message"];

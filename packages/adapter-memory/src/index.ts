@@ -13,8 +13,11 @@
 
 import type {
   AddMessageInput,
+  AddParticipantsInput,
   Conversation,
+  ConversationType,
   CountUnreadInput,
+  CreateGroupConversationInput,
   GetOrCreateDirectConversationInput,
   GetOrCreateDirectConversationResult,
   ListConversationsInput,
@@ -26,9 +29,12 @@ import type {
   Participant,
   Reaction,
   ReactionInput,
+  RemoveParticipantInput,
   SearchMessagesInput,
   SearchMessagesResult,
+  SetParticipantRoleInput,
   StorageAdapter,
+  UpdateConversationInput,
   UpdateLastReadInput,
   UpdateMessageInput,
 } from "@chatpack/core";
@@ -36,7 +42,10 @@ import { countSearchTokens, getSearchTerms, scoreSearchTerms } from "@chatpack/c
 
 interface ConversationRecord {
   id: string;
-  pairKey: string;
+  type: ConversationType;
+  /** `null` for groups - only DMs have a uniqueness key (`docs/decisions/0017`). */
+  pairKey: string | null;
+  name: string | null;
   createdAt: Date;
   metadata: Record<string, unknown>;
   participants: Map<string, Participant>;
@@ -123,11 +132,22 @@ export function memoryAdapter(): StorageAdapter {
   function toConversation(record: ConversationRecord): Conversation {
     return {
       id: record.id,
+      type: record.type,
       pairKey: record.pairKey,
+      name: record.name,
       createdAt: record.createdAt,
       metadata: { ...record.metadata },
       participants: [...record.participants.values()].map((p) => ({ ...p })),
     };
+  }
+
+  /** Read a conversation for mutation, or throw the adapter's "unknown" error. */
+  function requireRecord(conversationId: string): ConversationRecord {
+    const record = conversations.get(conversationId);
+    if (!record) {
+      throw new Error(`memoryAdapter: unknown conversation "${conversationId}".`);
+    }
+    return record;
   }
 
   return {
@@ -144,13 +164,25 @@ export function memoryAdapter(): StorageAdapter {
       const id = nextId("conv");
       const record: ConversationRecord = {
         id,
+        type: "direct",
         pairKey: input.pairKey,
+        // A DM's title is always derived from the other participant by the UI,
+        // never stored (`docs/decisions/0017`).
+        name: null,
         createdAt: now,
         metadata: { ...input.metadata },
         participants: new Map(
           input.userIds.map((userId) => [
             userId,
-            { conversationId: id, userId, joinedAt: now, lastReadMessageId: null },
+            {
+              conversationId: id,
+              userId,
+              // Both DM participants are admins: there is nothing to administer,
+              // and it keeps `role` non-null everywhere (`docs/decisions/0017`).
+              role: "admin",
+              joinedAt: now,
+              lastReadMessageId: null,
+            },
           ]),
         ),
         nextSeq: 1,
@@ -161,6 +193,90 @@ export function memoryAdapter(): StorageAdapter {
       conversationsByPairKey.set(input.pairKey, id);
       messageIdsByConversation.set(id, []);
       return { conversation: toConversation(record), created: true };
+    },
+
+    async createGroupConversation(input: CreateGroupConversationInput): Promise<Conversation> {
+      const now = new Date();
+      const id = nextId("conv");
+      const participants = new Map<string, Participant>();
+      // Creator first, so a group always has at least one admin.
+      participants.set(input.creatorId, {
+        conversationId: id,
+        userId: input.creatorId,
+        role: "admin",
+        joinedAt: now,
+        lastReadMessageId: null,
+      });
+      for (const userId of input.userIds) {
+        participants.set(userId, {
+          conversationId: id,
+          userId,
+          role: "member",
+          joinedAt: now,
+          lastReadMessageId: null,
+        });
+      }
+
+      const record: ConversationRecord = {
+        id,
+        type: "group",
+        // No pair key, so groups never collide with DM find-or-create and two
+        // groups with identical membership stay distinct (`docs/decisions/0017`).
+        pairKey: null,
+        name: input.name,
+        createdAt: now,
+        metadata: { ...input.metadata },
+        participants,
+        nextSeq: 1,
+        lastActivityTick: 0,
+      };
+
+      conversations.set(id, record);
+      messageIdsByConversation.set(id, []);
+      return toConversation(record);
+    },
+
+    async addParticipants(input: AddParticipantsInput): Promise<Conversation> {
+      const record = requireRecord(input.conversationId);
+      const now = new Date();
+      for (const userId of input.userIds) {
+        // Idempotent: an existing participant keeps their role and joinedAt, so
+        // a replayed add never demotes an admin (`docs/decisions/0017`).
+        if (record.participants.has(userId)) continue;
+        record.participants.set(userId, {
+          conversationId: record.id,
+          userId,
+          role: "member",
+          joinedAt: now,
+          lastReadMessageId: null,
+        });
+      }
+      return toConversation(record);
+    },
+
+    async removeParticipant(input: RemoveParticipantInput): Promise<Conversation> {
+      const record = requireRecord(input.conversationId);
+      // Idempotent, and messages stay: departure does not rewrite history.
+      record.participants.delete(input.userId);
+      return toConversation(record);
+    },
+
+    async setParticipantRole(input: SetParticipantRoleInput): Promise<Conversation> {
+      const record = requireRecord(input.conversationId);
+      const participant = record.participants.get(input.userId);
+      if (!participant) {
+        throw new Error(
+          `memoryAdapter: user "${input.userId}" is not a participant of "${input.conversationId}".`,
+        );
+      }
+      participant.role = input.role;
+      return toConversation(record);
+    },
+
+    async updateConversation(input: UpdateConversationInput): Promise<Conversation> {
+      const record = requireRecord(input.conversationId);
+      record.name = input.name;
+      return toConversation(record);
     },
 
     async getConversation(conversationId: string): Promise<Conversation | null> {
@@ -189,10 +305,7 @@ export function memoryAdapter(): StorageAdapter {
     },
 
     async addMessage(input: AddMessageInput): Promise<Message> {
-      const record = conversations.get(input.conversationId);
-      if (!record) {
-        throw new Error(`memoryAdapter: unknown conversation "${input.conversationId}".`);
-      }
+      const record = requireRecord(input.conversationId);
 
       const seq = record.nextSeq++;
       record.lastActivityTick = ++activityTick;

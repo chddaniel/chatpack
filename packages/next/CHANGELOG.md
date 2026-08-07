@@ -1,5 +1,12 @@
 # @chatpack/next
 
+## 0.1.11
+
+### Patch Changes
+
+- Updated dependencies [1c92af5]
+  - @chatpack/core@0.7.0
+
 ## 0.1.10
 
 ### Patch Changes

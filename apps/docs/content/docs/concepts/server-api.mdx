@@ -18,16 +18,26 @@ enforces the same permissions.
 | Method                        | What it does                                                                                                                              |
 | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
 | `api.getOrCreateConversation` | Find or create the 1:1 conversation for a user pair                                                                                       |
-| `api.listConversations`       | List a user's conversations, most recent first                                                                                            |
+| `api.createGroupConversation` | Create a group with the caller as its first admin - **always a new one**, never find-or-create                                            |
+| `api.listConversations`       | List a user's conversations (DMs and groups), most recent first                                                                           |
 | `api.getConversation`         | Fetch one conversation (read-permission checked)                                                                                          |
+| `api.updateConversation`      | Rename a group, or clear its name with `null` (admin only)                                                                                |
+| `api.addParticipants`         | Add members to a group as `member` (admin only); idempotent                                                                               |
+| `api.removeParticipant`       | Remove a member, or leave by passing your own id (admin, or self); idempotent                                                             |
+| `api.setParticipantRole`      | Promote to `admin` or demote to `member` (admin only)                                                                                     |
 | `api.sendMessage`             | Send a text message, optionally quote-replying to another (write-permission checked; [message hooks](/docs/concepts/message-hooks) apply) |
 | `api.listMessages`            | Paginate history, newest-first                                                                                                            |
+| `api.searchMessages`          | Search the caller's conversations, relevance-ranked (throws `SEARCH_UNSUPPORTED` when storage has no search capability)                   |
 | `api.editMessage`             | Edit your own message                                                                                                                     |
 | `api.deleteMessage`           | Soft-delete your own message                                                                                                              |
 | `api.addReaction`             | React as `userId` (write-permission checked); idempotent                                                                                  |
 | `api.removeReaction`          | Remove one of your own reactions; idempotent                                                                                              |
 | `api.markRead`                | Update durable read-state (`lastReadMessageId`); monotonic - marking an older message is a silent no-op                                   |
 | `api.listMessagesAfter`       | Messages after a `seq` (SSE reconnect gap-fill)                                                                                           |
+
+The four group-management methods work on `type: "group"` conversations only;
+calling one with a DM's id throws `NOT_GROUP_CONVERSATION`. All four return the
+full updated conversation.
 
 ## Which API do I call?
 
@@ -37,8 +47,13 @@ from a browser or HTTP client:
 | I want to...                    | Server (`chat.api.*`)           | HTTP                                      |
 | ------------------------------- | ------------------------------- | ----------------------------------------- |
 | Start a chat with someone       | `getOrCreateConversation`       | `POST /conversations`                     |
+| Start a group                   | `createGroupConversation`       | `POST /conversations/group`               |
 | Show the inbox / sidebar        | `listConversations`             | `GET /conversations`                      |
 | Open one conversation           | `getConversation`               | `GET /conversations/:id`                  |
+| Rename a group                  | `updateConversation`            | `PATCH /conversations/:id`                |
+| Add members                     | `addParticipants`               | `POST /conversations/:id/participants`    |
+| Remove a member / leave         | `removeParticipant`             | `DELETE /conversations/:id/participants`  |
+| Promote or demote               | `setParticipantRole`            | `PATCH /conversations/:id/participants`   |
 | Load history / scroll back      | `listMessages`                  | `GET /conversations/:id/messages`         |
 | Search messages                 | `searchMessages`                | `GET /search/messages?q=...`              |
 | Send a message                  | `sendMessage`                   | `POST /conversations/:id/messages`        |
@@ -103,6 +118,52 @@ await chat.api.markRead({
   messageId: message.id,
 });
 ```
+
+Groups differ only in how they are created and how membership changes; messages,
+read-state, search and reactions are identical:
+
+```ts
+// alice becomes the group's first admin; bob and carol join as members.
+// Calling this twice creates TWO groups - store the id you get back.
+const group = await chat.api.createGroupConversation({
+  userId: "alice",
+  userIds: ["bob", "carol"],
+  name: "Launch",
+});
+group.type; // "group" - and pairKey is null, since only DMs have one
+
+// Membership writes are admin-only and idempotent; each returns the whole
+// conversation, so overwrite your cached copy rather than merging.
+await chat.api.addParticipants({
+  userId: "alice",
+  conversationId: group.id,
+  userIds: ["dave"],
+});
+await chat.api.setParticipantRole({
+  userId: "alice",
+  conversationId: group.id,
+  targetUserId: "bob",
+  role: "admin",
+});
+
+// Anyone can remove themselves - that is "leave", and needs no admin rights.
+await chat.api.removeParticipant({
+  userId: "dave",
+  conversationId: group.id,
+  targetUserId: "dave",
+});
+
+// Rename, or pass null to clear the title.
+await chat.api.updateConversation({
+  userId: "alice",
+  conversationId: group.id,
+  name: "Launch week",
+});
+```
+
+A group always keeps at least one admin: removing or demoting the last one
+throws `LAST_ADMIN_REMAINING` rather than silently promoting someone, because
+choosing a successor is a product decision Chatpack shouldn't make for you.
 
 First-party adapters use the same Unicode NFKC, case-insensitive,
 punctuation-separated token matching. All unique query terms must be present;

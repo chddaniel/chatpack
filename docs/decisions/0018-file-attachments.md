@@ -1,4 +1,4 @@
-# ADR 0017: Filepack-backed conversation attachments
+# ADR 0018: Filepack-backed conversation attachments
 
 - **Status:** accepted
 - **Date:** 2026-08-04

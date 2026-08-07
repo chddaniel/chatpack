@@ -334,6 +334,8 @@ describe("createPluginRuntime", () => {
         user: { id: "alice" },
         conversation: {
           id: "c1",
+          type: "direct",
+          name: null,
           pairKey: "alice:bob",
           createdAt: new Date(),
           metadata: {},
@@ -368,6 +370,8 @@ describe("createPluginRuntime", () => {
         user: { id: "alice" },
         conversation: {
           id: "c1",
+          type: "direct",
+          name: null,
           pairKey: "alice:bob",
           createdAt: new Date(),
           metadata: {},

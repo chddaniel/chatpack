@@ -46,18 +46,27 @@ Chatpack needs five tables (`chatpack_conversations`,
 `chatpack_message_search_tokens`, `chatpack_message_reactions`). Users are
 referenced **by id only** - there is no foreign key into your users table.
 
-> **⚠️ Upgrading an existing database?** Reactions and quote-replies added the
-> `chatpack_message_reactions` table plus a `reply_to_message_id` column on
-> `chatpack_messages`. **Re-run the migration before deploying the upgrade.**
-> Every statement is `IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS`, so re-running
-> the whole script is safe and preserves your data and `seq` counters.
+> **⚠️ Upgrading an existing database?** Group conversations added `type` and
+> `name` columns on `chatpack_conversations`, a `role` column on
+> `chatpack_conversation_participants`, made `pair_key` nullable, and **replaced
+> the total unique index on `pair_key` with a partial one**
+> (`WHERE pair_key IS NOT NULL`) so unlimited null-keyed groups can coexist.
+> Reactions and
+> quote-replies added the `chatpack_message_reactions` table plus a
+> `reply_to_message_id` column on `chatpack_messages`. **Re-run the migration
+> before deploying the upgrade.** Every statement is `IF NOT EXISTS` /
+> `ADD COLUMN IF NOT EXISTS`, so re-running the whole script is safe and
+> preserves your data and `seq` counters. Existing rows need no backfill of their
+> own: every pre-group conversation is a DM, which is what the `type` default
+> encodes, and the migration promotes their participants to `admin` to match how
+> DMs are created now.
 
 **Option A - your `drizzle-kit` flow (recommended).** Re-export the schema and
 generate a migration like any other table you own:
 
 ```ts
 // db/schema.ts
-export * from "@chatpack/adapter-drizzle"; // conversations, participants, messages, reactions
+export * from "@chatpack/adapter-drizzle"; // conversations, participants, messages, search tokens, reactions
 ```
 
 ```sh
@@ -135,9 +144,18 @@ adapter does them (details in
   `UPDATE ... SET last_seq = last_seq + 1 ... RETURNING`; Postgres row locking
   serializes concurrent sends. A unique index on `(conversation_id, seq)`
   enforces the invariant at the schema level too.
-- **One conversation per user pair** - creation uses
-  `ON CONFLICT (pair_key) DO NOTHING` + re-select against the unique
-  `pair_key` index, so concurrent find-or-create calls converge.
+- **One conversation per user pair** - DM creation uses
+  `ON CONFLICT (pair_key) WHERE pair_key IS NOT NULL DO NOTHING` + re-select
+  against the unique `pair_key` index, so concurrent find-or-create calls
+  converge. The `WHERE` clause is not optional: the index is partial, and
+  Postgres only matches a partial index in `ON CONFLICT` when the statement
+  repeats its predicate.
+- **Groups are always new, and created atomically** - the conversation row and
+  every participant row go in one transaction, so a group with no members can't
+  exist. Adding members uses
+  `ON CONFLICT (conversation_id, user_id) DO NOTHING` - never `DO UPDATE`, which
+  would demote an admin to `member` when someone re-adds them
+  ([ADR 0017](../../docs/decisions/0017-group-conversations.md)).
 - **Idempotent reactions** - the same shape:
   `ON CONFLICT (message_id, user_id, emoji) DO NOTHING` against a unique index
   on the triple, so five concurrent identical reactions collapse to one row.

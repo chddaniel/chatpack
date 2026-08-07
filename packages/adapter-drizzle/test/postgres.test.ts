@@ -889,6 +889,282 @@ describe("reactions and replies on Postgres (ADR 0013)", () => {
   });
 });
 
+describe("groups on Postgres (ADR 0017)", () => {
+  it("keeps pair_key unique for DMs while allowing many null-keyed groups", async () => {
+    const index = await pglite.query<{ indexdef: string }>(
+      `SELECT indexdef FROM pg_indexes
+       WHERE tablename = 'chatpack_conversations'
+         AND indexname = 'chatpack_conversations_pair_key_unique_idx'`,
+    );
+    // The index must be partial; a total one would reject the second group.
+    expect(index.rows[0]!.indexdef).toMatch(/WHERE \(pair_key IS NOT NULL\)/);
+
+    const first = await chat.api.createGroupConversation({ userId: "alice", userIds: ["bob"] });
+    const second = await chat.api.createGroupConversation({ userId: "alice", userIds: ["bob"] });
+    expect(first.id).not.toBe(second.id);
+
+    // ...and the DM path still converges, which is the ON CONFLICT clause that
+    // has to repeat the partial predicate to match this index at all.
+    const dm = await chat.api.getOrCreateConversation({ userId: "alice", otherUserId: "bob" });
+    const again = await chat.api.getOrCreateConversation({ userId: "bob", otherUserId: "alice" });
+    expect(again.id).toBe(dm.id);
+  });
+
+  it("persists type, name, and roles as real columns", async () => {
+    const group = await chat.api.createGroupConversation({
+      userId: "alice",
+      userIds: ["bob", "carol"],
+      name: "Standup",
+    });
+
+    const row = await pglite.query<{ type: string; name: string | null; pair_key: string | null }>(
+      `SELECT "type", "name", "pair_key" FROM "chatpack_conversations" WHERE "id" = $1`,
+      [group.id],
+    );
+    expect(row.rows[0]).toEqual({ type: "group", name: "Standup", pair_key: null });
+
+    const roles = await pglite.query<{ user_id: string; role: string }>(
+      `SELECT "user_id", "role" FROM "chatpack_conversation_participants"
+       WHERE "conversation_id" = $1 ORDER BY "user_id"`,
+      [group.id],
+    );
+    expect(roles.rows).toEqual([
+      { user_id: "alice", role: "admin" },
+      { user_id: "bob", role: "member" },
+      { user_id: "carol", role: "member" },
+    ]);
+  });
+
+  it("creates the conversation and its participants in one transaction", async () => {
+    // Force the *second* of the two inserts to fail, so the only thing that can
+    // keep the conversation row out of the table is a rollback.
+    await pglite.exec(`
+      ALTER TABLE "chatpack_conversation_participants"
+        ADD CONSTRAINT "no_bob" CHECK ("user_id" <> 'bob');
+    `);
+
+    await expect(
+      chat.api.createGroupConversation({ userId: "alice", userIds: ["bob"], name: "Doomed" }),
+    ).rejects.toThrow();
+
+    const rows = await pglite.query<{ count: number }>(
+      `SELECT count(*)::int AS count FROM "chatpack_conversations" WHERE "name" = 'Doomed'`,
+    );
+    expect(rows.rows[0]!.count).toBe(0);
+  });
+
+  it("ON CONFLICT DO NOTHING makes adding an existing member idempotent", async () => {
+    const group = await chat.api.createGroupConversation({ userId: "alice", userIds: ["bob"] });
+    await chat.api.setParticipantRole({
+      userId: "alice",
+      conversationId: group.id,
+      targetUserId: "bob",
+      role: "admin",
+    });
+
+    const updated = await chat.api.addParticipants({
+      userId: "alice",
+      conversationId: group.id,
+      userIds: ["bob", "carol"],
+    });
+
+    expect(updated.participants.map((p) => [p.userId, p.role])).toEqual([
+      ["alice", "admin"],
+      ["bob", "admin"], // the replayed insert did NOT reset bob to member
+      ["carol", "member"],
+    ]);
+    const rows = await pglite.query<{ count: number }>(
+      `SELECT count(*)::int AS count FROM "chatpack_conversation_participants"
+       WHERE "conversation_id" = $1 AND "user_id" = 'bob'`,
+      [group.id],
+    );
+    expect(rows.rows[0]!.count).toBe(1);
+  });
+
+  it("returns participants in a stable order across reads", async () => {
+    const group = await chat.api.createGroupConversation({
+      userId: "alice",
+      userIds: ["zoe", "bob", "carol"],
+    });
+    await chat.api.addParticipants({
+      userId: "alice",
+      conversationId: group.id,
+      userIds: ["dave"],
+    });
+
+    // Postgres gives no row order without ORDER BY, so rewriting a row is
+    // enough to shuffle an unordered read. Clients diff participants
+    // positionally, so the order has to survive it.
+    await pglite.query(
+      `UPDATE "chatpack_conversation_participants"
+       SET "last_read_message_id" = NULL WHERE "user_id" = 'bob'`,
+    );
+
+    const reads = await Promise.all([
+      chat.api.getConversation({ userId: "alice", conversationId: group.id }),
+      chat.api.getConversation({ userId: "alice", conversationId: group.id }),
+    ]);
+    for (const read of reads) {
+      // joined_at, then user_id: the creator's cohort alphabetically, then
+      // whoever joined later.
+      expect(read.participants.map((p) => p.userId)).toEqual([
+        "alice",
+        "bob",
+        "carol",
+        "zoe",
+        "dave",
+      ]);
+    }
+  });
+
+  it("removing a participant deletes the row and leaves their messages", async () => {
+    const group = await chat.api.createGroupConversation({
+      userId: "alice",
+      userIds: ["bob", "carol"],
+    });
+    await chat.api.sendMessage({ userId: "bob", conversationId: group.id, body: "before I left" });
+
+    await chat.api.removeParticipant({
+      userId: "alice",
+      conversationId: group.id,
+      targetUserId: "bob",
+    });
+
+    const participants = await pglite.query<{ user_id: string }>(
+      `SELECT "user_id" FROM "chatpack_conversation_participants"
+       WHERE "conversation_id" = $1 ORDER BY "user_id"`,
+      [group.id],
+    );
+    expect(participants.rows.map((r) => r.user_id)).toEqual(["alice", "carol"]);
+
+    const messages = await pglite.query<{ count: number }>(
+      `SELECT count(*)::int AS count FROM "chatpack_messages" WHERE "sender_id" = 'bob'`,
+    );
+    expect(messages.rows[0]!.count).toBe(1);
+
+    // The removed user can no longer read it.
+    await expect(
+      chat.api.getConversation({ userId: "bob", conversationId: group.id }),
+    ).rejects.toBeInstanceOf(ChatpackError);
+  });
+
+  it("counts unread per viewer across N participants", async () => {
+    const group = await chat.api.createGroupConversation({
+      userId: "alice",
+      userIds: ["bob", "carol"],
+    });
+    await chat.api.sendMessage({ userId: "alice", conversationId: group.id, body: "one" });
+    const second = await chat.api.sendMessage({
+      userId: "bob",
+      conversationId: group.id,
+      body: "two",
+    });
+    await chat.api.sendMessage({ userId: "carol", conversationId: group.id, body: "three" });
+
+    // Each viewer discounts only their own messages (countUnread is a real
+    // aggregate query, not a two-participant special case).
+    expect(
+      (await chat.api.getConversation({ userId: "alice", conversationId: group.id })).unreadCount,
+    ).toBe(2);
+    expect(
+      (await chat.api.getConversation({ userId: "bob", conversationId: group.id })).unreadCount,
+    ).toBe(2);
+
+    await chat.api.markRead({ userId: "bob", conversationId: group.id, messageId: second.id });
+    expect(
+      (await chat.api.getConversation({ userId: "bob", conversationId: group.id })).unreadCount,
+    ).toBe(1);
+  });
+
+  it("lists and searches groups for members only", async () => {
+    const group = await chat.api.createGroupConversation({
+      userId: "alice",
+      userIds: ["bob"],
+      name: "Launch",
+    });
+    await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: group.id,
+      body: "deployment tomorrow",
+    });
+
+    const listed = await chat.api.listConversations({ userId: "bob" });
+    expect(listed.conversations.map((c) => [c.id, c.type, c.name])).toEqual([
+      [group.id, "group", "Launch"],
+    ]);
+
+    expect(
+      (await chat.api.searchMessages({ userId: "bob", query: "deployment" })).messages,
+    ).toHaveLength(1);
+    expect(
+      (await chat.api.searchMessages({ userId: "carol", query: "deployment" })).messages,
+    ).toHaveLength(0);
+  });
+
+  it("renames through a real UPDATE, and clears with null", async () => {
+    const group = await chat.api.createGroupConversation({ userId: "alice", name: "Old" });
+
+    await chat.api.updateConversation({
+      userId: "alice",
+      conversationId: group.id,
+      name: "New",
+    });
+    let row = await pglite.query<{ name: string | null }>(
+      `SELECT "name" FROM "chatpack_conversations" WHERE "id" = $1`,
+      [group.id],
+    );
+    expect(row.rows[0]!.name).toBe("New");
+
+    await chat.api.updateConversation({ userId: "alice", conversationId: group.id, name: null });
+    row = await pglite.query<{ name: string | null }>(
+      `SELECT "name" FROM "chatpack_conversations" WHERE "id" = $1`,
+      [group.id],
+    );
+    expect(row.rows[0]!.name).toBeNull();
+  });
+
+  it("cascades participants away when the conversation row is deleted", async () => {
+    const group = await chat.api.createGroupConversation({
+      userId: "alice",
+      userIds: ["bob", "carol"],
+    });
+
+    await pglite.query(`DELETE FROM "chatpack_conversations" WHERE "id" = $1`, [group.id]);
+
+    const rows = await pglite.query<{ count: number }>(
+      `SELECT count(*)::int AS count FROM "chatpack_conversation_participants"
+       WHERE "conversation_id" = $1`,
+      [group.id],
+    );
+    expect(rows.rows[0]!.count).toBe(0);
+  });
+
+  it("refuses to strip the last admin, enforced against real rows", async () => {
+    const group = await chat.api.createGroupConversation({ userId: "alice", userIds: ["bob"] });
+
+    await expect(
+      chat.api.removeParticipant({
+        userId: "alice",
+        conversationId: group.id,
+        targetUserId: "alice",
+      }),
+    ).rejects.toMatchObject({ code: "LAST_ADMIN_REMAINING" });
+
+    await chat.api.setParticipantRole({
+      userId: "alice",
+      conversationId: group.id,
+      targetUserId: "bob",
+      role: "admin",
+    });
+    const left = await chat.api.removeParticipant({
+      userId: "alice",
+      conversationId: group.id,
+      targetUserId: "alice",
+    });
+    expect(left.participants.map((p) => p.userId)).toEqual(["bob"]);
+  });
+});
+
 describe("upgrading a pre-ADR-0013 database", () => {
   it("adds reply_to_message_id and the reactions table to an existing schema", async () => {
     const legacy = new PGlite();
@@ -931,22 +1207,31 @@ describe("upgrading a pre-ADR-0013 database", () => {
           ON "chatpack_messages" ("conversation_id", "seq");
       `);
 
-      // Existing data, written before the upgrade.
+      // Existing data, written before the upgrade - in raw SQL, because the
+      // current adapter writes columns this old schema does not have yet
+      // (`type`, `name`, `role`). Seeding through the adapter would only ever
+      // test the adapter against a schema it just migrated.
       const legacyDb = drizzle(legacy) as unknown as DrizzlePgDatabase;
-      const before = chatpack({ storage: drizzleAdapter(legacyDb), telemetry: false });
-      const conversation = await before.api.getOrCreateConversation({
-        userId: "alice",
-        otherUserId: "bob",
-      });
+      const conversationId = "legacy_conv_1";
+      await legacy.query(
+        `INSERT INTO "chatpack_conversations"
+           ("id", "pair_key", "created_at", "last_seq", "last_activity_at")
+         VALUES ($1, 'alice:bob', now(), 1, now())`,
+        [conversationId],
+      );
+      await legacy.query(
+        `INSERT INTO "chatpack_conversation_participants"
+           ("conversation_id", "user_id", "joined_at")
+         VALUES ($1, 'alice', now()), ($1, 'bob', now())`,
+        [conversationId],
+      );
       await legacy.query(
         `INSERT INTO "chatpack_messages"
            ("id", "conversation_id", "sender_id", "body", "role", "seq", "created_at")
          VALUES ('legacy_1', $1, 'alice', 'written before the upgrade', 'user', 1, now())`,
-        [conversation.id],
+        [conversationId],
       );
-      await legacy.query(`UPDATE "chatpack_conversations" SET "last_seq" = 1 WHERE "id" = $1`, [
-        conversation.id,
-      ]);
+      const conversation = { id: conversationId };
 
       // Re-running the migration is the whole upgrade: CREATE TABLE IF NOT
       // EXISTS no-ops on chatpack_messages, so the ALTER carries the column.
@@ -984,6 +1269,32 @@ describe("upgrading a pre-ADR-0013 database", () => {
       expect(
         (await upgraded.api.searchMessages({ userId: "alice", query: "written" })).messages,
       ).toHaveLength(1);
+
+      // ADR 0017: the pre-existing row is a DM, and the migration backfills both
+      // its participants to admin so the roles are not silently wrong.
+      const legacyConversation = await upgraded.api.getConversation({
+        userId: "alice",
+        conversationId: conversation.id,
+      });
+      expect(legacyConversation).toMatchObject({
+        type: "direct",
+        pairKey: "alice:bob",
+        name: null,
+      });
+      expect(legacyConversation.participants.map((p) => p.role)).toEqual(["admin", "admin"]);
+
+      // And groups work on the upgraded schema: the total unique index on
+      // pair_key was replaced by a partial one, so a null pair key is allowed.
+      const group = await upgraded.api.createGroupConversation({
+        userId: "alice",
+        userIds: ["bob"],
+        name: "Post-upgrade group",
+      });
+      expect(group).toMatchObject({ type: "group", pairKey: null, name: "Post-upgrade group" });
+      // DM uniqueness still holds after the index swap.
+      expect(
+        (await upgraded.api.getOrCreateConversation({ userId: "bob", otherUserId: "alice" })).id,
+      ).toBe(conversation.id);
 
       // And the migration stays idempotent when run a third time.
       await legacy.exec(migrationSql);

@@ -16,9 +16,9 @@ Two interfaces carry the whole design:
   way the SSE endpoint recovers missed messages on reconnect from storage via
   `Last-Event-ID`.
 
-The core engine (`@chatpack/core`) contains all domain logic: 1:1
-conversations, permission checks, validation. Adapters contain **no** domain
-logic - they only persist and retrieve.
+The core engine (`@chatpack/core`) contains all domain logic: 1:1 and group
+conversations, membership and role rules, permission checks, validation.
+Adapters contain **no** domain logic - they only persist and retrieve.
 
 ## Request flow
 
@@ -47,7 +47,8 @@ Every HTTP request follows the same path:
 2. **Your `auth` hook** resolves the current user. Auth runs before routing -
    an unauthenticated request to a wrong path still gets a `401`.
 3. **`chat.api.*`** applies domain rules: input validation, participant
-   checks, permission hooks, sender-only edit/delete.
+   checks, permission hooks, sender-only edit/delete, admin-only group
+   management.
 4. **The storage adapter** persists and retrieves. It never enforces
    permissions - core already did.
 5. For writes, the engine **publishes an event on the transport** after the
@@ -59,8 +60,8 @@ Every HTTP request follows the same path:
 | ---------------- | -------------------------------------------------------------------- | -------------------------------------------- |
 | Your app         | Users, sessions, frontend, LLM calls                                 | -                                            |
 | `chat.handler()` | HTTP parsing, auth hook, JSON envelopes, SSE                         | Domain rules                                 |
-| `chat.api.*`     | Validation, permissions, pair keys, telemetry counters               | Persistence mechanics                        |
-| `StorageAdapter` | Uniqueness on `pairKey`, `seq` assignment, pagination, unread counts | Permission checks                            |
+| `chat.api.*`     | Validation, permissions, pair keys, roles, telemetry counters        | Persistence mechanics                        |
+| `StorageAdapter` | Uniqueness on `pairKey`, `seq` assignment, pagination, unread counts | Permission checks, role rules                |
 | `Transport`      | Live event fan-out                                                   | Storage (durable events replay from storage) |
 
 ## One instance, everywhere
@@ -88,7 +89,7 @@ import { typing, presence, receipts } from "@chatpack/core/plugins";
 const chat = chatpack({
   storage: memoryAdapter(), // required - the only required option
   auth: async (req) => resolveUser(req), // required for HTTP; api.* takes explicit ids
-  permissions: { canRead, canWrite }, // default: participants only
+  permissions: { canRead, canWrite, canManage }, // defaults: participants; admins for canManage
   hooks: { beforeMessageSend, afterMessageMutation }, // default: none
   plugins: [typing(), presence(), receipts()], // default: none
   transport: inProcessTransport(), // default: in-process; redisTransport() for multi-node
@@ -110,7 +111,8 @@ const chat = chatpack({
       type: "AuthHook",
     },
     permissions: {
-      description: "canRead / canWrite overrides. Default: only the two participants.",
+      description:
+        "canRead / canWrite / canManage overrides. Defaults: participants may read and write; group admins may manage.",
       type: "PermissionHooks",
     },
     hooks: {
@@ -159,4 +161,5 @@ Non-obvious decisions are recorded as short ADRs in
 | 0014 | `afterMessageMutation` covers send, edit, and delete      |
 | 0015 | Message search is an optional adapter capability          |
 | 0016 | Client polling fallback; no incremental server route      |
-| 0017 | Filepack-backed, conversation-authorized attachments      |
+| 0017 | Groups are a `type` on Conversation, not a second entity  |
+| 0018 | Filepack-backed, conversation-authorized attachments      |

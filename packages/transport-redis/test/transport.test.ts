@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type {
   ChatEvent,
+  ConversationEvent,
   EphemeralEvent,
   MessageWithDetails,
   ReactionEvent,
@@ -296,6 +297,62 @@ describe("redisTransport - Date fields survive the wire", () => {
     // Same Date contract as a message event.
     expect(relayed.message.createdAt).toBeInstanceOf(Date);
     expect(relayed.message.createdAt.getTime()).toBe(createdAt.getTime());
+  });
+
+  // Conversation events are the fourth category (ADR 0017): durable-backed, but
+  // they carry a `conversation` where the others carry a `message`. Decoding
+  // them by the message path would drop every membership change on the floor.
+  it("relays membership events with their conversation snapshot intact", () => {
+    const { nodeA, nodeB } = twoNodes();
+    const onB: TransportEvent[] = [];
+    nodeB.subscribe((event) => onB.push(event));
+
+    const createdAt = new Date("2026-08-03T10:00:00.000Z");
+    const joinedAt = new Date("2026-08-03T10:05:00.000Z");
+    nodeA.publish({
+      type: "participant.added",
+      conversationId: "c1",
+      recipientIds: ["alice", "bob", "carol"],
+      actorId: "alice",
+      affectedUserIds: ["carol"],
+      conversation: {
+        id: "c1",
+        type: "group",
+        pairKey: null,
+        name: "Standup",
+        createdAt,
+        metadata: {},
+        participants: [
+          {
+            conversationId: "c1",
+            userId: "alice",
+            role: "admin",
+            joinedAt: createdAt,
+            lastReadMessageId: null,
+          },
+          {
+            conversationId: "c1",
+            userId: "carol",
+            role: "member",
+            joinedAt,
+            lastReadMessageId: null,
+          },
+        ],
+      },
+    });
+
+    expect(onB).toHaveLength(1);
+    const relayed = onB[0] as ConversationEvent;
+    expect(relayed.type).toBe("participant.added");
+    expect(relayed.actorId).toBe("alice");
+    expect(relayed.affectedUserIds).toEqual(["carol"]);
+    expect(relayed.conversation.name).toBe("Standup");
+    expect(relayed.conversation.participants.map((p) => p.role)).toEqual(["admin", "member"]);
+    // Same Date contract, on the conversation and on every participant.
+    expect(relayed.conversation.createdAt).toBeInstanceOf(Date);
+    expect(relayed.conversation.createdAt.getTime()).toBe(createdAt.getTime());
+    expect(relayed.conversation.participants[1]!.joinedAt).toBeInstanceOf(Date);
+    expect(relayed.conversation.participants[1]!.joinedAt.getTime()).toBe(joinedAt.getTime());
   });
 });
 

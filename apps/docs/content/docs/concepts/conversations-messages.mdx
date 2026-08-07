@@ -15,17 +15,30 @@ Four entities, all stored through the adapter:
       description: 'Server-generated opaque string (e.g. "conv_1"). Never construct ids yourself.',
       type: "string",
     },
+    type: {
+      description:
+        '"direct" for a 1:1 DM, "group" for a multi-participant conversation. The discriminator: branch on this, not on pairKey.',
+      type: "ConversationType",
+    },
     pairKey: {
       description:
-        'Deterministic key for the user pair - sorted ids joined with ":" (e.g. "alice:bob"). Internal to Chatpack.',
-      type: "string",
+        'Deterministic key for the user pair - sorted ids joined with ":" (e.g. "alice:bob"). Internal to Chatpack, and null for groups.',
+      type: "string | null",
+    },
+    name: {
+      description:
+        "Group title (trimmed, 1-200 chars), or null. Always null for DMs, and legitimately null for an untitled group.",
+      type: "string | null",
     },
     createdAt: {
       description: "Creation time. Date on the server, ISO string over HTTP.",
       type: "Date",
     },
     metadata: { description: "Arbitrary JSON object for your app. Default {}.", type: "Metadata" },
-    participants: { description: "Always exactly 2 in v0.", type: "Participant[]" },
+    participants: {
+      description: "Exactly 2 for a DM; 1 to 256 for a group. Order is stable across reads.",
+      type: "Participant[]",
+    },
     unreadCount: {
       description:
         "Viewer-relative, computed per request - present on every conversation the API returns (not stored).",
@@ -42,6 +55,11 @@ Four entities, all stored through the adapter:
     userId: {
       description: "Your user id - Chatpack never validates it against a users table.",
       type: "string",
+    },
+    role: {
+      description:
+        '"admin" (may manage the group) or "member". Always "member" in a DM - a DM has no hierarchy.',
+      type: "ParticipantRole",
     },
     joinedAt: { description: "When the participant joined.", type: "Date" },
     lastReadMessageId: {
@@ -121,6 +139,55 @@ calls. Duplicate DMs are prevented by data shape, not by racy
   `chat.api.getOrCreateConversation` with `{otherUserId}`. Never construct ids like `"alice-bob"` -
   the sorted pair key is internal to Chatpack.
 </Callout>
+
+## Groups: created, never found
+
+A group is the same `Conversation` entity with `type: "group"`, `pairKey:
+null`, and up to **256** participants. The pair-key logic doesn't apply to it,
+and that's the important difference in behavior:
+
+```ts
+// Two calls, two groups - even with identical membership and name.
+const standup = await chat.api.createGroupConversation({
+  userId: "alice",
+  userIds: ["bob", "carol"],
+  name: "Standup",
+});
+const lunch = await chat.api.createGroupConversation({
+  userId: "alice",
+  userIds: ["bob", "carol"],
+  name: "Lunch",
+});
+standup.id !== lunch.id; // true
+```
+
+There is no find-or-create for groups because there is nothing to find by: a
+"standup" and a "lunch" group with the same five people are two different
+places. **Store the id you get back** - calling the route twice from a retrying
+client creates two groups.
+
+Every other part of the model is unchanged. `seq` is per conversation and
+counts to N senders just as happily as to two; read-state and `unreadCount` are
+per participant; replies and reactions behave identically.
+
+Membership and titles change through four admin-only methods -
+`addParticipants`, `removeParticipant`, `setParticipantRole`,
+`updateConversation` - each of which returns the whole updated conversation.
+See [Server API](/docs/concepts/server-api) for the calls,
+[Permissions](/docs/concepts/permissions) for `canManage`, and
+[Real-time](/docs/realtime/sse) for the membership events.
+
+Two rules are worth internalizing because they're deliberate refusals:
+
+- **A group always keeps at least one admin.** Removing or demoting the last
+  one throws `LAST_ADMIN_REMAINING` (`409`) instead of auto-promoting someone -
+  picking a successor is your product's decision.
+- **Membership writes are idempotent.** Adding an existing member or removing
+  an absent one succeeds and changes nothing, so a retried request is safe. Re-
+  adding someone does **not** reset their role or read-state.
+
+Removing yourself is "leaving", needs no admin rights, and is the one
+membership operation any member can perform.
 
 ## Message ordering: `seq`, not timestamps
 
@@ -265,9 +332,11 @@ await chat.api.removeReaction({ userId: "bob", messageId: "msg_1", emoji: "👍"
 Both writes are **idempotent** - reacting twice with the same key leaves one
 reaction, un-reacting something that was never there is a silent no-op - and
 both return the message with its **complete** reaction set, so the response is
-what you write into your cache. `userIds` is earliest-first and safe to expose
-in full precisely because v0 is 1:1: at most two entries, so a client can
-render "you reacted" without a viewer-relative field or a second request.
+what you write into your cache. `userIds` is earliest-first and returned in
+full, so a client renders "you reacted" by checking for its own id - no
+viewer-relative field, no second request. In a large group that list is as long
+as the reactor count (up to the group's 256 members); truncate it for display if
+you show avatars, but don't ask for a paginated variant - there isn't one.
 
 A **reaction key is any non-empty string, trimmed, up to 32 characters** - not
 validated as a Unicode emoji. `":shipit:"`, `"custom_1234"`, and a workspace's
@@ -276,8 +345,9 @@ are escape hatches. Whitespace is trimmed so `"👍"` and `"👍 "` can't become
 two separate buckets. Violations are `400 INVALID_INPUT`.
 
 Reacting requires **write** permission, matching edit and delete - it's a
-mutation the other participant sees. The acting user id comes from the auth
-hook, never a request body, so a caller can only ever react as themselves.
+mutation everyone else in the conversation sees. The acting user id comes from
+the auth hook, never a request body, so a caller can only ever react as
+themselves.
 
 <Callout type="info">
   **A reaction is not a message.** It gets no `seq`, doesn't light the unread badge, doesn't advance

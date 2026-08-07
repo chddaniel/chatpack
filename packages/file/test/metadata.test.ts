@@ -75,6 +75,8 @@ describe("Filepack message metadata", () => {
       user: { id: "alice" },
       conversation: {
         id: "conversation-1",
+        type: "direct",
+        name: null,
         pairKey: "alice:bob",
         createdAt: new Date(),
         metadata: {},
@@ -101,6 +103,8 @@ describe("Filepack message metadata", () => {
         user: { id: "alice" },
         conversation: {
           id: "conversation-1",
+          type: "direct",
+          name: null,
           pairKey: "alice:bob",
           createdAt: new Date(),
           metadata: {},

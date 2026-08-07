@@ -1,7 +1,7 @@
 # @chatpack/core
 
-The Chatpack engine: 1:1 conversations, messages, permissions, durable
-read-state, and the `StorageAdapter` contract. Backend-only and
+The Chatpack engine: 1:1 and group conversations, messages, permissions,
+durable read-state, and the `StorageAdapter` contract. Backend-only and
 framework-agnostic - you bring auth, storage, and a frontend.
 
 > Part of [Chatpack](https://github.com/chddaniel/chatpack) - open-source chat
@@ -79,8 +79,13 @@ lives at [`examples/messenger`](../../examples/messenger).
 | Method                        | What it does                                                                                                        |
 | ----------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | `api.getOrCreateConversation` | Find or create the 1:1 conversation for a user pair                                                                 |
-| `api.listConversations`       | List a user's conversations, most recent first                                                                      |
+| `api.createGroupConversation` | Create a group with the caller as its first admin - **always a new one**, never find-or-create                      |
+| `api.listConversations`       | List a user's conversations (DMs and groups), most recent first                                                     |
 | `api.getConversation`         | Fetch one conversation (read-permission checked)                                                                    |
+| `api.updateConversation`      | Rename a group, or clear its name with `null` (admin only)                                                          |
+| `api.addParticipants`         | Add members to a group as `member` (admin only); idempotent                                                         |
+| `api.removeParticipant`       | Remove a member, or leave by passing your own id (admin, or self); idempotent                                       |
+| `api.setParticipantRole`      | Promote to `admin` or demote to `member` (admin only)                                                               |
 | `api.sendMessage`             | Send a text message, optionally quote-replying to another (write-permission checked)                                |
 | `api.listMessages`            | Paginate history, newest-first                                                                                      |
 | `api.searchMessages`          | Search participant conversation bodies case-insensitively, ranked and cursor-paginated; requires adapter capability |
@@ -91,10 +96,17 @@ lives at [`examples/messenger`](../../examples/messenger).
 | `api.markRead`                | Update durable read-state (`last_read`); monotonic - marking an older message is a silent no-op                     |
 | `api.listMessagesAfter`       | Messages after a `seq` (SSE reconnect gap-fill)                                                                     |
 
+The four group-management methods work on `type: "group"` conversations only -
+calling one with a DM's id throws `NOT_GROUP_CONVERSATION` - and each returns the
+full updated conversation. A group always keeps at least one admin: removing or
+demoting the last one throws `LAST_ADMIN_REMAINING` rather than silently
+promoting someone.
+
 Conversation-returning methods (`getOrCreateConversation`,
-`listConversations`, `getConversation`) return the conversation plus the
-calling user's **`unreadCount`** - messages newer than their read-state,
-excluding their own (soft-deleted messages count; they render as tombstones).
+`createGroupConversation`, `listConversations`, `getConversation`, and the four
+group-management methods) return the conversation plus the calling user's
+**`unreadCount`** - messages newer than their read-state, excluding their own
+(soft-deleted messages count; they render as tombstones).
 
 Message-returning methods all return `MessageWithDetails` - the stored
 `Message` plus two per-request decorations: `replyTo` (the quoted parent's
@@ -111,8 +123,13 @@ from a browser/client:
 | I want to...                    | Server (`chat.api.*`)           | HTTP                                      |
 | ------------------------------- | ------------------------------- | ----------------------------------------- |
 | Start a chat with someone       | `getOrCreateConversation`       | `POST /conversations`                     |
+| Start a group                   | `createGroupConversation`       | `POST /conversations/group`               |
 | Show the inbox / sidebar        | `listConversations`             | `GET /conversations`                      |
 | Open one conversation           | `getConversation`               | `GET /conversations/:id`                  |
+| Rename a group                  | `updateConversation`            | `PATCH /conversations/:id`                |
+| Add members                     | `addParticipants`               | `POST /conversations/:id/participants`    |
+| Remove a member / leave         | `removeParticipant`             | `DELETE /conversations/:id/participants`  |
+| Promote or demote               | `setParticipantRole`            | `PATCH /conversations/:id/participants`   |
 | Load history / scroll back      | `listMessages`                  | `GET /conversations/:id/messages`         |
 | Send a message                  | `sendMessage`                   | `POST /conversations/:id/messages`        |
 | Edit / delete my message        | `editMessage`, `deleteMessage`  | `PATCH` / `DELETE /messages/:id`          |
@@ -204,20 +221,25 @@ keyed by resource - `{ conversation }`, `{ message }`, `{ conversations, nextCur
 `chat.api.*` methods return the bare object (`Conversation`, `Message`, ...),
 so don't reuse HTTP-response types for `chat.api.*` calls or vice versa:
 
-| Method | Path                          | Request body / query                            | Response (200/201)                        |
-| ------ | ----------------------------- | ----------------------------------------------- | ----------------------------------------- |
-| POST   | `/conversations`              | `{ otherUserId, metadata? }`                    | `{ conversation }`                        |
-| GET    | `/conversations`              | `?limit=&cursor=`                               | `{ conversations, nextCursor }`           |
-| GET    | `/conversations/:id`          | -                                               | `{ conversation }`                        |
-| POST   | `/conversations/:id/messages` | `{ body, role?, replyToMessageId?, metadata? }` | `{ message }` (201)                       |
-| GET    | `/conversations/:id/messages` | `?limit=&cursor=`                               | `{ messages, nextCursor }` - newest first |
-| GET    | `/search/messages`            | `?q=&limit=&cursor=`                            | `{ messages, nextCursor }` - ranked       |
-| POST   | `/conversations/:id/read`     | `{ messageId }`                                 | `{ ok: true }`                            |
-| PATCH  | `/messages/:id`               | `{ body }`                                      | `{ message }`                             |
-| DELETE | `/messages/:id`               | -                                               | `{ message }` (soft-deleted)              |
-| POST   | `/messages/:id/reactions`     | `{ emoji }`                                     | `{ message }` (full reaction set)         |
-| DELETE | `/messages/:id/reactions`     | `{ emoji }`                                     | `{ message }` (full reaction set)         |
-| GET    | `/stream`                     | SSE; auto `Last-Event-ID` on reconnect          | `text/event-stream`                       |
+| Method | Path                              | Request body / query                            | Response (200/201)                        |
+| ------ | --------------------------------- | ----------------------------------------------- | ----------------------------------------- |
+| POST   | `/conversations`                  | `{ otherUserId, metadata? }`                    | `{ conversation }` - DM, find-or-create   |
+| POST   | `/conversations/group`            | `{ name?, userIds?, metadata? }`                | `{ conversation }` (201) - always new     |
+| GET    | `/conversations`                  | `?limit=&cursor=`                               | `{ conversations, nextCursor }`           |
+| GET    | `/conversations/:id`              | -                                               | `{ conversation }`                        |
+| PATCH  | `/conversations/:id`              | `{ name }` (string or `null`) - admin           | `{ conversation }`                        |
+| POST   | `/conversations/:id/participants` | `{ userIds }` - admin                           | `{ conversation }`                        |
+| DELETE | `/conversations/:id/participants` | `{ userId }` - admin, or self to leave          | `{ conversation }`                        |
+| PATCH  | `/conversations/:id/participants` | `{ userId, role }` - admin                      | `{ conversation }`                        |
+| POST   | `/conversations/:id/messages`     | `{ body, role?, replyToMessageId?, metadata? }` | `{ message }` (201)                       |
+| GET    | `/conversations/:id/messages`     | `?limit=&cursor=`                               | `{ messages, nextCursor }` - newest first |
+| GET    | `/search/messages`                | `?q=&limit=&cursor=`                            | `{ messages, nextCursor }` - ranked       |
+| POST   | `/conversations/:id/read`         | `{ messageId }`                                 | `{ ok: true }`                            |
+| PATCH  | `/messages/:id`                   | `{ body }`                                      | `{ message }`                             |
+| DELETE | `/messages/:id`                   | -                                               | `{ message }` (soft-deleted)              |
+| POST   | `/messages/:id/reactions`         | `{ emoji }`                                     | `{ message }` (full reaction set)         |
+| DELETE | `/messages/:id/reactions`         | `{ emoji }`                                     | `{ message }` (full reaction set)         |
+| GET    | `/stream`                         | SSE; auto `Last-Event-ID` on reconnect          | `text/event-stream`                       |
 
 Every conversation object in a response carries the **viewer's**
 `unreadCount` - messages newer than their read-state, excluding their own.
@@ -260,7 +282,23 @@ Opt-in plugins from `@chatpack/core/plugins` add routes of their own
   a parent leaves its replies intact, a reply to a reply is still one flat hop,
   and the pointer is immutable. These are quote-replies, **not threads**.
 - **A reaction is not a message:** no `seq`, no `unreadCount` bump, no
-  reordering of the conversation list.
+  reordering of the conversation list. The same is true of a membership change.
+- **`POST /conversations/group` always creates.** Every field is optional (a
+  bodyless POST makes an empty unnamed group), and calling it twice makes two
+  groups - there is no pair key to converge on, so store the id you get back.
+  `userIds` is de-duplicated and the caller is dropped from it; the caller
+  becomes the first `admin` and everyone else joins as `member`.
+- **The three group-only route shapes are admin-gated** (`canManage`, default
+  admin-only) except self-removal: `DELETE /conversations/:id/participants` with
+  your own id is "leave" and needs no admin rights. All three are idempotent -
+  adding an existing member or removing an absent one succeeds and changes
+  nothing - and all three return the whole conversation, so replace your cached
+  copy rather than merging.
+- **Group-only routes reject DMs** with `409 NOT_GROUP_CONVERSATION`, and any
+  write that would leave a group with no admins is refused with
+  `409 LAST_ADMIN_REMAINING` rather than auto-promoting someone. A group holds at
+  most 256 participants (`422 GROUP_LIMIT_EXCEEDED`) and a name is trimmed,
+  non-empty, at most 200 characters.
 
 Example - send a message (the text field is **`body`**):
 
@@ -291,16 +329,16 @@ The `auth` hook runs on every request. Errors are JSON -
 `{ "error": { "code", "message" } }` - with statuses mapped from the error
 code:
 
-| Status | Code(s)                                                    | When                                                |
-| ------ | ---------------------------------------------------------- | --------------------------------------------------- |
-| 401    | `UNAUTHENTICATED`                                          | `auth` returned `null` (or a non-`ChatpackUser`)    |
-| 400    | `INVALID_INPUT`                                            | bad body/query params                               |
-| 403    | `FORBIDDEN_READ`, `FORBIDDEN_WRITE`, `NOT_MESSAGE_SENDER`  | not allowed                                         |
-| 404    | `CONVERSATION_NOT_FOUND`, `MESSAGE_NOT_FOUND`, `NOT_FOUND` | missing resource/route                              |
-| 409    | `MESSAGE_DELETED`                                          | editing a deleted message                           |
-| 422    | `MESSAGE_REJECTED`                                         | a `beforeMessageSend` hook refused the message      |
-| 500    | `INTERNAL_ERROR`                                           | unexpected server error (opaque)                    |
-| 501    | `SEARCH_UNSUPPORTED`                                       | configured storage adapter has no search capability |
+| Status | Code(s)                                                                             | When                                                 |
+| ------ | ----------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| 401    | `UNAUTHENTICATED`                                                                   | `auth` returned `null` (or a non-`ChatpackUser`)     |
+| 400    | `INVALID_INPUT`                                                                     | bad body/query params                                |
+| 403    | `FORBIDDEN_READ`, `FORBIDDEN_WRITE`, `NOT_MESSAGE_SENDER`, `NOT_CONVERSATION_ADMIN` | not allowed                                          |
+| 404    | `CONVERSATION_NOT_FOUND`, `MESSAGE_NOT_FOUND`, `NOT_FOUND`                          | missing resource/route                               |
+| 409    | `MESSAGE_DELETED`, `NOT_GROUP_CONVERSATION`, `LAST_ADMIN_REMAINING`                 | the resource is in the wrong state for the operation |
+| 422    | `MESSAGE_REJECTED`, `GROUP_LIMIT_EXCEEDED`                                          | a hook refused the message / the group is too large  |
+| 500    | `INTERNAL_ERROR`                                                                    | unexpected server error (opaque)                     |
+| 501    | `SEARCH_UNSUPPORTED`                                                                | configured storage adapter has no search capability  |
 
 ## Message hooks
 
@@ -319,9 +357,10 @@ const chat = chatpack({
       return { body: censorProfanity(body) };
     },
     // AFTER persistence + broadcast: side-effects only. Filter by action.
-    afterMessageMutation: async ({ action, message, otherParticipantId }) => {
+    afterMessageMutation: async ({ action, message, recipientIds }) => {
       if (action !== "send") return;
-      await sendPushNotification(otherParticipantId, message);
+      // recipientIds is everyone but the sender: one id in a DM, N in a group.
+      await Promise.all(recipientIds.map((id) => sendPushNotification(id, message)));
     },
   },
 });
@@ -329,17 +368,22 @@ const chat = chatpack({
 
 A rejected message is never stored and never broadcast. Rewriting to an
 empty body is `INVALID_INPUT` (rejecting must be explicit). The mutation hook
-receives `send`, `edit`, and `delete`, plus the other participant's id. Hooks
-are in-process functions, not webhooks - no retries or delivery guarantees;
-keep heavy work in your own queue (design: `docs/decisions/0014`).
-`afterMessageSend` remains as a deprecated send/edit-only compatibility hook.
+receives `send`, `edit`, and `delete`, plus `recipientIds` - every participant
+except the sender (one id in a DM, up to 255 in a group, empty in a
+creator-only group). `otherParticipantId` is still populated but **deprecated**
+and removed at 1.0: it is single-valued, so in a group it resolves to the first
+non-sender and everyone else gets no push. Hooks are in-process functions, not
+webhooks - no retries or delivery guarantees; keep heavy work in your own queue
+(design: `docs/decisions/0014`). `afterMessageSend` remains as a deprecated
+send/edit-only compatibility hook.
 
 ## Real-time (SSE)
 
 `GET /stream` is a Server-Sent Events endpoint. Each connected user receives
-`message.created` / `message.updated` / `message.deleted` and
-`reaction.added` / `reaction.removed` events for their conversations only -
-participation is re-checked server-side per event.
+`message.created` / `message.updated` / `message.deleted`,
+`reaction.added` / `reaction.removed`, and the membership events
+`participant.added` / `participant.removed` / `conversation.updated` for their
+conversations only - participation is re-checked server-side per event.
 
 ```ts
 const events = new EventSource("/api/chat/stream");
@@ -354,6 +398,14 @@ events.addEventListener("reaction.added", (e) => {
   const { message, actorId, emoji } = JSON.parse((e as MessageEvent).data);
   // message.reactions is the COMPLETE set after the change - replace, don't merge.
 });
+
+events.addEventListener("participant.removed", (e) => {
+  const { actorId, affectedUserIds, conversation } = JSON.parse((e as MessageEvent).data);
+  // If affectedUserIds includes YOUR id, this is your removal - drop the
+  // conversation; it's the last event you'll get for it. Otherwise replace
+  // your cached copy with `conversation`.
+});
+// participant.added and conversation.updated carry the same shape.
 
 events.onerror = () => {
   if (events.readyState === EventSource.CLOSED) {
@@ -445,12 +497,16 @@ export const chat = chatpack({
 });
 ```
 
-| Event                                  | Published by | To whom                                                                   |
-| -------------------------------------- | ------------ | ------------------------------------------------------------------------- |
-| `typing.started` / `typing.stopped`    | `typing()`   | the other participant (never the typist)                                  |
-| `presence.online` / `presence.offline` | `presence()` | the user's conversation partners                                          |
-| `receipt.delivered`                    | `receipts()` | the message sender, when the recipient's live stream receives the message |
-| `receipt.read`                         | `receipts()` | the other participant, on mark-read                                       |
+| Event                                  | Published by | To whom                                                                 |
+| -------------------------------------- | ------------ | ----------------------------------------------------------------------- |
+| `typing.started` / `typing.stopped`    | `typing()`   | every other participant (never the typist)                              |
+| `presence.online` / `presence.offline` | `presence()` | everyone who shares a conversation with the user                        |
+| `receipt.delivered`                    | `receipts()` | the message sender, when a recipient's live stream receives the message |
+| `receipt.read`                         | `receipts()` | every other participant, on mark-read                                   |
+
+In a group these fan out to all N-1 others, so a receipt is a **per-user** ping,
+not "everyone has read it" - track which ids you've seen if you want an
+all-read state.
 
 These are **ephemeral**: never stored, never replayed on reconnect, and their
 SSE frames carry no `id:` field - so they can't disturb `Last-Event-ID`
@@ -469,11 +525,12 @@ You can write your own plugin - implement the exported `ChatpackPlugin`
 interface (extra routes via `handleRequest`, live signals via
 `publishEphemeral`, hooks for stream open/close, mark-read, and delivery).
 
-If you write your own `Transport`, note that `TransportEvent` now has **three**
-members: `ChatEvent` (messages), `ReactionEvent`, and `EphemeralEvent`. So
-`!isEphemeralEvent(event)` no longer means "this is a message" - use the
-exported `isMessageEvent(event)` when you need the `seq`/`id:` frame. Plugin
-`onEventDelivered` still only ever sees a `ChatEvent`.
+If you write your own `Transport`, note that `TransportEvent` now has **four**
+members: `ChatEvent` (messages), `ReactionEvent`, `ConversationEvent`
+(membership/rename), and `EphemeralEvent`. So `!isEphemeralEvent(event)` no
+longer means "this is a message" - use the exported `isMessageEvent(event)` when
+you need the `seq`/`id:` frame. Plugin `onEventDelivered` still only ever sees a
+`ChatEvent`.
 
 > **⚠️ Deployment reality check:** the default transport is **in-process** and
 > `memoryAdapter` is **per-process** - both assume one long-lived server
@@ -517,6 +574,11 @@ deliberately small:
 | Method                          | Contract                                                                 |
 | ------------------------------- | ------------------------------------------------------------------------ |
 | `getOrCreateDirectConversation` | Find or atomically create by `pairKey` - concurrent calls must converge  |
+| `createGroupConversation`       | Always creates: `type: "group"`, `pairKey: null`, creator as `admin`     |
+| `updateConversation`            | Update a group's mutable fields (today just `name`)                      |
+| `addParticipants`               | Idempotent add as `member`; return the **full** updated conversation     |
+| `removeParticipant`             | Idempotent remove; keep the departed user's messages                     |
+| `setParticipantRole`            | Change one participant's role; return the full conversation              |
 | `getConversation`               | Fetch by id (with participants), or `null`                               |
 | `listConversations`             | A user's conversations, most-recently-active first, cursor-paginated     |
 | `addMessage`                    | Persist + assign the next strictly-increasing `seq` for the conversation |
@@ -571,6 +633,21 @@ Contract rules that the type signatures alone don't tell you:
 - **Store `replyToMessageId` verbatim** - core already validated that it names
   a message in the same conversation. Adapters never see `replyTo` /
   `reactions`; those are core's per-request decorations.
+- **Group creation is atomic and never find-or-create.** The conversation row
+  and all its participant rows land in one transaction, and two groups with
+  identical membership are two distinct groups. `pairKey` is `null` for groups,
+  so its uniqueness index must be **partial**
+  (`... WHERE pair_key IS NOT NULL`) - and on Postgres an `ON CONFLICT` only
+  matches a partial index if the insert repeats the predicate.
+- **Membership writes are idempotent, and never `DO UPDATE`.** Re-adding an
+  existing participant is a no-op that must not reset their role or read-state
+  (`ON CONFLICT DO NOTHING`); removing a non-participant is a silent no-op.
+- **Participant order must be stable across reads** - clients diff positionally.
+  Order by join time (or any deterministic key), not by whatever the database
+  hands back.
+- **Adapters never enforce group policy.** The last-admin rule, the 256-member
+  cap, the DM-vs-group check, and `canManage` are all core's; by the time you're
+  called they've passed.
 
 The [in-memory adapter](../adapter-memory) is the reference implementation,
 and the [Drizzle/Postgres adapter](../adapter-drizzle) shows the contract on
