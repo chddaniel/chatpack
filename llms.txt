@@ -22,6 +22,18 @@ Packages (all on npm):
 | `@chatpack/cli`            | Safe project setup CLI (`chatpack init`)              |
 | `@chatpack/transport-redis`| Redis pub/sub transport - multi-node SSE fan-out       |
 
+Current releases include direct and group conversations, text messages,
+permissions, read state and unread counts, SSE with reconnect gap-fill, memory
+and Drizzle adapters, Redis event fan-out, typing/presence/receipts, reactions,
+quote-replies, participant-scoped search, `afterMessageMutation`, the browser
+client with React hooks and polling fallback, and `@chatpack/cli init`.
+
+File attachments are pending in
+[PR #7](https://github.com/chddaniel/chatpack/pull/7). `@chatpack/file` is not
+part of current `main` or the package list. True message threads, push
+notification providers, reusable React UI components, and multi-node presence
+have not shipped.
+
 ## Chatpack CLI
 
 Run `npx @chatpack/cli init` to inspect a project and generate a Chatpack
@@ -76,7 +88,7 @@ browser cookies and handles `Last-Event-ID` reconnects. One client instance
 owns one lazy stream and a small in-memory cache. The React adapter uses
 `useSyncExternalStore` and has no state-library dependency.
 
-Realtime events update the cache automatically - both the open thread's
+Realtime events update the cache automatically - both the open conversation's
 messages AND the conversations list, which reorders most-recently-active-first
 and bumps `unreadCount` exactly like a refetch would. A conversation created
 after the list loaded is fetched once and prepended. `conversations.markRead`
@@ -120,9 +132,10 @@ a "reconnecting…" hint still works, and clearing it on recovery. Treat
 `"polling"` as connected-but-degraded, not as an error.
 
 Each tick refetches the conversations list plus the **3 most recently used**
-threads - only surfaces already loaded, at the same `limit` you last requested.
-Ticks never overlap, a hidden tab does not poll, and a failed tick leaves the
-last good data on screen without touching `isPending`/`isRefetching`.
+conversations - only surfaces already loaded, at the same `limit` you last
+requested. Ticks never overlap, a hidden tab does not poll, and a failed tick
+leaves the last good data on screen without touching
+`isPending`/`isRefetching`.
 
 **Typing, presence and receipts do not work while polling.** They are ephemeral
 and never stored (nothing to poll for), so `useTyping()` stays `null`. Design

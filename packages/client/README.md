@@ -116,13 +116,14 @@ the same conversation.
 
 ## Realtime cache updates
 
-Durable events keep both the open thread and the conversations list current. On
-`message.created` the conversation moves to the front of the cached list and its
-`unreadCount` increments (never for the viewer's own messages); a conversation
-missing from the list is fetched once and prepended. `message.updated` and
-`message.deleted` do not reorder, matching server-side activity ordering, and
-redelivered events never double-count. `conversations.markRead` clears
-`unreadCount` locally when the marked message is the newest one cached.
+Durable events keep both the open conversation and the conversations list
+current. On `message.created` the conversation moves to the front of the cached
+list and its `unreadCount` increments (never for the viewer's own messages).
+A conversation missing from the list is fetched once and prepended.
+`message.updated` and `message.deleted` do not reorder, matching server-side
+activity ordering, and redelivered events never double-count.
+`conversations.markRead` clears `unreadCount` locally when the marked message is
+the newest one cached.
 
 `reaction.added` and `reaction.removed` replace one cached message's `reactions`
 and touch nothing else - no reorder, no unread bump, no change to the seq
@@ -158,13 +159,13 @@ attempts a stream. While polling, status is `"polling"` - connected-but-degraded
 not an error. `realtime.pollNow()` runs one refresh immediately.
 
 A tick refetches page one of the conversations list **and** the 3 most recently
-used threads, at the same `limit` you last requested, and only for surfaces
-already loaded. It re-reads the list routes rather than asking for messages after
-a `seq`, because only sending allocates a `seq` - an edit, a delete and every
-reaction change would be invisible to an incremental poll. Ticks never overlap, a
-hidden tab doesn't poll, a failed tick changes nothing and never touches
-`isPending`, and pages merge rather than replace, so an idle interval notifies no
-subscribers and causes no re-renders.
+used conversations. It uses the same `limit` as the last request and only
+refreshes loaded surfaces. It re-reads the list routes rather than asking for
+messages after a `seq`, because only sending allocates a `seq` - an edit, a
+delete and every reaction change would be invisible to an incremental poll.
+Ticks never overlap, a hidden tab doesn't poll, a failed tick changes nothing
+and never touches `isPending`, and pages merge rather than replace, so an idle
+interval notifies no subscribers and causes no re-renders.
 
 Typing, presence and receipts don't work while polling: they're ephemeral and
 never stored, so there is no endpoint to poll. `useTyping()` stays `null`.
