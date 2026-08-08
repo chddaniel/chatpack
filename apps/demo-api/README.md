@@ -68,6 +68,8 @@ empty backend assumes they wired it wrong:
   having to produce them by hand
 - **alice ↔ carol** — a second conversation, so list components have more than
   one row
+- **Design team** — a three-person group with Alice as admin, Bob and Carol as
+  members, and messages from all three participants
 
 Storage is in-memory: data resets on cold start and reseeds automatically.
 

@@ -122,9 +122,10 @@ export function chatFor(identity: DemoIdentity): ChatpackInstance {
  *
  * A UI block is useless against an empty backend - a vibe coder would see an
  * empty state and assume they wired it wrong. So the first time a sandbox is
- * touched we plant two conversations with a short scripted history, including
- * an edited message, a deleted one (tombstone), reactions, and a quote-reply
- * so blocks can be checked against the awkward states, not just the happy path.
+ * touched we plant two direct conversations and one group with short scripted
+ * histories, including an edited message, a deleted one (tombstone), reactions,
+ * and a quote-reply so blocks can be checked against awkward states, not just
+ * the happy path.
  */
 const seeded = new Set<string>();
 
@@ -142,6 +143,12 @@ const SEED_SCRIPT: readonly SeedLine[] = [
   { from: "carol", to: "alice", body: "quick one: did the deploy go through?" },
   { from: "alice", to: "carol", body: "it did - green across the board" },
 ];
+
+const GROUP_SEED_SCRIPT = [
+  { from: "alice", body: "morning team - final UI pass today" },
+  { from: "bob", body: "I'll check the conversation list and unread states" },
+  { from: "carol", body: "I'll polish the group header and member roles" },
+] as const;
 
 export async function ensureSeeded(identity: DemoIdentity): Promise<void> {
   const key = identity.sandbox;
@@ -202,6 +209,22 @@ export async function ensureSeeded(identity: DemoIdentity): Promise<void> {
         conversationId: aliceBob.id,
         body: "replying to your first message here",
         replyToMessageId: firstBobLine,
+      });
+    }
+
+    // Seed the group last so it is prominent in conversation lists. Alice is
+    // the creator/admin; Bob and Carol join as members, giving builders both
+    // participant roles and messages from every member to style against.
+    const designTeam = await chat.api.createGroupConversation({
+      userId: "alice",
+      userIds: ["bob", "carol"],
+      name: "Design team",
+    });
+    for (const line of GROUP_SEED_SCRIPT) {
+      await chat.api.sendMessage({
+        userId: line.from,
+        conversationId: designTeam.id,
+        body: line.body,
       });
     }
   } catch (error) {
