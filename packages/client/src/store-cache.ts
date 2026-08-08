@@ -29,10 +29,17 @@ export interface ChatpackCacheSnapshot {
   conversations: QueryState<ClientConversationPage>;
   conversationsById: Record<string, QueryState<ClientConversation>>;
   messagesByConversation: Record<string, QueryState<ClientMessagePage>>;
+  /** Search snapshots keyed by the server-normalized query text. */
+  messageSearches: Record<string, QueryState<ClientMessagePage>>;
 }
 
 function emptyQuery<T>(): QueryState<T> {
   return { data: null, error: null, isPending: true, isRefetching: false };
+}
+
+/** Cache key matching core's whitespace normalization without duplicating search semantics. */
+export function messageSearchKey(query: string): string {
+  return query.trim();
 }
 
 /** Options controlling how the cache interprets incoming events. */
@@ -64,6 +71,12 @@ export interface ChatpackCache extends ReadonlyStore<ChatpackCacheSnapshot> {
   setMessagesLoading(conversationId: string): void;
   setMessages(
     conversationId: string,
+    result: ChatClientResult<ClientMessagePage>,
+    append: boolean,
+  ): void;
+  setMessageSearchLoading(query: string): void;
+  setMessageSearch(
+    query: string,
     result: ChatClientResult<ClientMessagePage>,
     append: boolean,
   ): void;
@@ -175,6 +188,15 @@ function mergeMessages(current: ClientMessage[], incoming: ClientMessage[]): Cli
   let merged = current;
   for (const message of incoming) merged = replaceMessage(merged, message);
   return merged;
+}
+
+/** Append another ranked search page without re-sorting the server-owned order. */
+function appendSearchMessages(
+  current: ClientMessage[],
+  incoming: ClientMessage[],
+): ClientMessage[] {
+  const seen = new Set(current.map((message) => message.id));
+  return [...current, ...incoming.filter((message) => !seen.has(message.id))];
 }
 
 function sameReactions(
@@ -379,6 +401,7 @@ export function createChatpackCache(options: ChatpackCacheOptions = {}): Chatpac
     conversations: emptyQuery<ClientConversationPage>(),
     conversationsById: {},
     messagesByConversation: {},
+    messageSearches: {},
   });
   /**
    * Highest message seq seen per conversation, from REST pages and stream
@@ -656,6 +679,54 @@ export function createChatpackCache(options: ChatpackCacheOptions = {}): Chatpac
         return {
           ...current,
           messagesByConversation: { ...current.messagesByConversation, [conversationId]: query },
+        };
+      });
+    },
+    setMessageSearchLoading(query) {
+      const key = messageSearchKey(query);
+      store.update((current) => ({
+        ...current,
+        messageSearches: {
+          ...current.messageSearches,
+          [key]: {
+            ...(current.messageSearches[key] ?? emptyQuery<ClientMessagePage>()),
+            isPending: current.messageSearches[key]?.data == null,
+            isRefetching: current.messageSearches[key]?.data != null,
+            error: null,
+          },
+        },
+      }));
+    },
+    setMessageSearch(query, result, append) {
+      const key = messageSearchKey(query);
+      store.update((current) => {
+        const previous = current.messageSearches[key];
+        const search =
+          result.error !== null
+            ? {
+                data: previous?.data ?? null,
+                error: result.error,
+                isPending: false,
+                isRefetching: false,
+              }
+            : {
+                data:
+                  append && previous?.data != null
+                    ? {
+                        messages: appendSearchMessages(
+                          previous.data.messages,
+                          result.data.messages,
+                        ),
+                        nextCursor: result.data.nextCursor,
+                      }
+                    : result.data,
+                error: null,
+                isPending: false,
+                isRefetching: false,
+              };
+        return {
+          ...current,
+          messageSearches: { ...current.messageSearches, [key]: search },
         };
       });
     },

@@ -48,6 +48,12 @@ Chatpack does not own authentication. The generated resolver returns `null`
 until the application connects its own session or token verification. A
 confirmed resolver must accept a Web-standard `Request` and expose a user id.
 
+With `--client`, Next.js projects import the React client entrypoint. Other
+frameworks import the framework-agnostic client. The generated client supports
+direct and group conversations, message search, reactions, and automatic
+polling when a realtime connection is unavailable. No polling option is needed
+for the default fallback.
+
 Memory storage is suitable for demos and tests only. Drizzle setup generates
 the Chatpack schema export, but migration remains under the application's
 normal Drizzle workflow.
@@ -60,4 +66,5 @@ generation, and diagnostics are deferred.
 
 ## License
 
-[MIT](../../LICENSE)
+[MIT](./LICENSE). The bundled TypeScript compiler is distributed under the
+[Apache License 2.0](./LICENSE.typescript).

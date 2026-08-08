@@ -385,6 +385,59 @@ describe("cache loading flags", () => {
   });
 });
 
+describe("message search cache", () => {
+  it("keeps queries isolated and appends ranked pages without re-sorting", () => {
+    const cache = createChatpackCache();
+    const first = makeMessage({ id: "ranked-first", seq: 1, body: "needle needle" });
+    const second = makeMessage({ id: "ranked-second", seq: 99, body: "needle" });
+    const other = makeMessage({ id: "other", seq: 50, body: "different" });
+
+    cache.setMessageSearch(
+      " needle ",
+      { data: { messages: [first], nextCursor: "page-2" }, error: null },
+      false,
+    );
+    cache.setMessageSearch(
+      "needle",
+      { data: { messages: [second], nextCursor: null }, error: null },
+      true,
+    );
+    cache.setMessageSearch(
+      "different",
+      { data: { messages: [other], nextCursor: null }, error: null },
+      false,
+    );
+
+    const searches = cache.getSnapshot().messageSearches;
+    expect(searches["needle"]?.data?.messages.map((message) => message.id)).toEqual([
+      "ranked-first",
+      "ranked-second",
+    ]);
+    expect(searches["different"]?.data?.messages.map((message) => message.id)).toEqual(["other"]);
+  });
+
+  it("preserves previous data when a refetch fails", () => {
+    const cache = createChatpackCache();
+    cache.setMessageSearch("needle", { data: page, error: null }, false);
+    cache.setMessageSearchLoading("needle");
+    cache.setMessageSearch(
+      "needle",
+      {
+        data: null,
+        error: { code: "SEARCH_UNSUPPORTED", message: "unsupported", status: 501 },
+      },
+      false,
+    );
+
+    expect(cache.getSnapshot().messageSearches["needle"]).toMatchObject({
+      data: page,
+      error: { code: "SEARCH_UNSUPPORTED", status: 501 },
+      isPending: false,
+      isRefetching: false,
+    });
+  });
+});
+
 describe("polled page merges (ADR 0016)", () => {
   const threadOf = (cache: ChatpackCache) =>
     cache.getSnapshot().messagesByConversation["c1"]!.data!.messages;

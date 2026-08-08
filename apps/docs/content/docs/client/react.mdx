@@ -35,10 +35,22 @@ export function Messages({ conversationId }: { conversationId: string }) {
 }
 ```
 
-Available hooks are `useConversations`, `useConversation`, `useMessages`, and
-`useRealtimeStatus`. `useTyping`, `usePresence`, and `useReceipts` read the
+Available hooks are `useConversations`, `useConversation`, `useMessages`,
+`useMessageSearch`, and `useRealtimeStatus`. `useTyping`, `usePresence`, and `useReceipts` read the
 matching client plugin state. Hooks use React's `useSyncExternalStore`, so
 React 18 and React 19 share the same cache and stream behavior.
+
+`useMessageSearch({ query, limit })` searches every conversation visible to the
+signed-in participant. Results are case-insensitive, whole-token, AND-matched,
+relevance-ranked, and cursor-paginated. An empty query stays idle without a
+request. Unsupported adapters return `SEARCH_UNSUPPORTED`; successful results
+are snapshots, so call `refetch()` after message changes instead of expecting
+SSE or polling to re-rank them.
+
+```tsx
+const search = chatClient.useMessageSearch({ query: "release ready", limit: 20 });
+if (search.error?.code === "SEARCH_UNSUPPORTED") return null;
+```
 
 `useConversations` opens the stream and re-renders on incoming messages: the
 list reorders most-recently-active-first and unread badges update on their own,
