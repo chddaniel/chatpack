@@ -14,6 +14,8 @@ export {
   pairKeyFor,
   MAX_CONVERSATION_NAME_LENGTH,
   MAX_GROUP_PARTICIPANTS,
+  MAX_INVITES_PER_CONVERSATION,
+  MAX_JOIN_REQUEST_MESSAGE_LENGTH,
   type ChatpackApi,
   type ChatpackInstance,
   type GetOrCreateConversationInput,
@@ -36,6 +38,17 @@ export {
   type RemoveParticipantApiInput,
   type SetParticipantRoleApiInput,
   type UpdateConversationApiInput,
+  // Invite links + join requests (docs/decisions/0019)
+  type CreateInviteApiInput,
+  type ListInvitesApiInput,
+  type RevokeInviteApiInput,
+  type InviteCodeApiInput,
+  type AcceptInviteApiInput,
+  type AcceptInviteResult,
+  type RequestToJoinApiInput,
+  type ListJoinRequestsApiInput,
+  type ResolveJoinRequestApiInput,
+  type ResolveJoinRequestApiResult,
 } from "./chatpack";
 
 // Configuration
@@ -67,6 +80,11 @@ export type {
   Metadata,
   Reaction,
   ReactionSummary,
+  // Invite links + join requests (docs/decisions/0019)
+  ConversationInvite,
+  InvitePreview,
+  JoinRequest,
+  JoinRequestStatus,
 } from "./types";
 
 // Storage adapter contract (for adapter authors)
@@ -92,6 +110,14 @@ export type {
   RemoveParticipantInput,
   SetParticipantRoleInput,
   UpdateConversationInput,
+  // Invite links + join requests (docs/decisions/0019) - optional capability
+  InviteStorage,
+  CreateInviteInput,
+  DeleteInviteInput,
+  CreateJoinRequestInput,
+  GetJoinRequestInput,
+  ListJoinRequestsInput,
+  ResolveJoinRequestInput,
 } from "./storage";
 
 // Canonical message-search semantics for first-party adapters.

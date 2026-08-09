@@ -3,6 +3,7 @@
 - **Status:** accepted
 - **Date:** 2026-08-05
 - **Milestone:** v1.next (groups)
+- Amended: 2026-08-08 (invites landed - see the note under §3)
 
 ## Context
 
@@ -139,6 +140,17 @@ participant is a no-op. Replayed membership requests must be harmless.
 Bounds: a group holds at most 256 participants (`MAX_GROUP_PARTICIPANTS`),
 enforced in core so every adapter agrees. A group may exist with only its
 creator - you create, then invite.
+
+> **Amendment (2026-08-08, invites shipped - ADR 0019).** "You create, then
+> invite" was loose language when this ADR was written: the only way to grow a
+> group was `addParticipants`, which needs the other person's user id up front.
+> [ADR 0019](./0019-invites-and-join-requests.md) adds the two directions that
+> don't - invite links (a mintable code someone redeems) and join requests (an
+> outsider asks, an admin resolves) - as an **optional** `invites` storage
+> capability, gated by a fourth permission hook, `canInvite`. Membership
+> mechanics, roles, and `MAX_GROUP_PARTICIPANTS` are unchanged; redeeming an
+> invite publishes the same `participant.added` event described in §4, so no
+> new transport category and no subscriber changes.
 
 ### 4. Membership changes are a fourth transport category, with no `id:` line
 

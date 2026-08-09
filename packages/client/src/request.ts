@@ -69,6 +69,12 @@ const serverErrorCodes = {
   NOT_GROUP_CONVERSATION: true,
   LAST_ADMIN_REMAINING: true,
   GROUP_LIMIT_EXCEEDED: true,
+  INVITES_UNSUPPORTED: true,
+  INVITE_NOT_FOUND: true,
+  INVITE_EXPIRED: true,
+  INVITE_LIMIT_EXCEEDED: true,
+  JOIN_REQUEST_NOT_FOUND: true,
+  ALREADY_PARTICIPANT: true,
   INVALID_INPUT: true,
 } satisfies Record<ChatpackErrorCode, true>;
 

@@ -26,6 +26,14 @@
  * | DELETE | `/messages/:id`                   | soft-delete my message       |
  * | POST   | `/messages/:id/reactions`         | add my reaction              |
  * | DELETE | `/messages/:id/reactions`         | remove my reaction           |
+ * | POST   | `/conversations/:id/invites`      | mint an invite link          |
+ * | GET    | `/conversations/:id/invites`      | list a group's invites       |
+ * | DELETE | `/conversations/:id/invites/:code` | revoke an invite            |
+ * | GET    | `/invites/:code`                  | preview what a link admits to |
+ * | POST   | `/invites/:code/accept`           | redeem an invite link        |
+ * | POST   | `/conversations/:id/join-requests` | ask to join a group         |
+ * | GET    | `/conversations/:id/join-requests?status&limit` | moderation queue |
+ * | PATCH  | `/conversations/:id/join-requests` | approve/deny a request      |
  * | GET    | `/stream`                         | SSE: live events for me      |
  *
  * Plugins (`chatpack({ plugins: [...] })`) may add routes of their own; they
@@ -98,6 +106,14 @@ const STATUS_BY_CODE: Record<ChatpackErrorCode, number> = {
   NOT_GROUP_CONVERSATION: 409,
   LAST_ADMIN_REMAINING: 409,
   GROUP_LIMIT_EXCEEDED: 422,
+  INVITES_UNSUPPORTED: 501,
+  INVITE_NOT_FOUND: 404,
+  // 410 Gone, not 404: the link existed and is permanently unusable, which is
+  // what tells a client to ask for a new one rather than retry (ADR 0019 §9).
+  INVITE_EXPIRED: 410,
+  INVITE_LIMIT_EXCEEDED: 422,
+  JOIN_REQUEST_NOT_FOUND: 404,
+  ALREADY_PARTICIPANT: 409,
 };
 
 function json(status: number, payload: unknown): Response {
@@ -187,6 +203,22 @@ function optionalMetadata(value: unknown): Record<string, unknown> | undefined {
     throw new ChatpackError("INVALID_INPUT", `"metadata" must be a JSON object.`);
   }
   return value as Record<string, unknown>;
+}
+
+function optionalNumber(value: unknown, field: string): number | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new ChatpackError("INVALID_INPUT", `"${field}" must be a number.`);
+  }
+  return value;
+}
+
+function optionalBoolean(value: unknown, field: string): boolean | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "boolean") {
+    throw new ChatpackError("INVALID_INPUT", `"${field}" must be a boolean.`);
+  }
+  return value;
 }
 
 function parseLimit(params: URLSearchParams): number | undefined {
@@ -711,6 +743,155 @@ export function createHandler(
           emoji: requiredString(body["emoji"], "emoji"),
         });
         return json(200, { message });
+      }
+
+      // POST /conversations/:id/invites - mint an invite link (ADR 0019)
+      if (
+        method === "POST" &&
+        segments.length === 3 &&
+        segments[0] === "conversations" &&
+        segments[2] === "invites"
+      ) {
+        // Every field is optional - an admin wanting "a link, no limits" should
+        // be able to POST with no body at all.
+        const body = await readOptionalJsonBody(request);
+        const expiresInSeconds = optionalNumber(body["expiresInSeconds"], "expiresInSeconds");
+        const maxUses = optionalNumber(body["maxUses"], "maxUses");
+        const requiresApproval = optionalBoolean(body["requiresApproval"], "requiresApproval");
+        const metadata = optionalMetadata(body["metadata"]);
+        const invite = await api.createInvite({
+          userId,
+          conversationId: segments[1]!,
+          ...(expiresInSeconds !== undefined ? { expiresInSeconds } : {}),
+          ...(maxUses !== undefined ? { maxUses } : {}),
+          ...(requiresApproval !== undefined ? { requiresApproval } : {}),
+          ...(metadata !== undefined ? { metadata } : {}),
+        });
+        return json(201, { invite });
+      }
+
+      // GET /conversations/:id/invites - list a group's invites (ADR 0019)
+      if (
+        method === "GET" &&
+        segments.length === 3 &&
+        segments[0] === "conversations" &&
+        segments[2] === "invites"
+      ) {
+        const invites = await api.listInvites({ userId, conversationId: segments[1]! });
+        return json(200, { invites });
+      }
+
+      // DELETE /conversations/:id/invites/:code - revoke (ADR 0019)
+      //
+      // The code sits in the path here, unlike a reaction emoji: invite codes
+      // are base64url, so there is nothing to percent-encode or mangle.
+      if (
+        method === "DELETE" &&
+        segments.length === 4 &&
+        segments[0] === "conversations" &&
+        segments[2] === "invites"
+      ) {
+        await api.revokeInvite({
+          userId,
+          conversationId: segments[1]!,
+          code: segments[3]!,
+        });
+        return json(200, { ok: true });
+      }
+
+      // POST /invites/:code/accept - redeem a link (ADR 0019). Matched before
+      // GET /invites/:code by segment count, so "accept" is never read as a code.
+      if (
+        method === "POST" &&
+        segments.length === 3 &&
+        segments[0] === "invites" &&
+        segments[2] === "accept"
+      ) {
+        const body = await readOptionalJsonBody(request);
+        const message = optionalString(body["message"], "message");
+        const result = await api.acceptInvite({
+          userId,
+          code: segments[1]!,
+          ...(message !== undefined ? { message } : {}),
+        });
+        return json(200, result);
+      }
+
+      // GET /invites/:code - preview what a link admits you to (ADR 0019).
+      // Authenticated like every route, but the only one a non-member may call -
+      // so the payload deliberately carries a participant count, never ids.
+      if (method === "GET" && segments.length === 2 && segments[0] === "invites") {
+        const invite = await api.getInvitePreview({ userId, code: segments[1]! });
+        return json(200, { invite });
+      }
+
+      // POST /conversations/:id/join-requests - ask to join (ADR 0019)
+      if (
+        method === "POST" &&
+        segments.length === 3 &&
+        segments[0] === "conversations" &&
+        segments[2] === "join-requests"
+      ) {
+        const body = await readOptionalJsonBody(request);
+        const message = optionalString(body["message"], "message");
+        const joinRequest = await api.requestToJoin({
+          userId,
+          conversationId: segments[1]!,
+          ...(message !== undefined ? { message } : {}),
+        });
+        return json(201, { joinRequest });
+      }
+
+      // GET /conversations/:id/join-requests - the moderation queue (ADR 0019)
+      if (
+        method === "GET" &&
+        segments.length === 3 &&
+        segments[0] === "conversations" &&
+        segments[2] === "join-requests"
+      ) {
+        const status = url.searchParams.get("status") ?? undefined;
+        if (
+          status !== undefined &&
+          status !== "pending" &&
+          status !== "approved" &&
+          status !== "denied"
+        ) {
+          throw new ChatpackError(
+            "INVALID_INPUT",
+            `"status" must be "pending", "approved" or "denied".`,
+          );
+        }
+        const limit = parseLimit(url.searchParams);
+        const joinRequests = await api.listJoinRequests({
+          userId,
+          conversationId: segments[1]!,
+          ...(status !== undefined ? { status } : {}),
+          ...(limit !== undefined ? { limit } : {}),
+        });
+        return json(200, { joinRequests });
+      }
+
+      // PATCH /conversations/:id/join-requests - approve or deny (ADR 0019).
+      // Addressed by `userId`, not the request's own id: one pending request per
+      // user per group, and an admin acting on the queue has the user in hand.
+      if (
+        method === "PATCH" &&
+        segments.length === 3 &&
+        segments[0] === "conversations" &&
+        segments[2] === "join-requests"
+      ) {
+        const body = await readJsonBody(request);
+        const decision = requiredString(body["decision"], "decision");
+        if (decision !== "approve" && decision !== "deny") {
+          throw new ChatpackError("INVALID_INPUT", `"decision" must be "approve" or "deny".`);
+        }
+        const result = await api.resolveJoinRequest({
+          userId,
+          conversationId: segments[1]!,
+          targetUserId: requiredString(body["userId"], "userId"),
+          decision,
+        });
+        return json(200, result);
       }
 
       // PATCH /messages/:id - edit

@@ -41,9 +41,10 @@ export const chat = chatpack({
 
 ## Creating the tables
 
-Chatpack needs five tables (`chatpack_conversations`,
+Chatpack needs seven tables (`chatpack_conversations`,
 `chatpack_conversation_participants`, `chatpack_messages`,
-`chatpack_message_search_tokens`, `chatpack_message_reactions`). Users are
+`chatpack_message_search_tokens`, `chatpack_message_reactions`,
+`chatpack_conversation_invites`, `chatpack_join_requests`). Users are
 referenced **by id only** - there is no foreign key into your users table.
 
 > **⚠️ Upgrading an existing database?** Group conversations added `type` and
@@ -60,13 +61,18 @@ referenced **by id only** - there is no foreign key into your users table.
 > own: every pre-group conversation is a DM, which is what the `type` default
 > encodes, and the migration promotes their participants to `admin` to match how
 > DMs are created now.
+>
+> Invite links and join requests are gentler: `chatpack_conversation_invites` and
+> `chatpack_join_requests` are **pure table additions** - no column changes and no
+> index swaps on existing tables - so that part is safe to apply before deploying
+> the new code.
 
 **Option A - your `drizzle-kit` flow (recommended).** Re-export the schema and
 generate a migration like any other table you own:
 
 ```ts
 // db/schema.ts
-export * from "@chatpack/adapter-drizzle"; // conversations, participants, messages, search tokens, reactions
+export * from "@chatpack/adapter-drizzle"; // conversations, participants, messages, search tokens, reactions, invites, join requests
 ```
 
 ```sh
@@ -162,6 +168,14 @@ adapter does them (details in
   Reacting deliberately issues **no** `UPDATE` on the conversation, so it can't
   advance `last_seq` / `last_activity_at` or reorder the conversation list
   ([ADR 0013](../../docs/decisions/0013-reactions-and-replies.md)).
+- **A use cap that actually caps** - `consumeInvite` checks usability and
+  increments in one statement
+  (`UPDATE ... SET uses = uses + 1 WHERE code = $1 AND (max_uses IS NULL OR uses < max_uses) AND (expires_at IS NULL OR expires_at > now()) RETURNING *`),
+  so five simultaneous redemptions of a `maxUses: 1` link admit exactly one
+  person. Zero rows back means "spent", which core turns into `410`. Join
+  requests are the one place that **does** use `DO UPDATE` - a re-ask has to
+  replace a stale denial with a fresh `pending` row
+  ([ADR 0019](../../docs/decisions/0019-invites-and-join-requests.md)).
 
 ## Testing
 

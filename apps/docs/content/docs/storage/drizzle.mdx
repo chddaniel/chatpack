@@ -33,9 +33,10 @@ export const chat = chatpack({
 
 ## Creating the tables
 
-Chatpack needs five tables (`chatpack_conversations`,
+Chatpack needs seven tables (`chatpack_conversations`,
 `chatpack_conversation_participants`, `chatpack_messages`,
-`chatpack_message_search_tokens`, `chatpack_message_reactions`). Users are
+`chatpack_message_search_tokens`, `chatpack_message_reactions`,
+`chatpack_conversation_invites`, `chatpack_join_requests`). Users are
 referenced **by id only** - there is no foreign key into your users table.
 
 <Callout type="warn">
@@ -45,6 +46,12 @@ referenced **by id only** - there is no foreign key into your users table.
   index; earlier releases added `chatpack_message_reactions` and `reply_to_message_id`. Then run
   `backfillMessageSearchTokens` once for existing messages. Every statement is idempotent, so
   re-running the whole script is safe and preserves your data and `seq` counters.
+</Callout>
+
+<Callout type="info">
+  The invite migration is gentler than the group one: `chatpack_conversation_invites` and
+  `chatpack_join_requests` are **pure table additions** - no column changes, no index swaps on
+  existing tables - so that part is safe to apply before deploying the new code.
 </Callout>
 
 <Callout type="info">
@@ -63,7 +70,7 @@ referenced **by id only** - there is no foreign key into your users table.
 Re-export the schema and generate a migration like any other table you own:
 
 ```ts title="db/schema.ts"
-export * from "@chatpack/adapter-drizzle"; // conversations, participants, messages, reactions
+export * from "@chatpack/adapter-drizzle"; // conversations, participants, messages, reactions, invites
 ```
 
 ```sh
@@ -161,6 +168,13 @@ emoji) DO NOTHING` against a unique index on the triple, so five concurrent
   identical reactions collapse to one row. Reacting deliberately issues **no**
   `UPDATE` on the conversation, so it can't advance `last_seq` /
   `last_activity_at` or reorder the conversation list.
+- **A use cap that actually caps** - `consumeInvite` checks usability and
+  increments in one statement
+  (`UPDATE ... SET uses = uses + 1 WHERE code = $1 AND (max_uses IS NULL OR uses < max_uses) AND (expires_at IS NULL OR expires_at > now()) RETURNING *`),
+  so five simultaneous redemptions of a `maxUses: 1` link admit exactly one
+  person. Zero rows back means "spent", which core turns into `410`. Join
+  requests are the one place that **does** use `DO UPDATE` - a re-ask has to
+  replace a stale denial with a fresh `pending` row.
 
 ## Testing
 

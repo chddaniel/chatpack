@@ -34,33 +34,51 @@ enforces the same permissions.
 | `api.removeReaction`          | Remove one of your own reactions; idempotent                                                                                              |
 | `api.markRead`                | Update durable read-state (`lastReadMessageId`); monotonic - marking an older message is a silent no-op                                   |
 | `api.listMessagesAfter`       | Messages after a `seq` (SSE reconnect gap-fill)                                                                                           |
+| `api.createInvite`            | Mint a shareable invite link for a group (`canInvite`, admin by default)                                                                  |
+| `api.listInvites`             | A group's invites, newest-first, spent ones included (admin only)                                                                         |
+| `api.revokeInvite`            | Delete an invite; revoking an unknown code is a silent no-op (admin only)                                                                 |
+| `api.getInvitePreview`        | What a link admits you to - an `InvitePreview`, **not** a conversation                                                                    |
+| `api.acceptInvite`            | Redeem a link: joins, or files a request when the link requires approval                                                                  |
+| `api.requestToJoin`           | Ask to join a group by id; no permission needed, but not if you're already in                                                             |
+| `api.listJoinRequests`        | The moderation queue, `pending` by default (admin only)                                                                                   |
+| `api.resolveJoinRequest`      | Approve or deny one user's request (admin only)                                                                                           |
 
 The four group-management methods work on `type: "group"` conversations only;
 calling one with a DM's id throws `NOT_GROUP_CONVERSATION`. All four return the
 full updated conversation.
+
+The eight invite methods need an **optional storage capability** and throw
+`INVITES_UNSUPPORTED` when the configured adapter lacks it - both first-party
+adapters have it, a custom one may not. They are group-only too.
 
 ## Which API do I call?
 
 The same task, from both sides - `chat.api.*` in server code, the REST route
 from a browser or HTTP client:
 
-| I want to...                    | Server (`chat.api.*`)           | HTTP                                      |
-| ------------------------------- | ------------------------------- | ----------------------------------------- |
-| Start a chat with someone       | `getOrCreateConversation`       | `POST /conversations`                     |
-| Start a group                   | `createGroupConversation`       | `POST /conversations/group`               |
-| Show the inbox / sidebar        | `listConversations`             | `GET /conversations`                      |
-| Open one conversation           | `getConversation`               | `GET /conversations/:id`                  |
-| Rename a group                  | `updateConversation`            | `PATCH /conversations/:id`                |
-| Add members                     | `addParticipants`               | `POST /conversations/:id/participants`    |
-| Remove a member / leave         | `removeParticipant`             | `DELETE /conversations/:id/participants`  |
-| Promote or demote               | `setParticipantRole`            | `PATCH /conversations/:id/participants`   |
-| Load history / scroll back      | `listMessages`                  | `GET /conversations/:id/messages`         |
-| Search messages                 | `searchMessages`                | `GET /search/messages?q=...`              |
-| Send a message                  | `sendMessage`                   | `POST /conversations/:id/messages`        |
-| Edit / delete my message        | `editMessage`, `deleteMessage`  | `PATCH` / `DELETE /messages/:id`          |
-| React / un-react                | `addReaction`, `removeReaction` | `POST` / `DELETE /messages/:id/reactions` |
-| Mark a conversation read        | `markRead`                      | `POST /conversations/:id/read`            |
-| Get live updates in the browser | - (server-sent events)          | `GET /stream` via `EventSource`           |
+| I want to...                    | Server (`chat.api.*`)                    | HTTP                                             |
+| ------------------------------- | ---------------------------------------- | ------------------------------------------------ |
+| Start a chat with someone       | `getOrCreateConversation`                | `POST /conversations`                            |
+| Start a group                   | `createGroupConversation`                | `POST /conversations/group`                      |
+| Show the inbox / sidebar        | `listConversations`                      | `GET /conversations`                             |
+| Open one conversation           | `getConversation`                        | `GET /conversations/:id`                         |
+| Rename a group                  | `updateConversation`                     | `PATCH /conversations/:id`                       |
+| Add members                     | `addParticipants`                        | `POST /conversations/:id/participants`           |
+| Remove a member / leave         | `removeParticipant`                      | `DELETE /conversations/:id/participants`         |
+| Promote or demote               | `setParticipantRole`                     | `PATCH /conversations/:id/participants`          |
+| Load history / scroll back      | `listMessages`                           | `GET /conversations/:id/messages`                |
+| Search messages                 | `searchMessages`                         | `GET /search/messages?q=...`                     |
+| Send a message                  | `sendMessage`                            | `POST /conversations/:id/messages`               |
+| Edit / delete my message        | `editMessage`, `deleteMessage`           | `PATCH` / `DELETE /messages/:id`                 |
+| React / un-react                | `addReaction`, `removeReaction`          | `POST` / `DELETE /messages/:id/reactions`        |
+| Mark a conversation read        | `markRead`                               | `POST /conversations/:id/read`                   |
+| Mint an invite link             | `createInvite`                           | `POST /conversations/:id/invites`                |
+| List / revoke invites           | `listInvites`, `revokeInvite`            | `GET` / `DELETE /conversations/:id/invites`      |
+| Show a link's landing page      | `getInvitePreview`                       | `GET /invites/:code`                             |
+| Join via a link                 | `acceptInvite`                           | `POST /invites/:code/accept`                     |
+| Ask to join a group             | `requestToJoin`                          | `POST /conversations/:id/join-requests`          |
+| Work the approval queue         | `listJoinRequests`, `resolveJoinRequest` | `GET` / `PATCH /conversations/:id/join-requests` |
+| Get live updates in the browser | - (server-sent events)                   | `GET /stream` via `EventSource`                  |
 
 ## Usage
 
@@ -164,6 +182,66 @@ await chat.api.updateConversation({
 A group always keeps at least one admin: removing or demoting the last one
 throws `LAST_ADMIN_REMAINING` rather than silently promoting someone, because
 choosing a successor is a product decision Chatpack shouldn't make for you.
+
+Invite links are the way to add someone whose user id you don't have - or who
+doesn't have an account yet:
+
+```ts
+// Mint a link. Every option is optional: no arguments beyond the ids means a
+// link that never expires and admits unlimited people.
+const invite = await chat.api.createInvite({
+  userId: "alice",
+  conversationId: group.id,
+  expiresInSeconds: 86_400,
+  maxUses: 5,
+});
+invite.code; // 43 URL-safe chars - build your own /join/:code page around it
+
+// The landing page. Deliberately NOT getConversation: a non-member may call
+// this, so it carries a participant count and never any user ids.
+const preview = await chat.api.getInvitePreview({ userId: "erin", code: invite.code });
+preview.alreadyParticipant; // false - render "Join", not "Open"
+
+// Redeeming. Branch on `status`, not on which field came back null.
+const result = await chat.api.acceptInvite({ userId: "erin", code: invite.code });
+if (result.status === "joined") {
+  result.conversation; // the group, now including erin
+} else {
+  result.joinRequest; // requiresApproval was true - an admin must resolve it
+}
+
+// Clicking the link twice is harmless and costs the invite nothing: erin gets
+// the conversation back, even once the link is out of uses.
+```
+
+An approval-gated link (`requiresApproval: true`) routes through the same queue
+as a user asking directly - which anyone may do for a group id they know:
+
+```ts
+await chat.api.requestToJoin({
+  userId: "frank",
+  conversationId: group.id,
+  message: "I'm on the design team", // optional note for the admins
+});
+// Already a participant? Throws ALREADY_PARTICIPANT - there is no join request
+// that honestly represents "you're already in".
+
+// The queue defaults to pending. No event fires when a request arrives, so
+// admins poll this.
+const queue = await chat.api.listJoinRequests({ userId: "alice", conversationId: group.id });
+
+// Resolved by user id, not request id: one request per user per group.
+const { joinRequest, conversation } = await chat.api.resolveJoinRequest({
+  userId: "alice",
+  conversationId: group.id,
+  targetUserId: "frank",
+  decision: "approve", // "deny" leaves conversation null and keeps the row
+});
+```
+
+Approving publishes the same `participant.added` event an admin-initiated
+`addParticipants` does, so existing subscribers need no new code. A denied user
+may ask again - denial records a decision, it is not a block.
 
 First-party adapters use the same Unicode NFKC, case-insensitive,
 punctuation-separated token matching. All unique query terms must be present;

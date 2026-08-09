@@ -13,7 +13,9 @@ deterministic tests.
 This package is also the **reference implementation** of the `StorageAdapter`
 contract - all nineteen required methods, including the five that groups added
 (`createGroupConversation`, `addParticipants`, `removeParticipant`,
-`setParticipantRole`, `updateConversation`) - plus optional search. Writing your
+`setParticipantRole`, `updateConversation`) - plus **both** optional
+capabilities: search, and the nine-method `invites` namespace behind invite links
+and join requests. Writing your
 own adapter? Start by reading [`src/index.ts`](./src/index.ts), then follow
 Part 2 of [`llms.txt`](../../llms.txt) for the invariants it demonstrates.
 

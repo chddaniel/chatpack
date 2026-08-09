@@ -95,12 +95,24 @@ lives at [`examples/messenger`](../../examples/messenger).
 | `api.removeReaction`          | Remove one of your own reactions; idempotent                                                                        |
 | `api.markRead`                | Update durable read-state (`last_read`); monotonic - marking an older message is a silent no-op                     |
 | `api.listMessagesAfter`       | Messages after a `seq` (SSE reconnect gap-fill)                                                                     |
+| `api.createInvite`            | Mint a shareable invite link for a group (`canInvite`, admin by default)                                            |
+| `api.listInvites`             | A group's invites, newest-first, spent ones included (admin only)                                                   |
+| `api.revokeInvite`            | Delete an invite; revoking an unknown code is a silent no-op (admin only)                                           |
+| `api.getInvitePreview`        | What a link admits you to - an `InvitePreview`, **not** a conversation                                              |
+| `api.acceptInvite`            | Redeem a link: joins, or files a request when the link requires approval                                            |
+| `api.requestToJoin`           | Ask to join a group by id; no permission needed, but not if you're already in                                       |
+| `api.listJoinRequests`        | The moderation queue, `pending` by default (admin only)                                                             |
+| `api.resolveJoinRequest`      | Approve or deny one user's request (admin only)                                                                     |
 
 The four group-management methods work on `type: "group"` conversations only -
 calling one with a DM's id throws `NOT_GROUP_CONVERSATION` - and each returns the
 full updated conversation. A group always keeps at least one admin: removing or
 demoting the last one throws `LAST_ADMIN_REMAINING` rather than silently
 promoting someone.
+
+The eight invite methods are group-only too, and need an **optional storage
+capability**: they throw `INVITES_UNSUPPORTED` (HTTP `501`) when the configured
+adapter has no `invites` namespace. Both first-party adapters have it.
 
 Conversation-returning methods (`getOrCreateConversation`,
 `createGroupConversation`, `listConversations`, `getConversation`, and the four
@@ -120,22 +132,28 @@ edited parent's excerpt is never stale.
 The same task, from both sides - `chat.api.*` in server code, the REST route
 from a browser/client:
 
-| I want to...                    | Server (`chat.api.*`)           | HTTP                                      |
-| ------------------------------- | ------------------------------- | ----------------------------------------- |
-| Start a chat with someone       | `getOrCreateConversation`       | `POST /conversations`                     |
-| Start a group                   | `createGroupConversation`       | `POST /conversations/group`               |
-| Show the inbox / sidebar        | `listConversations`             | `GET /conversations`                      |
-| Open one conversation           | `getConversation`               | `GET /conversations/:id`                  |
-| Rename a group                  | `updateConversation`            | `PATCH /conversations/:id`                |
-| Add members                     | `addParticipants`               | `POST /conversations/:id/participants`    |
-| Remove a member / leave         | `removeParticipant`             | `DELETE /conversations/:id/participants`  |
-| Promote or demote               | `setParticipantRole`            | `PATCH /conversations/:id/participants`   |
-| Load history / scroll back      | `listMessages`                  | `GET /conversations/:id/messages`         |
-| Send a message                  | `sendMessage`                   | `POST /conversations/:id/messages`        |
-| Edit / delete my message        | `editMessage`, `deleteMessage`  | `PATCH` / `DELETE /messages/:id`          |
-| React / un-react                | `addReaction`, `removeReaction` | `POST` / `DELETE /messages/:id/reactions` |
-| Mark a conversation read        | `markRead`                      | `POST /conversations/:id/read`            |
-| Get live updates in the browser | - (server-sent events)          | `GET /stream` via `EventSource`           |
+| I want to...                    | Server (`chat.api.*`)                    | HTTP                                             |
+| ------------------------------- | ---------------------------------------- | ------------------------------------------------ |
+| Start a chat with someone       | `getOrCreateConversation`                | `POST /conversations`                            |
+| Start a group                   | `createGroupConversation`                | `POST /conversations/group`                      |
+| Show the inbox / sidebar        | `listConversations`                      | `GET /conversations`                             |
+| Open one conversation           | `getConversation`                        | `GET /conversations/:id`                         |
+| Rename a group                  | `updateConversation`                     | `PATCH /conversations/:id`                       |
+| Add members                     | `addParticipants`                        | `POST /conversations/:id/participants`           |
+| Remove a member / leave         | `removeParticipant`                      | `DELETE /conversations/:id/participants`         |
+| Promote or demote               | `setParticipantRole`                     | `PATCH /conversations/:id/participants`          |
+| Load history / scroll back      | `listMessages`                           | `GET /conversations/:id/messages`                |
+| Send a message                  | `sendMessage`                            | `POST /conversations/:id/messages`               |
+| Edit / delete my message        | `editMessage`, `deleteMessage`           | `PATCH` / `DELETE /messages/:id`                 |
+| React / un-react                | `addReaction`, `removeReaction`          | `POST` / `DELETE /messages/:id/reactions`        |
+| Mark a conversation read        | `markRead`                               | `POST /conversations/:id/read`                   |
+| Mint an invite link             | `createInvite`                           | `POST /conversations/:id/invites`                |
+| List / revoke invites           | `listInvites`, `revokeInvite`            | `GET` / `DELETE /conversations/:id/invites`      |
+| Show a link's landing page      | `getInvitePreview`                       | `GET /invites/:code`                             |
+| Join via a link                 | `acceptInvite`                           | `POST /invites/:code/accept`                     |
+| Ask to join a group             | `requestToJoin`                          | `POST /conversations/:id/join-requests`          |
+| Work the approval queue         | `listJoinRequests`, `resolveJoinRequest` | `GET` / `PATCH /conversations/:id/join-requests` |
+| Get live updates in the browser | - (server-sent events)                   | `GET /stream` via `EventSource`                  |
 
 > **Pagination vs gap-fill - don't mix them up.** Infinite scroll ("load
 > older messages") is `listMessages` with the `nextCursor` from the previous
@@ -221,25 +239,33 @@ keyed by resource - `{ conversation }`, `{ message }`, `{ conversations, nextCur
 `chat.api.*` methods return the bare object (`Conversation`, `Message`, ...),
 so don't reuse HTTP-response types for `chat.api.*` calls or vice versa:
 
-| Method | Path                              | Request body / query                            | Response (200/201)                        |
-| ------ | --------------------------------- | ----------------------------------------------- | ----------------------------------------- |
-| POST   | `/conversations`                  | `{ otherUserId, metadata? }`                    | `{ conversation }` - DM, find-or-create   |
-| POST   | `/conversations/group`            | `{ name?, userIds?, metadata? }`                | `{ conversation }` (201) - always new     |
-| GET    | `/conversations`                  | `?limit=&cursor=`                               | `{ conversations, nextCursor }`           |
-| GET    | `/conversations/:id`              | -                                               | `{ conversation }`                        |
-| PATCH  | `/conversations/:id`              | `{ name }` (string or `null`) - admin           | `{ conversation }`                        |
-| POST   | `/conversations/:id/participants` | `{ userIds }` - admin                           | `{ conversation }`                        |
-| DELETE | `/conversations/:id/participants` | `{ userId }` - admin, or self to leave          | `{ conversation }`                        |
-| PATCH  | `/conversations/:id/participants` | `{ userId, role }` - admin                      | `{ conversation }`                        |
-| POST   | `/conversations/:id/messages`     | `{ body, role?, replyToMessageId?, metadata? }` | `{ message }` (201)                       |
-| GET    | `/conversations/:id/messages`     | `?limit=&cursor=`                               | `{ messages, nextCursor }` - newest first |
-| GET    | `/search/messages`                | `?q=&limit=&cursor=`                            | `{ messages, nextCursor }` - ranked       |
-| POST   | `/conversations/:id/read`         | `{ messageId }`                                 | `{ ok: true }`                            |
-| PATCH  | `/messages/:id`                   | `{ body }`                                      | `{ message }`                             |
-| DELETE | `/messages/:id`                   | -                                               | `{ message }` (soft-deleted)              |
-| POST   | `/messages/:id/reactions`         | `{ emoji }`                                     | `{ message }` (full reaction set)         |
-| DELETE | `/messages/:id/reactions`         | `{ emoji }`                                     | `{ message }` (full reaction set)         |
-| GET    | `/stream`                         | SSE; auto `Last-Event-ID` on reconnect          | `text/event-stream`                       |
+| Method | Path                               | Request body / query                                            | Response (200/201)                        |
+| ------ | ---------------------------------- | --------------------------------------------------------------- | ----------------------------------------- |
+| POST   | `/conversations`                   | `{ otherUserId, metadata? }`                                    | `{ conversation }` - DM, find-or-create   |
+| POST   | `/conversations/group`             | `{ name?, userIds?, metadata? }`                                | `{ conversation }` (201) - always new     |
+| GET    | `/conversations`                   | `?limit=&cursor=`                                               | `{ conversations, nextCursor }`           |
+| GET    | `/conversations/:id`               | -                                                               | `{ conversation }`                        |
+| PATCH  | `/conversations/:id`               | `{ name }` (string or `null`) - admin                           | `{ conversation }`                        |
+| POST   | `/conversations/:id/participants`  | `{ userIds }` - admin                                           | `{ conversation }`                        |
+| DELETE | `/conversations/:id/participants`  | `{ userId }` - admin, or self to leave                          | `{ conversation }`                        |
+| PATCH  | `/conversations/:id/participants`  | `{ userId, role }` - admin                                      | `{ conversation }`                        |
+| POST   | `/conversations/:id/messages`      | `{ body, role?, replyToMessageId?, metadata? }`                 | `{ message }` (201)                       |
+| GET    | `/conversations/:id/messages`      | `?limit=&cursor=`                                               | `{ messages, nextCursor }` - newest first |
+| GET    | `/search/messages`                 | `?q=&limit=&cursor=`                                            | `{ messages, nextCursor }` - ranked       |
+| POST   | `/conversations/:id/read`          | `{ messageId }`                                                 | `{ ok: true }`                            |
+| PATCH  | `/messages/:id`                    | `{ body }`                                                      | `{ message }`                             |
+| DELETE | `/messages/:id`                    | -                                                               | `{ message }` (soft-deleted)              |
+| POST   | `/messages/:id/reactions`          | `{ emoji }`                                                     | `{ message }` (full reaction set)         |
+| DELETE | `/messages/:id/reactions`          | `{ emoji }`                                                     | `{ message }` (full reaction set)         |
+| POST   | `/conversations/:id/invites`       | `{ expiresInSeconds?, maxUses?, requiresApproval?, metadata? }` | `{ invite }` (201)                        |
+| GET    | `/conversations/:id/invites`       | - (admin)                                                       | `{ invites }` - newest first              |
+| DELETE | `/conversations/:id/invites/:code` | - (admin)                                                       | `{ ok: true }`                            |
+| GET    | `/invites/:code`                   | -                                                               | `{ invite }` - an `InvitePreview`         |
+| POST   | `/invites/:code/accept`            | `{ message? }`                                                  | `{ status, conversation, joinRequest }`   |
+| POST   | `/conversations/:id/join-requests` | `{ message? }`                                                  | `{ joinRequest }` (201)                   |
+| GET    | `/conversations/:id/join-requests` | `?status=&limit=` (admin)                                       | `{ joinRequests }` - newest first         |
+| PATCH  | `/conversations/:id/join-requests` | `{ userId, decision }` (admin)                                  | `{ joinRequest, conversation }`           |
+| GET    | `/stream`                          | SSE; auto `Last-Event-ID` on reconnect                          | `text/event-stream`                       |
 
 Every conversation object in a response carries the **viewer's**
 `unreadCount` - messages newer than their read-state, excluding their own.
@@ -299,6 +325,35 @@ Opt-in plugins from `@chatpack/core/plugins` add routes of their own
   `409 LAST_ADMIN_REMAINING` rather than auto-promoting someone. A group holds at
   most 256 participants (`422 GROUP_LIMIT_EXCEEDED`) and a name is trimmed,
   non-empty, at most 200 characters.
+- **The eight invite routes need an optional storage capability** and return
+  `501 INVITES_UNSUPPORTED` when the adapter has no `invites` namespace - check
+  that once at startup, not per request. Creating an invite is gated by
+  `canInvite` (admin by default, loosenable to any member without also granting
+  removal); listing, revoking, and resolving requests stay on `canManage`.
+- **An invite code is a capability URL, not a credential.** 43 URL-safe
+  characters from 256 bits of entropy, minted by core, stored in plaintext so an
+  admin can re-display a link they handed out - possession is the permission.
+  It rides in the request path, so it appears in access logs; bound it with
+  `expiresInSeconds`, `maxUses`, and revocation. 50 invites per group max
+  (`422 INVITE_LIMIT_EXCEEDED`).
+- **`GET /invites/:code` returns an `InvitePreview`, not a conversation** -
+  `{ conversationId, name, participantCount, requiresApproval, invitedBy, alreadyParticipant }`.
+  A count, never a participant list: this is the one route a non-member may call,
+  and the conversation would leak every member's user id to anyone with a link.
+- **Accepting is a discriminated union - branch on `status`,** `"joined"` (with
+  `conversation`) or `"pending"` (with `joinRequest`), not on which field is null.
+  Redeeming is idempotent and never over-charges the link: a user already in gets
+  the conversation back consuming no use, even after the link is spent, and a
+  redemption that would exceed 256 participants is `422` with the link intact.
+  Unknown or revoked codes are `404 INVITE_NOT_FOUND`; expired or exhausted is
+  `410 INVITE_EXPIRED` ("ask for a new link").
+- **Join requests need no permission, but you can't ask twice.** Any signed-in
+  user may request a group id they know; asking about a group you're in is
+  `409 ALREADY_PARTICIPANT`. One row per user per group, resolved by **user id**
+  rather than request id, `?status=pending` by default. Re-asking replaces the
+  row, so a denial is a record, not a block.
+- **Joining publishes the existing `participant.added` event** - no new SSE
+  types. Creating a join request publishes nothing; admins poll the queue.
 
 Example - send a message (the text field is **`body`**):
 
@@ -329,16 +384,17 @@ The `auth` hook runs on every request. Errors are JSON -
 `{ "error": { "code", "message" } }` - with statuses mapped from the error
 code:
 
-| Status | Code(s)                                                                             | When                                                 |
-| ------ | ----------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| 401    | `UNAUTHENTICATED`                                                                   | `auth` returned `null` (or a non-`ChatpackUser`)     |
-| 400    | `INVALID_INPUT`                                                                     | bad body/query params                                |
-| 403    | `FORBIDDEN_READ`, `FORBIDDEN_WRITE`, `NOT_MESSAGE_SENDER`, `NOT_CONVERSATION_ADMIN` | not allowed                                          |
-| 404    | `CONVERSATION_NOT_FOUND`, `MESSAGE_NOT_FOUND`, `NOT_FOUND`                          | missing resource/route                               |
-| 409    | `MESSAGE_DELETED`, `NOT_GROUP_CONVERSATION`, `LAST_ADMIN_REMAINING`                 | the resource is in the wrong state for the operation |
-| 422    | `MESSAGE_REJECTED`, `GROUP_LIMIT_EXCEEDED`                                          | a hook refused the message / the group is too large  |
-| 500    | `INTERNAL_ERROR`                                                                    | unexpected server error (opaque)                     |
-| 501    | `SEARCH_UNSUPPORTED`                                                                | configured storage adapter has no search capability  |
+| Status | Code(s)                                                                                                  | When                                                 |
+| ------ | -------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| 401    | `UNAUTHENTICATED`                                                                                        | `auth` returned `null` (or a non-`ChatpackUser`)     |
+| 400    | `INVALID_INPUT`                                                                                          | bad body/query params                                |
+| 403    | `FORBIDDEN_READ`, `FORBIDDEN_WRITE`, `NOT_MESSAGE_SENDER`, `NOT_CONVERSATION_ADMIN`                      | not allowed                                          |
+| 404    | `CONVERSATION_NOT_FOUND`, `MESSAGE_NOT_FOUND`, `INVITE_NOT_FOUND`, `JOIN_REQUEST_NOT_FOUND`, `NOT_FOUND` | missing resource/route                               |
+| 409    | `MESSAGE_DELETED`, `NOT_GROUP_CONVERSATION`, `LAST_ADMIN_REMAINING`, `ALREADY_PARTICIPANT`               | the resource is in the wrong state for the operation |
+| 410    | `INVITE_EXPIRED`                                                                                         | the invite is past its expiry, or out of uses        |
+| 422    | `MESSAGE_REJECTED`, `GROUP_LIMIT_EXCEEDED`, `INVITE_LIMIT_EXCEEDED`                                      | a hook refused the message / a cap was hit           |
+| 500    | `INTERNAL_ERROR`                                                                                         | unexpected server error (opaque)                     |
+| 501    | `SEARCH_UNSUPPORTED`, `INVITES_UNSUPPORTED`                                                              | the adapter lacks that optional capability           |
 
 ## Message hooks
 
@@ -648,6 +704,17 @@ Contract rules that the type signatures alone don't tell you:
 - **Adapters never enforce group policy.** The last-admin rule, the 256-member
   cap, the DM-vs-group check, and `canManage` are all core's; by the time you're
   called they've passed.
+- **`invites` is an optional namespace - all nine methods or none.** Core checks
+  for the property, not for individual methods, so a partial namespace typechecks
+  and then crashes instead of reporting a clean `501 INVITES_UNSUPPORTED`. Two
+  hard requirements inside it: `consumeInvite` must check usability and increment
+  `uses` in **one statement** (a read-then-write races exactly like a hand-rolled
+  `seq`, except here it hands a one-use link to two strangers), and `getInvite`
+  must return expired and exhausted rows rather than filtering them - that's how
+  core tells `410` from `404`. `createJoinRequest` is the one place that wants
+  `ON CONFLICT DO UPDATE`: a re-ask has to replace a stale denial with a fresh
+  `pending` row. Store the `code` core hands you verbatim - never generate, hash,
+  or normalize it.
 
 The [in-memory adapter](../adapter-memory) is the reference implementation,
 and the [Drizzle/Postgres adapter](../adapter-drizzle) shows the contract on

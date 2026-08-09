@@ -63,6 +63,29 @@ export interface PermissionHooks {
    * flags). Leaving a group is exempt: a member may always remove themselves.
    */
   canManage?: (ctx: PermissionContext) => Promise<boolean> | boolean;
+  /**
+   * May `user` mint an invite link for `conversation`
+   * (`docs/decisions/0019`)?
+   *
+   * Default: the same admin check as {@link PermissionHooks.canManage}, so no
+   * existing deployment changes behavior. Override it for the most common
+   * variation of this feature - "any member may invite, but only admins may
+   * remove people":
+   *
+   * ```ts
+   * permissions: {
+   *   canInvite: (ctx) => ctx.conversation.participantIds.includes(ctx.user.id),
+   * }
+   * ```
+   *
+   * This exists as its own hook precisely so that variation does not require
+   * loosening `canManage`, which would also hand every member the power to
+   * remove others and rewrite roles (ADR 0019 §8). Only invite *creation* is
+   * gated by it - listing, revoking, and resolving join requests stay on
+   * `canManage`, because admitting a specific person is a stronger act than
+   * minting a link that still requires the invitee to act.
+   */
+  canInvite?: (ctx: PermissionContext) => Promise<boolean> | boolean;
 }
 
 /**

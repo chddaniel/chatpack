@@ -79,12 +79,14 @@ WhatsApp-style extras feel related to 1:1 because consumer apps bundle them. Cha
 
 **Still deferred to a later release:**
 
-- ~~Group conversations (N members, roles, invites)~~ - membership and roles
-  shipped (ADR 0017): `type: "group"`, an optional `name`, 1..256 participants,
-  `admin`/`member` roles, and `participant.*` / `conversation.updated` events.
-  Only **invites** remain deferred - invite links and join requests need a
-  pending-membership state, which is a new entity rather than a column. Adding
-  someone is still an admin action, not an invitation.
+- ~~Group conversations (N members, roles, invites)~~ - fully shipped.
+  Membership and roles landed in ADR 0017 (`type: "group"`, an optional `name`,
+  1..256 participants, `admin`/`member` roles, `participant.*` /
+  `conversation.updated` events); invite links and join requests landed in
+  ADR 0019 as an **optional storage capability** (the `invites` namespace -
+  adapters that omit it make the routes answer `501 INVITES_UNSUPPORTED`).
+  Adding someone directly is still an admin action; invites and requests are
+  the two ways membership can start from the other side.
 - ~~React client + hooks~~ - shipped as `@chatpack/client` and
   `@chatpack/client/react` in the client milestone.
 

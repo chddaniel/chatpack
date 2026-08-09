@@ -25,7 +25,11 @@ import {
 import { TelemetryCounters, resolveTelemetryEnabled, startTelemetryFlusher } from "./telemetry";
 import type {
   Conversation,
+  ConversationInvite,
   ConversationWithUnread,
+  InvitePreview,
+  JoinRequest,
+  JoinRequestStatus,
   Message,
   MessageReference,
   MessageWithDetails,
@@ -51,6 +55,36 @@ const EXCERPT_LENGTH = 140;
 export const MAX_GROUP_PARTICIPANTS = 256;
 /** Max length of a group name (ADR 0017 §1). */
 export const MAX_CONVERSATION_NAME_LENGTH = 200;
+/**
+ * Max live invites one group may hold (ADR 0019). Expired invites are never
+ * garbage-collected, so this is what keeps an app minting short-lived links
+ * from growing the table without bound - revoke or reuse instead.
+ */
+export const MAX_INVITES_PER_CONVERSATION = 50;
+/** Max length of the note a user attaches to a join request (ADR 0019). */
+export const MAX_JOIN_REQUEST_MESSAGE_LENGTH = 500;
+/**
+ * Entropy of a generated invite code, in bytes (ADR 0019 §3). 32 bytes = 256
+ * bits, which is 43 base64url characters.
+ */
+const INVITE_CODE_BYTES = 32;
+
+/**
+ * Generate an invite code: 32 cryptographically random bytes as base64url.
+ *
+ * Core owns this rather than the adapter (which generates every other id)
+ * because an id needs to be unique while a token needs to be **unguessable** -
+ * an adapter reaching for `Math.random()` would pass every test and still be
+ * brute-forcible (ADR 0019 §3). base64url so it is URL-safe with nothing to
+ * percent-encode, which is what lets the code live in the request path.
+ */
+function generateInviteCode(): string {
+  const bytes = new Uint8Array(INVITE_CODE_BYTES);
+  crypto.getRandomValues(bytes);
+  let binary = "";
+  for (const byte of bytes) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
 
 /**
  * Compute the deterministic pair key for two user ids: sorted and joined with
@@ -236,6 +270,123 @@ export interface ReactionApiInput {
   emoji: string;
 }
 
+/** Input for {@link ChatpackApi.createInvite} (ADR 0019). */
+export interface CreateInviteApiInput {
+  /** The acting user. Must satisfy `canInvite` (admin by default). */
+  userId: string;
+  conversationId: string;
+  /**
+   * Lifetime in seconds from now. Omit for an invite that never expires.
+   * Must be a positive integer.
+   */
+  expiresInSeconds?: number;
+  /**
+   * How many times the link may be redeemed. Omit for unlimited. Must be a
+   * positive integer.
+   */
+  maxUses?: number;
+  /**
+   * When `true`, redeeming this link creates a pending join request for an
+   * admin to resolve instead of joining outright. Defaults to `false`.
+   */
+  requiresApproval?: boolean;
+  metadata?: Metadata;
+}
+
+/** Input for {@link ChatpackApi.listInvites} (ADR 0019). */
+export interface ListInvitesApiInput {
+  /** The acting user. Must be able to manage the conversation. */
+  userId: string;
+  conversationId: string;
+}
+
+/** Input for {@link ChatpackApi.revokeInvite} (ADR 0019). */
+export interface RevokeInviteApiInput {
+  /** The acting user. Must be able to manage the conversation. */
+  userId: string;
+  conversationId: string;
+  /** The code to revoke. Revoking an unknown code is a silent no-op. */
+  code: string;
+}
+
+/** Input for {@link ChatpackApi.getInvitePreview} and {@link ChatpackApi.acceptInvite}. */
+export interface InviteCodeApiInput {
+  /** The acting user. Any authenticated user may preview or accept. */
+  userId: string;
+  code: string;
+}
+
+/** Input for {@link ChatpackApi.acceptInvite} (ADR 0019). */
+export interface AcceptInviteApiInput extends InviteCodeApiInput {
+  /**
+   * A note for the admins, used only when the invite requires approval.
+   * Trimmed, at most {@link MAX_JOIN_REQUEST_MESSAGE_LENGTH} characters.
+   */
+  message?: string;
+}
+
+/**
+ * What accepting an invite produced (ADR 0019 §4): either membership, or a
+ * request awaiting approval. `status` discriminates the two, so a client never
+ * has to guess which happened from which field is null.
+ */
+export type AcceptInviteResult =
+  | {
+      status: "joined";
+      /** The group, now including the caller. */
+      conversation: ConversationWithUnread;
+      joinRequest: null;
+    }
+  | {
+      status: "pending";
+      /** Not yet a member, so no conversation is returned. */
+      conversation: null;
+      /** The pending request an admin must resolve. */
+      joinRequest: JoinRequest;
+    };
+
+/** Input for {@link ChatpackApi.requestToJoin} (ADR 0019). */
+export interface RequestToJoinApiInput {
+  /** The requesting user. Must not already be a participant. */
+  userId: string;
+  conversationId: string;
+  /**
+   * An optional note for the admins. Trimmed, at most
+   * {@link MAX_JOIN_REQUEST_MESSAGE_LENGTH} characters.
+   */
+  message?: string;
+}
+
+/** Input for {@link ChatpackApi.listJoinRequests} (ADR 0019). */
+export interface ListJoinRequestsApiInput {
+  /** The acting user. Must be able to manage the conversation. */
+  userId: string;
+  conversationId: string;
+  /** Only requests in this state. Defaults to `"pending"` - the moderation queue. */
+  status?: JoinRequestStatus;
+  limit?: number;
+}
+
+/** Input for {@link ChatpackApi.resolveJoinRequest} (ADR 0019). */
+export interface ResolveJoinRequestApiInput {
+  /** The acting user. Must be able to manage the conversation. */
+  userId: string;
+  conversationId: string;
+  /** Whose request to resolve - one pending request per user per group. */
+  targetUserId: string;
+  decision: "approve" | "deny";
+}
+
+/** Result of {@link ChatpackApi.resolveJoinRequest} (ADR 0019). */
+export interface ResolveJoinRequestApiResult {
+  /** The resolved request, now `approved` or `denied`. */
+  joinRequest: JoinRequest;
+  /**
+   * The group including its new member, or `null` when the request was denied.
+   */
+  conversation: ConversationWithUnread | null;
+}
+
 /**
  * The server-side core API. Every method takes the acting `userId` explicitly
  * and enforces permissions at the core boundary around storage access.
@@ -336,6 +487,79 @@ export interface ChatpackApi {
    * (MVP §9); requires read permission.
    */
   listMessagesAfter(input: ListMessagesAfterInput): Promise<MessageWithDetails[]>;
+
+  /**
+   * Mint a shareable invite link for a group (`docs/decisions/0019`). Requires
+   * `canInvite` (admin by default).
+   *
+   * The returned `code` is the secret - hand the whole object to the admin who
+   * asked, and build your own URL around it (Chatpack does not know your
+   * frontend's routes). Throws `INVITES_UNSUPPORTED` if the storage adapter has
+   * no `invites` capability, and `NOT_GROUP_CONVERSATION` for a DM.
+   */
+  createInvite(input: CreateInviteApiInput): Promise<ConversationInvite>;
+
+  /**
+   * All of a group's invites, newest-first, including expired and exhausted
+   * ones so they can be cleaned up. Requires manage permission.
+   */
+  listInvites(input: ListInvitesApiInput): Promise<ConversationInvite[]>;
+
+  /**
+   * Revoke an invite. Requires manage permission. Idempotent - revoking a code
+   * that does not exist (or belongs to another group) is a silent no-op.
+   */
+  revokeInvite(input: RevokeInviteApiInput): Promise<void>;
+
+  /**
+   * What an invite admits you to, before you accept (`docs/decisions/0019`
+   * §10). Any authenticated user holding the code may call this.
+   *
+   * Deliberately minimal - a name and a participant *count*, never the
+   * participant ids: this is the one route reachable by non-members, so
+   * returning the conversation would leak the whole membership list to anyone
+   * with a link. Throws `INVITE_NOT_FOUND`, or `INVITE_EXPIRED` when the code
+   * is past its expiry or use cap.
+   */
+  getInvitePreview(input: InviteCodeApiInput): Promise<InvitePreview>;
+
+  /**
+   * Redeem an invite: join the group, or create a pending join request when the
+   * invite has `requiresApproval` (`docs/decisions/0019` §4). Check `status` on
+   * the result to tell which happened.
+   *
+   * Idempotent for a caller who is already a participant: returns the
+   * conversation and does **not** consume a use.
+   */
+  acceptInvite(input: AcceptInviteApiInput): Promise<AcceptInviteResult>;
+
+  /**
+   * Ask to join a group by id, without an invite (`docs/decisions/0019`).
+   * Throws `ALREADY_PARTICIPANT` if the caller is already in it.
+   *
+   * Note this requires no permission check by design: asking is not entering,
+   * and an admin decides. Gate discovery in your own app if a group's id
+   * should not be guessable.
+   */
+  requestToJoin(input: RequestToJoinApiInput): Promise<JoinRequest>;
+
+  /**
+   * A group's join requests, newest-first, `pending` by default. Requires
+   * manage permission. This is the moderation queue - Chatpack publishes no
+   * event when a request arrives, so poll it (ADR 0019 §6).
+   */
+  listJoinRequests(input: ListJoinRequestsApiInput): Promise<JoinRequest[]>;
+
+  /**
+   * Approve or deny a pending join request (`docs/decisions/0019`). Requires
+   * manage permission. Approving adds the user as a `member` and publishes
+   * `participant.added`, exactly as an admin-initiated add would.
+   *
+   * Throws `JOIN_REQUEST_NOT_FOUND` when there is no pending request for that
+   * user - including when it has already been resolved, so two admins racing
+   * on the same request cannot both apply it.
+   */
+  resolveJoinRequest(input: ResolveJoinRequestApiInput): Promise<ResolveJoinRequestApiResult>;
 }
 
 /** The object returned by {@link chatpack}. */
@@ -407,6 +631,10 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
     options.permissions?.canManage ??
     ((ctx: PermissionContext): boolean =>
       ctx.conversation.participants.some((p) => p.userId === ctx.user.id && p.role === "admin"));
+  // Minting a link defaults to the same admin authority as managing (ADR 0019
+  // §8) - it falls back to `canManage` rather than the admin literal so that
+  // configuring only `canManage` keeps invites consistent with it.
+  const canInvite = options.permissions?.canInvite ?? canManage;
 
   function toPermissionContext(userId: string, conversation: Conversation): PermissionContext {
     const user: ChatpackUser = { id: userId };
@@ -447,6 +675,156 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
         `User "${userId}" may not administer conversation "${conversation.id}".`,
       );
     }
+  }
+
+  /** Invite creation has its own authority, defaulting to manage (ADR 0019 §8). */
+  async function requireInvite(userId: string, conversation: Conversation): Promise<void> {
+    const allowed = await canInvite(toPermissionContext(userId, conversation));
+    if (!allowed) {
+      throw new ChatpackError(
+        "NOT_CONVERSATION_ADMIN",
+        `User "${userId}" may not create invites for conversation "${conversation.id}".`,
+      );
+    }
+  }
+
+  /**
+   * The adapter's invite capability, or `INVITES_UNSUPPORTED` (ADR 0019 §2).
+   *
+   * One namespace rather than nine optional methods, so this single check
+   * covers every invite route - a partially-implemented capability cannot exist.
+   */
+  function requireInviteStorage() {
+    const invites = storage.invites;
+    if (!invites) {
+      throw new ChatpackError(
+        "INVITES_UNSUPPORTED",
+        "Invite links and join requests are not supported by this storage adapter.",
+      );
+    }
+    return invites;
+  }
+
+  /** Validate the optional note on a join request (ADR 0019). */
+  function normalizeJoinMessage(value: string | null | undefined): string | null {
+    if (value === undefined || value === null) return null;
+    if (typeof value !== "string") {
+      throw new ChatpackError("INVALID_INPUT", `"message" must be a string or null.`);
+    }
+    const message = value.trim();
+    if (message === "") return null;
+    if (message.length > MAX_JOIN_REQUEST_MESSAGE_LENGTH) {
+      throw new ChatpackError(
+        "INVALID_INPUT",
+        `"message" must be at most ${MAX_JOIN_REQUEST_MESSAGE_LENGTH} characters, got ${message.length}.`,
+      );
+    }
+    return message;
+  }
+
+  /** Validate a positive-integer invite limit (`expiresInSeconds`, `maxUses`). */
+  function normalizePositiveInt(value: number | undefined, field: string): number | null {
+    if (value === undefined || value === null) return null;
+    if (!Number.isInteger(value) || value < 1) {
+      throw new ChatpackError(
+        "INVALID_INPUT",
+        `"${field}" must be a positive integer, got ${value}.`,
+      );
+    }
+    return value;
+  }
+
+  /**
+   * Whether an invite is still redeemable. Core checks this for the preview and
+   * for the already-participant shortcut; the authoritative check lives in the
+   * adapter's atomic `consumeInvite`, because only one statement can decide a
+   * race (ADR 0019 §2).
+   */
+  function isInviteUsable(invite: ConversationInvite): boolean {
+    if (invite.expiresAt !== null && invite.expiresAt.getTime() <= Date.now()) return false;
+    if (invite.maxUses !== null && invite.uses >= invite.maxUses) return false;
+    return true;
+  }
+
+  /** Load an invite by code, or throw 404 (ADR 0019 §9). */
+  async function requireInviteByCode(code: string): Promise<ConversationInvite> {
+    const invites = requireInviteStorage();
+    requireNonEmptyId(code, "code");
+    const invite = await invites.getInvite(code);
+    if (!invite) {
+      throw new ChatpackError("INVITE_NOT_FOUND", "That invite link is not valid.");
+    }
+    return invite;
+  }
+
+  /**
+   * Throw 410 for an expired or exhausted invite.
+   *
+   * Kept separate from the 404 lookup so `acceptInvite` can take its idempotent
+   * shortcuts first: someone who has already joined - or already has a pending
+   * request - must get their truthful success value back even once the link they
+   * used is spent, or a double-clicked one-use link answers 410 to the very
+   * person it admitted (ADR 0019 §5).
+   */
+  function assertInviteUsable(invite: ConversationInvite): void {
+    if (isInviteUsable(invite)) return;
+    throw new ChatpackError(
+      "INVITE_EXPIRED",
+      invite.maxUses !== null && invite.uses >= invite.maxUses
+        ? "That invite link has already been used the maximum number of times."
+        : "That invite link has expired.",
+    );
+  }
+
+  /** Load an invite by code, or throw 404/410 (ADR 0019 §9). */
+  async function requireUsableInvite(code: string): Promise<ConversationInvite> {
+    const invite = await requireInviteByCode(code);
+    assertInviteUsable(invite);
+    return invite;
+  }
+
+  /**
+   * Room for one more member? Checked against a fresh read rather than the
+   * caller's earlier one: an invite can sit unredeemed while the group fills up.
+   *
+   * `acceptInvite` calls this *before* consuming a use, so redeeming into a full
+   * group costs the link nothing.
+   */
+  function assertGroupHasRoom(conversation: Conversation): void {
+    if (conversation.participants.length + 1 > MAX_GROUP_PARTICIPANTS) {
+      throw new ChatpackError(
+        "GROUP_LIMIT_EXCEEDED",
+        `A group may hold at most ${MAX_GROUP_PARTICIPANTS} participants, got ${conversation.participants.length + 1}.`,
+      );
+    }
+  }
+
+  /**
+   * Add one approved/invited user to a group and publish `participant.added` -
+   * the shared tail of `acceptInvite` and an approved `resolveJoinRequest`.
+   *
+   * Reuses the ADR 0017 event on purpose: joining by link and being added by an
+   * admin are the same change to the same list, so members and the joiner get
+   * the same live update either way (ADR 0019 §6).
+   */
+  async function admitToGroup(
+    conversation: Conversation,
+    userId: string,
+    actorId: string,
+  ): Promise<Conversation> {
+    assertGroupHasRoom(conversation);
+    const updated = await storage.addParticipants({
+      conversationId: conversation.id,
+      userIds: [userId],
+    });
+    publishConversation(
+      "participant.added",
+      updated,
+      actorId,
+      [userId],
+      updated.participants.map((p) => p.userId),
+    );
+    return updated;
   }
 
   /**
@@ -1382,6 +1760,271 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
           storage.removeReaction({ messageId: input.messageId, userId: input.userId, emoji }),
         "reaction.removed",
       );
+    },
+
+    async createInvite(input) {
+      const invites = requireInviteStorage();
+      requireNonEmptyId(input.userId, "userId");
+      const conversation = await requireConversation(input.conversationId);
+      // A DM's membership is fixed by its pairKey (ADR 0002), so there is
+      // nothing an invite could admit anyone to.
+      requireGroup(conversation);
+      await requireInvite(input.userId, conversation);
+
+      const expiresInSeconds = normalizePositiveInt(input.expiresInSeconds, "expiresInSeconds");
+      const maxUses = normalizePositiveInt(input.maxUses, "maxUses");
+      if (input.requiresApproval !== undefined && typeof input.requiresApproval !== "boolean") {
+        throw new ChatpackError("INVALID_INPUT", `"requiresApproval" must be a boolean.`);
+      }
+
+      // Expired invites are inert but never swept (ADR 0019 consequences), so
+      // the cap is what bounds the table for an app minting short-lived links.
+      const existing = await invites.listInvites(conversation.id);
+      if (existing.length >= MAX_INVITES_PER_CONVERSATION) {
+        throw new ChatpackError(
+          "INVITE_LIMIT_EXCEEDED",
+          `A conversation may hold at most ${MAX_INVITES_PER_CONVERSATION} invites - revoke an existing one first.`,
+        );
+      }
+
+      return invites.createInvite({
+        conversationId: conversation.id,
+        code: generateInviteCode(),
+        createdBy: input.userId,
+        expiresAt:
+          expiresInSeconds === null ? null : new Date(Date.now() + expiresInSeconds * 1000),
+        maxUses,
+        requiresApproval: input.requiresApproval ?? false,
+        metadata: input.metadata ?? {},
+      });
+    },
+
+    async listInvites(input) {
+      const invites = requireInviteStorage();
+      requireNonEmptyId(input.userId, "userId");
+      const conversation = await requireConversation(input.conversationId);
+      requireGroup(conversation);
+      await requireManage(input.userId, conversation);
+      return invites.listInvites(conversation.id);
+    },
+
+    async revokeInvite(input) {
+      const invites = requireInviteStorage();
+      requireNonEmptyId(input.userId, "userId");
+      requireNonEmptyId(input.code, "code");
+      const conversation = await requireConversation(input.conversationId);
+      requireGroup(conversation);
+      await requireManage(input.userId, conversation);
+      // Scoped by conversation, so an admin of one group can never revoke
+      // another group's invite by guessing a code.
+      await invites.deleteInvite({ conversationId: conversation.id, code: input.code });
+    },
+
+    async getInvitePreview(input) {
+      requireNonEmptyId(input.userId, "userId");
+      const invite = await requireUsableInvite(input.code);
+      const conversation = await storage.getConversation(invite.conversationId);
+      if (!conversation) {
+        // The group was deleted out from under the invite. "Not valid" is both
+        // true and the same answer the holder can act on.
+        throw new ChatpackError("INVITE_NOT_FOUND", "That invite link is not valid.");
+      }
+
+      // A count, never the ids: this is the only route non-members can reach,
+      // and returning the conversation would leak the membership list to
+      // anyone holding a link (ADR 0019 §10).
+      return {
+        conversationId: conversation.id,
+        name: conversation.name,
+        participantCount: conversation.participants.length,
+        requiresApproval: invite.requiresApproval,
+        invitedBy: invite.createdBy,
+        alreadyParticipant: conversation.participants.some((p) => p.userId === input.userId),
+      };
+    },
+
+    async acceptInvite(input) {
+      const invites = requireInviteStorage();
+      requireNonEmptyId(input.userId, "userId");
+      const message = normalizeJoinMessage(input.message);
+      // Deliberately not `requireUsableInvite`: the 410 check comes *after* the
+      // idempotent shortcuts below, so a spent link still answers truthfully to
+      // whoever it already admitted.
+      const invite = await requireInviteByCode(input.code);
+
+      // A held invite whose group has since been deleted reads as an invalid
+      // link, not as a missing conversation the holder never knew about.
+      const conversation = await storage.getConversation(invite.conversationId);
+      if (!conversation) {
+        throw new ChatpackError("INVITE_NOT_FOUND", "That invite link is not valid.");
+      }
+
+      // Already a member: return the conversation and burn no use. There is a
+      // truthful success value here, so returning it beats erroring - a
+      // double-clicked link must not cost a use (ADR 0019 §5).
+      if (conversation.participants.some((p) => p.userId === input.userId)) {
+        return {
+          status: "joined",
+          conversation: await withUnreadOne(input.userId, conversation),
+          joinRequest: null,
+        };
+      }
+
+      if (invite.requiresApproval) {
+        const pending = await invites.getJoinRequest({
+          conversationId: conversation.id,
+          userId: input.userId,
+        });
+        // A second click while waiting returns the same request rather than
+        // resetting it - and, as above, consumes nothing.
+        if (pending && pending.status === "pending") {
+          return { status: "pending", conversation: null, joinRequest: pending };
+        }
+      }
+
+      // No shortcut applied, so this call is going to spend a use - which means
+      // an expired or exhausted link is now the holder's answer.
+      assertInviteUsable(invite);
+      // And a full group is too, checked before the use is spent: failing after
+      // consuming would silently cost the link one of its redemptions.
+      if (!invite.requiresApproval) assertGroupHasRoom(conversation);
+
+      // Consume only once the request is definitely going to do something. The
+      // adapter decides the race atomically; `null` means someone else took the
+      // last use between our check and this call.
+      const consumed = await invites.consumeInvite(invite.code);
+      if (!consumed) {
+        throw new ChatpackError(
+          "INVITE_EXPIRED",
+          "That invite link is no longer usable - ask for a new one.",
+        );
+      }
+
+      if (invite.requiresApproval) {
+        const joinRequest = await invites.createJoinRequest({
+          conversationId: conversation.id,
+          userId: input.userId,
+          message,
+          inviteCode: invite.code,
+          metadata: {},
+        });
+        // No event: the requester is not in the conversation, nothing on any
+        // member's screen is stale, and admins poll the queue (ADR 0019 §6).
+        return { status: "pending", conversation: null, joinRequest };
+      }
+
+      // The invite's creator is the actor: they authorized this membership when
+      // they minted the link, and the joiner has no authority of their own.
+      const updated = await admitToGroup(conversation, input.userId, invite.createdBy);
+      return {
+        status: "joined",
+        conversation: await withUnreadOne(input.userId, updated),
+        joinRequest: null,
+      };
+    },
+
+    async requestToJoin(input) {
+      const invites = requireInviteStorage();
+      requireNonEmptyId(input.userId, "userId");
+      const message = normalizeJoinMessage(input.message);
+      const conversation = await requireConversation(input.conversationId);
+      requireGroup(conversation);
+
+      // No permission check by design: asking is not entering, and an admin
+      // decides (ADR 0019). Gate discoverability above Chatpack if group ids
+      // should not be guessable.
+      if (conversation.participants.some((p) => p.userId === input.userId)) {
+        throw new ChatpackError(
+          "ALREADY_PARTICIPANT",
+          `User "${input.userId}" is already a participant of conversation "${conversation.id}".`,
+        );
+      }
+
+      const existing = await invites.getJoinRequest({
+        conversationId: conversation.id,
+        userId: input.userId,
+      });
+      // Re-asking while pending returns the same row: idempotent, and it stops
+      // a client from bumping itself up a newest-first moderation queue.
+      if (existing && existing.status === "pending") return existing;
+
+      return invites.createJoinRequest({
+        conversationId: conversation.id,
+        userId: input.userId,
+        message,
+        inviteCode: null,
+        metadata: {},
+      });
+    },
+
+    async listJoinRequests(input) {
+      const invites = requireInviteStorage();
+      requireNonEmptyId(input.userId, "userId");
+      if (
+        input.status !== undefined &&
+        input.status !== "pending" &&
+        input.status !== "approved" &&
+        input.status !== "denied"
+      ) {
+        throw new ChatpackError(
+          "INVALID_INPUT",
+          `"status" must be "pending", "approved" or "denied".`,
+        );
+      }
+
+      const conversation = await requireConversation(input.conversationId);
+      requireGroup(conversation);
+      await requireManage(input.userId, conversation);
+
+      return invites.listJoinRequests({
+        conversationId: conversation.id,
+        // Defaults to the moderation queue - the list an admin opens this for.
+        status: input.status ?? "pending",
+        limit: normalizeLimit(input.limit),
+      });
+    },
+
+    async resolveJoinRequest(input) {
+      const invites = requireInviteStorage();
+      requireNonEmptyId(input.userId, "userId");
+      requireNonEmptyId(input.targetUserId, "targetUserId");
+      if (input.decision !== "approve" && input.decision !== "deny") {
+        throw new ChatpackError("INVALID_INPUT", `"decision" must be "approve" or "deny".`);
+      }
+
+      const conversation = await requireConversation(input.conversationId);
+      requireGroup(conversation);
+      await requireManage(input.userId, conversation);
+
+      const existing = await invites.getJoinRequest({
+        conversationId: conversation.id,
+        userId: input.targetUserId,
+      });
+      // An already-resolved request is reported as not found, so two admins
+      // racing on the same queue entry cannot both apply a decision.
+      if (!existing || existing.status !== "pending") {
+        throw new ChatpackError(
+          "JOIN_REQUEST_NOT_FOUND",
+          `No pending join request from user "${input.targetUserId}" in conversation "${conversation.id}".`,
+        );
+      }
+
+      const joinRequest = await invites.resolveJoinRequest({
+        conversationId: conversation.id,
+        userId: input.targetUserId,
+        status: input.decision === "approve" ? "approved" : "denied",
+        resolvedBy: input.userId,
+        resolvedAt: new Date(),
+      });
+
+      if (input.decision === "deny") {
+        // The row is kept so the requester can be told, and so a fresh ask
+        // replaces it rather than stacking (ADR 0019 §5).
+        return { joinRequest, conversation: null };
+      }
+
+      const updated = await admitToGroup(conversation, input.targetUserId, input.userId);
+      return { joinRequest, conversation: await withUnreadOne(input.userId, updated) };
     },
   };
 

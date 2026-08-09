@@ -237,9 +237,16 @@ roles, admin-gated membership management, and 1-256 participants
 A group is a `type` on Conversation, not a second entity, so messages,
 permissions, read-state, search, reactions and SSE all work unchanged.
 
-What isn't there: invite links, join requests, per-group permission grants,
-mentions, and public/discoverable channels. Chatpack owns membership and roles;
-the social layer around them stays your app's.
+Invite links and join requests ship too, as an **optional** storage capability
+([Invites & join requests](/docs/reference/rest-api#invite--join-request-routes)):
+an admin mints a code with an optional expiry and use cap, anyone holding it
+redeems it, and an outsider who has no code can ask instead - a `pending`
+request an admin approves or denies. Adapters that skip the capability answer
+`501 INVITES_UNSUPPORTED`; both first-party adapters implement it.
+
+What isn't there: per-group permission grants, mentions, and
+public/discoverable channels. Chatpack owns membership, roles, and the two ways
+in; the social layer around them stays your app's.
 
 </Accordion>
 

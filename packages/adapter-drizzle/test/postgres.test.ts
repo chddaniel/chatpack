@@ -1165,6 +1165,249 @@ describe("groups on Postgres (ADR 0017)", () => {
   });
 });
 
+describe("invites and join requests on Postgres (ADR 0019)", () => {
+  async function seedGroup(): Promise<string> {
+    const group = await chat.api.createGroupConversation({
+      userId: "alice",
+      userIds: ["bob"],
+      name: "Standup",
+    });
+    return group.id;
+  }
+
+  it("persists an invite as real typed columns", async () => {
+    const groupId = await seedGroup();
+    const invite = await chat.api.createInvite({
+      userId: "alice",
+      conversationId: groupId,
+      maxUses: 5,
+      requiresApproval: true,
+    });
+
+    const row = await pglite.query<{
+      conversation_id: string;
+      created_by: string;
+      max_uses: number | null;
+      uses: number;
+      requires_approval: boolean;
+      expires_at: Date | null;
+    }>(
+      `SELECT "conversation_id", "created_by", "max_uses", "uses", "requires_approval", "expires_at"
+       FROM "chatpack_conversation_invites" WHERE "code" = $1`,
+      [invite.code],
+    );
+    // requires_approval is a real boolean, not the string 'true' - a text column
+    // here would read back truthy for 'false' and silently invert the feature.
+    expect(row.rows[0]).toEqual({
+      conversation_id: groupId,
+      created_by: "alice",
+      max_uses: 5,
+      uses: 0,
+      requires_approval: true,
+      expires_at: null,
+    });
+  });
+
+  it("consumes a one-use invite exactly once under concurrent redemption", async () => {
+    const groupId = await seedGroup();
+    const invite = await chat.api.createInvite({
+      userId: "alice",
+      conversationId: groupId,
+      maxUses: 1,
+    });
+
+    // The whole reason consumeInvite is a single conditional UPDATE ...
+    // RETURNING (ADR 0019 §2): read-then-write would let both of these in.
+    const results = await Promise.allSettled([
+      chat.api.acceptInvite({ userId: "carol", code: invite.code }),
+      chat.api.acceptInvite({ userId: "dave", code: invite.code }),
+    ]);
+
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
+    const row = await pglite.query<{ uses: number }>(
+      `SELECT "uses" FROM "chatpack_conversation_invites" WHERE "code" = $1`,
+      [invite.code],
+    );
+    expect(row.rows[0]!.uses).toBe(1);
+    const updated = await chat.api.getConversation({ userId: "alice", conversationId: groupId });
+    expect(updated.participants).toHaveLength(3);
+  });
+
+  it("never exceeds maxUses across many simultaneous redemptions", async () => {
+    const groupId = await seedGroup();
+    const invite = await chat.api.createInvite({
+      userId: "alice",
+      conversationId: groupId,
+      maxUses: 3,
+    });
+
+    const results = await Promise.allSettled(
+      ["c", "d", "e", "f", "g", "h", "i", "j"].map((id) =>
+        chat.api.acceptInvite({ userId: `user-${id}`, code: invite.code }),
+      ),
+    );
+
+    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(3);
+    const row = await pglite.query<{ uses: number }>(
+      `SELECT "uses" FROM "chatpack_conversation_invites" WHERE "code" = $1`,
+      [invite.code],
+    );
+    expect(row.rows[0]!.uses).toBe(3);
+  });
+
+  it("treats an expired invite as gone in SQL, not just in core", async () => {
+    const groupId = await seedGroup();
+    const invite = await chat.api.createInvite({ userId: "alice", conversationId: groupId });
+    // Backdate past core's reach, so the WHERE clause in consumeInvite is what
+    // has to reject it.
+    await pglite.query(
+      `UPDATE "chatpack_conversation_invites" SET "expires_at" = now() - interval '1 hour'
+       WHERE "code" = $1`,
+      [invite.code],
+    );
+
+    await expect(
+      chat.api.acceptInvite({ userId: "carol", code: invite.code }),
+    ).rejects.toMatchObject({ code: "INVITE_EXPIRED" });
+    expect(
+      (
+        await pglite.query<{ uses: number }>(
+          `SELECT "uses" FROM "chatpack_conversation_invites" WHERE "code" = $1`,
+          [invite.code],
+        )
+      ).rows[0]!.uses,
+    ).toBe(0);
+  });
+
+  it("cascades invites and join requests away with the conversation", async () => {
+    const groupId = await seedGroup();
+    await chat.api.createInvite({ userId: "alice", conversationId: groupId });
+    await chat.api.requestToJoin({ userId: "carol", conversationId: groupId });
+
+    await pglite.query(`DELETE FROM "chatpack_conversations" WHERE "id" = $1`, [groupId]);
+
+    for (const table of ["chatpack_conversation_invites", "chatpack_join_requests"]) {
+      const rows = await pglite.query<{ count: number }>(
+        `SELECT count(*)::int AS count FROM "${table}" WHERE "conversation_id" = $1`,
+        [groupId],
+      );
+      expect(rows.rows[0]!.count).toBe(0);
+    }
+  });
+
+  it("keeps a join request after its invite is revoked", async () => {
+    const groupId = await seedGroup();
+    const invite = await chat.api.createInvite({
+      userId: "alice",
+      conversationId: groupId,
+      requiresApproval: true,
+    });
+    await chat.api.acceptInvite({ userId: "carol", code: invite.code });
+
+    await chat.api.revokeInvite({ userId: "alice", conversationId: groupId, code: invite.code });
+
+    // No foreign key on invite_code by design: an admin must still be able to
+    // see where a pending request came from after cleaning up the link.
+    const queue = await chat.api.listJoinRequests({ userId: "alice", conversationId: groupId });
+    expect(queue).toMatchObject([{ userId: "carol", inviteCode: invite.code }]);
+  });
+
+  it("replaces a denied request rather than stacking a second row", async () => {
+    const groupId = await seedGroup();
+    await chat.api.requestToJoin({ userId: "carol", conversationId: groupId, message: "first" });
+    await chat.api.resolveJoinRequest({
+      userId: "alice",
+      conversationId: groupId,
+      targetUserId: "carol",
+      decision: "deny",
+    });
+
+    const again = await chat.api.requestToJoin({
+      userId: "carol",
+      conversationId: groupId,
+      message: "second",
+    });
+
+    // The unique (conversation_id, user_id) index is the upsert's arbiter, so
+    // this is one row that changed - not two rows in the queue.
+    expect(again).toMatchObject({ status: "pending", message: "second" });
+    const rows = await pglite.query<{ count: number; resolved_by: string | null }>(
+      `SELECT count(*)::int AS count, max("resolved_by") AS resolved_by
+       FROM "chatpack_join_requests" WHERE "conversation_id" = $1 AND "user_id" = 'carol'`,
+      [groupId],
+    );
+    expect(rows.rows[0]!.count).toBe(1);
+    // Reset explicitly: a leftover resolved_by would make a pending row look decided.
+    expect(rows.rows[0]!.resolved_by).toBeNull();
+  });
+
+  it("records an approval and adds the member", async () => {
+    const groupId = await seedGroup();
+    await chat.api.requestToJoin({ userId: "carol", conversationId: groupId });
+
+    const result = await chat.api.resolveJoinRequest({
+      userId: "alice",
+      conversationId: groupId,
+      targetUserId: "carol",
+      decision: "approve",
+    });
+
+    expect(result.conversation!.participants.map((p) => p.userId)).toEqual([
+      "alice",
+      "bob",
+      "carol",
+    ]);
+    const row = await pglite.query<{ status: string; resolved_by: string; resolved_at: Date }>(
+      `SELECT "status", "resolved_by", "resolved_at" FROM "chatpack_join_requests"
+       WHERE "conversation_id" = $1 AND "user_id" = 'carol'`,
+      [groupId],
+    );
+    expect(row.rows[0]).toMatchObject({ status: "approved", resolved_by: "alice" });
+    expect(row.rows[0]!.resolved_at).not.toBeNull();
+  });
+
+  it("filters the queue by status in SQL", async () => {
+    const groupId = await seedGroup();
+    await chat.api.requestToJoin({ userId: "carol", conversationId: groupId });
+    await chat.api.requestToJoin({ userId: "dave", conversationId: groupId });
+    await chat.api.resolveJoinRequest({
+      userId: "alice",
+      conversationId: groupId,
+      targetUserId: "dave",
+      decision: "deny",
+    });
+
+    expect(
+      (await chat.api.listJoinRequests({ userId: "alice", conversationId: groupId })).map(
+        (r) => r.userId,
+      ),
+    ).toEqual(["carol"]);
+    expect(
+      (
+        await chat.api.listJoinRequests({
+          userId: "alice",
+          conversationId: groupId,
+          status: "denied",
+        })
+      ).map((r) => r.userId),
+    ).toEqual(["dave"]);
+  });
+
+  it("lists invites newest-first with a stable tiebreak", async () => {
+    const groupId = await seedGroup();
+    const codes: string[] = [];
+    for (let i = 0; i < 3; i += 1) {
+      const invite = await chat.api.createInvite({ userId: "alice", conversationId: groupId });
+      codes.push(invite.code);
+    }
+
+    const listed = await chat.api.listInvites({ userId: "alice", conversationId: groupId });
+
+    expect(listed).toHaveLength(3);
+    expect([...listed].map((i) => i.code).sort()).toEqual([...codes].sort());
+  });
+});
+
 describe("upgrading a pre-ADR-0013 database", () => {
   it("adds reply_to_message_id and the reactions table to an existing schema", async () => {
     const legacy = new PGlite();

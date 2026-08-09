@@ -189,6 +189,13 @@ Two rules are worth internalizing because they're deliberate refusals:
 Removing yourself is "leaving", needs no admin rights, and is the one
 membership operation any member can perform.
 
+`addParticipants` needs the other person's user id, which you don't always have.
+The two ways membership can start from the other side - an **invite link** an
+admin mints and someone redeems, or a **join request** an outsider files and an
+admin resolves - live behind an optional storage capability. See
+[Invites & join requests](/docs/reference/rest-api#invite--join-request-routes);
+both end in the same `participant.added` event, so nothing downstream changes.
+
 ## Message ordering: `seq`, not timestamps
 
 Every message gets a **strictly increasing integer `seq`, scoped per

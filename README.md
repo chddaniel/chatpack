@@ -270,6 +270,23 @@ remove (`DELETE`, and any member may pass their own id to leave), and change a
 role (`PATCH …/participants`). Groups hold 1-256 participants and always keep at
 least one admin.
 
+For the people whose user ids you don't have, mint an **invite link** instead:
+
+```sh
+curl -X POST /api/chat/conversations/conv_2/invites \
+  -H 'content-type: application/json' \
+  -d '{"expiresInSeconds": 86400, "maxUses": 5}'
+```
+
+You get back a 43-character `code` to build your own `/join/:code` page from.
+`GET /invites/:code` previews what it admits to - a participant **count**, never
+the member list, since a non-member can call it - and
+`POST /invites/:code/accept` redeems it. Add `"requiresApproval": true` and
+redeeming files a **join request** for an admin to approve instead, which is the
+same queue any user lands in by asking directly
+(`POST /conversations/:id/join-requests`). Either way, joining publishes the
+existing `participant.added` event, so live clients need no new code.
+
 Send a message - note the field is **`body`**:
 
 ```sh
@@ -425,6 +442,8 @@ Group management is wrapped too (client 0.5.0+): `conversations.createGroup`,
 `addParticipants`, `removeParticipant` (your own id = leave),
 `setParticipantRole`, and `update` for renames - and membership events keep
 the cache in sync, including dropping a conversation you were removed from.
+Invites and join requests are **not** wrapped yet; call those eight routes with
+`fetch` and refetch afterwards.
 
 See [`@chatpack/client`](./packages/client) for the framework-agnostic API,
 React hooks, the polling fallback, and client plugin usage.
@@ -551,8 +570,9 @@ await chat.api.removeParticipant({
 ```
 
 That's it. Only participants can read or write - enforced by default,
-customizable via the `permissions` hooks (`canRead`, `canWrite`, and `canManage`
-for the group-management methods, which default to admins only). Need content
+customizable via the `permissions` hooks (`canRead`, `canWrite`, `canManage` for
+the group-management methods, and `canInvite` for minting links - the last two
+default to admins only). Need content
 rules (length caps, profanity filters) or post-send side-effects? Add
 `hooks: { beforeMessageSend, afterMessageMutation }` - block or rewrite a
 message before it persists, react after send/edit/delete persistence (see [`@chatpack/core`'s
@@ -696,6 +716,7 @@ Want to write your own plugin? The seam is public - see `ChatpackPlugin` in
 | `@chatpack/cli init`                    | ✅ Done (v0.next) |
 | Group chats: membership, roles, admin   | ✅ Done (v0.next) |
 | File attachments (`@chatpack/file`)     | ✅ Done (v0.next) |
+| Invite links + join requests            | ✅ Done (v0.next) |
 
 Push notification providers, reusable UI components, true message threads,
 and multi-node presence have not shipped. Replies are flat pointers, not

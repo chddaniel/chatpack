@@ -1,12 +1,12 @@
 ---
 title: Permissions
-description: The default participants-only model and the canRead / canWrite / canManage hooks.
+description: The default participants-only model and the canRead / canWrite / canManage / canInvite hooks.
 ---
 
 By default, **only the participants** of a conversation can read or write it -
 enforced on every `chat.api.*` call and every HTTP route. Managing a group
 (membership, roles, the name) additionally requires the **`admin`** role. You
-can loosen or tighten all of that with three hooks.
+can loosen or tighten all of that with four hooks.
 
 ## The hooks
 
@@ -29,11 +29,15 @@ const chat = chatpack({
     // Default: participants whose role is "admin".
     canManage: ({ user, conversation }) =>
       conversation.participants.some((p) => p.userId === user.id && p.role === "admin"),
+
+    // May `user` mint an invite link for this group?
+    // Default: the same admin check as canManage.
+    canInvite: ({ user, conversation }) => conversation.participantIds.includes(user.id),
   },
 });
 ```
 
-All three hooks receive a `PermissionContext`:
+All four hooks receive a `PermissionContext`:
 
 <TypeTable
   type={{
@@ -70,6 +74,13 @@ both over HTTP and as a thrown `ChatpackError` from `chat.api.*`.
   `canWrite` default to "any participant"; `canManage` defaults to "any
   participant whose role is `admin`". If you override it, you are replacing
   the role check entirely - re-add it yourself unless you mean to drop it.
+- **`canInvite` gates invite _creation_ only.** Listing invites, revoking them,
+  and resolving join requests all stay on `canManage`. It exists as its own hook
+  so "any member may invite, but only admins may remove people" - the most common
+  variation of this feature - doesn't require loosening `canManage`, which would
+  also hand every member the power to remove others and rewrite roles. It
+  defaults to the same admin check, so adding invites changes no existing
+  deployment's behavior.
 - **Read permission gates live delivery too.** SSE events are only delivered
   for conversations the connected user may read - participation is re-checked
   server-side per event.
@@ -124,5 +135,15 @@ permissions: {
   canManage: async ({ user, conversation }) =>
     conversation.participants.some((p) => p.userId === user.id && p.role === "admin") ||
     (await hasRole(user.id, "staff")),
+},
+```
+
+**Discord-style invites** - any member can share a link, only admins can kick.
+Override `canInvite` alone and leave `canManage` at its default:
+
+```ts
+permissions: {
+  canInvite: ({ user, conversation }) =>
+    conversation.participantIds.includes(user.id),
 },
 ```

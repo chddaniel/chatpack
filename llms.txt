@@ -193,6 +193,12 @@ the UI so their absence degrades quietly.
 
 Also available: `realtime.pollNow()` for a manual "check for new messages".
 
+**The client does not yet wrap invites or join requests.** There is no
+`chatClient.invites.*` or `chatClient.joinRequests.*` - do not write one from
+memory. Call the eight HTTP routes directly with `fetch` (same `basePath`, same
+cookies) until a release adds them. Arrivals still flow through the normal
+`participant.added` event, so the cache stays correct.
+
 ## Hard rules (violating any of these is the #1 cause of broken integrations)
 
 1. **Mount the ONE handler on a catch-all route. Never hand-write your own
@@ -206,7 +212,9 @@ Also available: `realtime.pollNow()` for a manual "check for new messages".
    `getConversation`, `updateConversation`, `addParticipants`,
    `removeParticipant`, `setParticipantRole`,
    `sendMessage`, `listMessages`, `editMessage`, `deleteMessage`,
-   `searchMessages`, `addReaction`, `removeReaction`, `markRead`, `listMessagesAfter`.
+   `searchMessages`, `addReaction`, `removeReaction`, `markRead`, `listMessagesAfter`,
+   `createInvite`, `listInvites`, `revokeInvite`, `getInvitePreview`,
+   `acceptInvite`, `requestToJoin`, `listJoinRequests`, `resolveJoinRequest`.
    There is **no** `chat.api.getOrCreateDirectConversation`
    (that name is a low-level *storage adapter* method - never call the
    adapter directly). Do not invent methods; if a name is not in this list,
@@ -480,6 +488,14 @@ A complete plain-Node version lives in `examples/node-server` in the repo.
 | POST   | `/conversations/:id/participants`   | `{ userIds }` - admin            | `{ conversation }`                        |
 | DELETE | `/conversations/:id/participants`   | `{ userId }` - admin, or self to leave | `{ conversation }`                  |
 | PATCH  | `/conversations/:id/participants`   | `{ userId, role }` - admin       | `{ conversation }`                        |
+| POST   | `/conversations/:id/invites`  | `{ expiresInSeconds?, maxUses?, requiresApproval?, metadata? }` - admin | `{ invite }` (201)  |
+| GET    | `/conversations/:id/invites`  | - (admin)                              | `{ invites }`                             |
+| DELETE | `/conversations/:id/invites/:code` | - (admin)                         | `{ ok: true }`                            |
+| GET    | `/invites/:code`              | -                                      | `{ invite }` - preview, not the group     |
+| POST   | `/invites/:code/accept`       | `{ message? }`                         | `{ status, conversation, joinRequest }`   |
+| POST   | `/conversations/:id/join-requests` | `{ message? }`                    | `{ joinRequest }` (201)                   |
+| GET    | `/conversations/:id/join-requests` | `?status=&limit=` - admin         | `{ joinRequests }`                        |
+| PATCH  | `/conversations/:id/join-requests` | `{ userId, decision }` - admin    | `{ joinRequest, conversation }`            |
 | POST   | `/conversations/:id/messages` | `{ body, role?, replyToMessageId?, metadata? }` | `{ message }` (201)              |
 | GET    | `/conversations/:id/messages` | `?limit=&cursor=`                      | `{ messages, nextCursor }` - newest first |
 | GET    | `/search/messages`            | `?q=&limit=&cursor=`                   | `{ messages, nextCursor }` - ranked       |
@@ -524,6 +540,48 @@ Semantics that trip up generated clients:
 - `POST /conversations/group` takes no required fields: a bodyless POST creates
   an empty, unnamed group with just the creator (an admin). `userIds` may
   include the creator or duplicates - both are de-duplicated.
+- **Invite links** are an **optional storage capability**: the memory and
+  Drizzle adapters have it, a custom adapter may not, and every invite route
+  answers 501 `INVITES_UNSUPPORTED` when it is missing. Check once at startup,
+  not per request.
+- An invite `code` is a **capability URL**, not a credential: 32 random bytes as
+  base64url (43 chars, URL-safe, sits in the path), and possession alone admits
+  the holder. Bound it with `maxUses` / `expiresInSeconds` / revocation - and
+  treat it like a password in logs, because it will appear in your access log.
+  A group holds at most **50** invites (422 `INVITE_LIMIT_EXCEEDED`).
+- `GET /invites/:code` returns an **`InvitePreview`, not a conversation**:
+  `{ conversationId, name, participantCount, requiresApproval, invitedBy,
+  alreadyParticipant }`. It is the only route a non-member may call, so it
+  carries a participant *count* and never the member ids. Don't expect
+  `participants` here.
+- `POST /invites/:code/accept` returns a **discriminated union**: `status:
+  "joined"` with `{ conversation, joinRequest: null }`, or `status: "pending"`
+  with `{ conversation: null, joinRequest }` when the invite was minted with
+  `requiresApproval: true`. Branch on `status`, not on which field is null.
+- Redeeming is **idempotent and never over-charges the link**: a user who is
+  already a member (or already has a pending request) gets their truthful
+  result back and **burns no use** - even after the link is exhausted. A use is
+  spent only when the call is actually going to admit someone, so redeeming
+  into a full group is 422 `GROUP_LIMIT_EXCEEDED` with the link intact.
+- Unknown code is **404** `INVITE_NOT_FOUND`; expired or used-up is **410**
+  `INVITE_EXPIRED`. The 410 is the signal to ask for a new link rather than
+  retry. A revoked code reads as 404 - indistinguishable from one that never
+  existed.
+- **Join requests**: `POST /conversations/:id/join-requests` needs no
+  permission (asking is not entering) but 409s `ALREADY_PARTICIPANT` for a
+  member. There is **at most one request per (conversation, user)** - re-asking
+  while pending returns the same row, and a denied user asking again *replaces*
+  their old row. Denial is not a block; blocking is your app's job.
+- Admins resolve with `PATCH /conversations/:id/join-requests`
+  `{ userId, decision: "approve" | "deny" }` - addressed by **user id**, not the
+  request's own id. `GET` defaults to `?status=pending` (the moderation queue);
+  pass `approved`/`denied` for history. Resolving an already-resolved request is
+  404 `JOIN_REQUEST_NOT_FOUND`, so two admins cannot both apply a decision.
+- Joining by link publishes the **existing** `participant.added` event, exactly
+  as an admin-initiated add does - there are no new SSE event types, so a client
+  written for ADR 0017 groups already handles arrivals. Creating a join request
+  publishes **nothing** (the requester is not a member yet, and no member's view
+  is stale); poll the queue.
 - Every conversation object (create, list, get) carries the **viewer's**
   `unreadCount`: messages with `seq` newer than their read-state, excluding
   the viewer's own messages. Soft-deleted messages count (they render as
@@ -573,8 +631,11 @@ Semantics that trip up generated clients:
   `NOT_CONVERSATION_ADMIN` (a group management call by a non-admin),
   404 `*_NOT_FOUND`, 409 `MESSAGE_DELETED`, 409 `NOT_GROUP_CONVERSATION`
   (a group-only call on a DM), 409 `LAST_ADMIN_REMAINING`,
+  409 `ALREADY_PARTICIPANT` (asking to join a group you are in),
+  410 `INVITE_EXPIRED` (the link existed and is spent - ask for a new one),
   422 `MESSAGE_REJECTED` (a `beforeMessageSend` hook refused the message),
-  422 `GROUP_LIMIT_EXCEEDED`, 501 `SEARCH_UNSUPPORTED` (storage has no search
+  422 `GROUP_LIMIT_EXCEEDED`, 422 `INVITE_LIMIT_EXCEEDED`,
+  501 `SEARCH_UNSUPPORTED` / `INVITES_UNSUPPORTED` (storage has no such
   capability), 500 `INTERNAL_ERROR` (opaque).
 - **Auth runs before routing** - an unauthenticated request to a wrong path
   still 401s. Fix auth first; then a lingering 404 `NOT_FOUND` means your
@@ -827,6 +888,32 @@ adapter written before groups will fail to typecheck until it implements them -
 that is deliberate, because silently missing membership writes would look like
 data loss.
 
+Invite links and join requests are an **optional capability exposed as one
+namespace**: `invites?: InviteStorage` on `StorageAdapter`, holding nine
+methods (`createInvite`, `getInvite`, `listInvites`, `deleteInvite`,
+`consumeInvite`, `createJoinRequest`, `getJoinRequest`, `listJoinRequests`,
+`resolveJoinRequest`). Omit the whole namespace and core throws
+`INVITES_UNSUPPORTED` (HTTP 501) on all eight invite routes; provide it and you
+must provide all nine. It is one namespace rather than nine independently
+optional methods precisely so a half-implemented capability cannot exist - it
+would typecheck and then fail at runtime (ADR 0019 §2). Contract highlights:
+
+- `consumeInvite` must check usability and increment `uses` in **one
+  statement** - `UPDATE ... WHERE code = $1 AND (max_uses IS NULL OR uses <
+  max_uses) AND (expires_at IS NULL OR expires_at > now()) RETURNING *`. Zero
+  rows affected is the `null` (no-longer-usable) case. A read-then-write lets
+  two simultaneous redemptions of a `maxUses: 1` link both succeed.
+- `getInvite` must return expired and exhausted invites, not `null` - core
+  needs them to distinguish 404 from 410.
+- `deleteInvite` is scoped by `conversationId` and idempotent, so an admin of
+  one group cannot revoke another group's link by guessing a code.
+- `createJoinRequest` **upserts** on `(conversationId, userId)`, resetting
+  `status` to `pending` and clearing `resolvedAt`/`resolvedBy` - one row per
+  user per group, so a denied user re-asking replaces their row.
+- Core generates the invite `code` (32 random bytes, base64url) and the adapter
+  stores it verbatim as the primary key. Never generate or re-derive it:
+  unguessability is a security property, not a storage detail.
+
 `searchMessages` is an optional storage capability. Memory and Drizzle provide
 it. Existing custom adapters may omit it; core then throws `SEARCH_UNSUPPORTED`
 and the HTTP handler returns `501`. Adapters that provide search must return
@@ -854,6 +941,16 @@ contract; cursors remain opaque and adapter-defined.
   `replyToMessageId: string | null`, `metadata`.
 - **Reaction**: `messageId`, `userId`, `emoji`, `createdAt: Date`. Unique on
   the `(messageId, userId, emoji)` triple. Reactions have no id and no `seq`.
+- **ConversationInvite** (optional capability): `code` (the primary key *and*
+  the secret), `conversationId`, `createdBy`, `createdAt: Date`,
+  `expiresAt: Date | null`, `maxUses: number | null`, `uses: number`,
+  `requiresApproval: boolean`, `metadata`. Invites have no `seq` and are never
+  swept - core caps them at 50 per group instead.
+- **JoinRequest** (optional capability): `id`, `conversationId`, `userId`,
+  `status` (`"pending" | "approved" | "denied"`), `message: string | null`,
+  `inviteCode: string | null` (no foreign key - a request must outlive a
+  revoked invite), `createdAt: Date`, `resolvedAt: Date | null`,
+  `resolvedBy: string | null`, `metadata`. Unique on `(conversationId, userId)`.
 
 Adapters store `replyToMessageId` verbatim (core already validated it) and
 never see the API-only decorations `replyTo` / `reactions` - core computes
@@ -984,6 +1081,16 @@ else is implementation detail.
     Store what you are given. Adapters that re-check will drift from core and
     reject valid writes after a core upgrade.
 
+17. **Optional invites: consumption is atomic, join requests are unique per
+    pair.** If you implement the `invites` namespace, `consumeInvite` must
+    check usability and increment `uses` in a **single** statement (see Level 2)
+    - a read-then-write lets two redemptions of a `maxUses: 1` link both
+    succeed, which is the same class of bug as a non-atomic `seq`.
+    `getInvite` must still return expired and exhausted invites so core can
+    tell 404 from 410. `createJoinRequest` **upserts** on
+    `(conversationId, userId)`, clearing `resolvedAt`/`resolvedBy`. Store the
+    `code` core hands you verbatim - never generate or re-derive it.
+
 ## Level 2 - reference realization (Postgres SQL)
 
 The official Postgres schema. If your store speaks SQL, use it as-is; if not,
@@ -1084,6 +1191,40 @@ CREATE UNIQUE INDEX IF NOT EXISTS "chatpack_reactions_msg_user_emoji_idx"
   ON "chatpack_message_reactions" ("message_id", "user_id", "emoji");
 CREATE INDEX IF NOT EXISTS "chatpack_reactions_message_idx"
   ON "chatpack_message_reactions" ("message_id", "created_at");
+
+-- Optional invite capability (ADR 0019). Pure table additions: no column
+-- changes and no index swaps, so this is safe to run before deploying.
+CREATE TABLE IF NOT EXISTS "chatpack_conversation_invites" (
+  "code" text PRIMARY KEY,                  -- the identity AND the secret
+  "conversation_id" text NOT NULL REFERENCES "chatpack_conversations"("id") ON DELETE CASCADE,
+  "created_by" text NOT NULL,
+  "created_at" timestamptz NOT NULL,
+  "expires_at" timestamptz,                 -- NULL never expires
+  "max_uses" integer,                       -- NULL is unlimited
+  "uses" integer NOT NULL DEFAULT 0,
+  "requires_approval" boolean NOT NULL DEFAULT false,
+  "metadata" jsonb NOT NULL DEFAULT '{}'
+);
+CREATE INDEX IF NOT EXISTS "chatpack_invites_conversation_idx"
+  ON "chatpack_conversation_invites" ("conversation_id", "created_at");
+
+CREATE TABLE IF NOT EXISTS "chatpack_join_requests" (
+  "id" text PRIMARY KEY,
+  "conversation_id" text NOT NULL REFERENCES "chatpack_conversations"("id") ON DELETE CASCADE,
+  "user_id" text NOT NULL,
+  "status" text NOT NULL DEFAULT 'pending', -- pending | approved | denied
+  "message" text,
+  "invite_code" text,                       -- no FK: outlives a revoked invite
+  "created_at" timestamptz NOT NULL,
+  "resolved_at" timestamptz,
+  "resolved_by" text,
+  "metadata" jsonb NOT NULL DEFAULT '{}'
+);
+-- The arbiter of "one request per user per group": the upsert targets this.
+CREATE UNIQUE INDEX IF NOT EXISTS "chatpack_join_requests_conv_user_idx"
+  ON "chatpack_join_requests" ("conversation_id", "user_id");
+CREATE INDEX IF NOT EXISTS "chatpack_join_requests_status_idx"
+  ON "chatpack_join_requests" ("conversation_id", "status", "created_at");
 ```
 
 `reply_to_message_id` deliberately has **no foreign key**: a reply must outlive
@@ -1148,9 +1289,40 @@ How the reference implementation satisfies the two hard invariants
   Note what is *absent*: no `UPDATE chatpack_conversations`. Reacting must not
   advance `last_seq` or `last_activity_at` (invariant 12).
 
+- **Atomic invite consumption** (invariant 17) - the check and the increment in
+  one statement, so two simultaneous redemptions of a one-use link cannot both
+  win:
+
+  ```sql
+  UPDATE chatpack_conversation_invites
+  SET uses = uses + 1
+  WHERE code = $code
+    AND (max_uses IS NULL OR uses < max_uses)
+    AND (expires_at IS NULL OR expires_at > now())
+  RETURNING *;
+  ```
+
+  Zero rows returned = no longer usable (return `null`; core raises 410). Never
+  `SELECT` then `UPDATE` - that is the same race as a non-atomic `seq`.
+
+- **Upserting a join request** - one row per user per group, with the resolution
+  fields explicitly cleared so a re-ask doesn't look decided:
+
+  ```sql
+  INSERT INTO chatpack_join_requests (...)
+  VALUES (...)
+  ON CONFLICT (conversation_id, user_id) DO UPDATE
+  SET status = 'pending', message = $message, invite_code = $inviteCode,
+      created_at = $now, resolved_at = NULL, resolved_by = NULL;
+  ```
+
+  `DO UPDATE` here, unlike member adds: replacing a denied row with a fresh
+  pending one is exactly the intent (invariant 17).
+
 ### Non-SQL platforms (Convex, Firestore, ...)
 
-Ignore the SQL; keep the five-collection shape and satisfy Level 1 with your
+Ignore the SQL; keep the five-collection shape (plus two more if you implement
+invites) and satisfy Level 1 with your
 platform's transaction primitive. Example - on Convex, each adapter method
 becomes a Convex query/mutation (DB access only exists inside Convex
 functions) and the `StorageAdapter` object calls them through the Convex
@@ -1161,7 +1333,10 @@ with no extra machinery. Enforce invariant 1 with an index/lookup on
 groups are never deduplicated), invariant 12 with a lookup on the
 `(messageId, userId, emoji)` triple inside the reaction mutation, and
 invariants 14-15 by making group creation one mutation and looking up
-`(conversationId, userId)` before inserting a participant.
+`(conversationId, userId)` before inserting a participant. If you implement
+invites, invariant 17 needs `consumeInvite` to be one mutation that reads the
+row, checks usability, and writes the incremented `uses` - which is where a
+serializable-transaction platform gives you atomicity for free.
 
 ## Skeleton
 
@@ -1266,6 +1441,42 @@ export function myAdapter(client: MyDbClient): StorageAdapter {
       // aggregated userIds come out earliest-first. [] in -> [] out.
       // return reactions;
     },
+    // Optional capability (ADR 0019). Omit the WHOLE namespace or implement
+    // all nine - core checks for `invites`, not for individual methods.
+    invites: {
+      async createInvite(input) {
+        // Store input.code VERBATIM as the primary key - core generated it.
+        // uses starts at 0. return invite;
+      },
+      async getInvite(code) {
+        // Return expired/exhausted invites too, or null. Core needs both to
+        // tell 404 from 410.
+      },
+      async listInvites(conversationId) {
+        // That group's invites, newest-first, including spent ones.
+      },
+      async deleteInvite({ conversationId, code }) {
+        // Scoped by conversationId AND idempotent: zero rows is success.
+      },
+      async consumeInvite(code) {
+        // ONE statement: check usability and increment uses together
+        // (invariant 17). Zero rows affected -> return null. return invite;
+      },
+      async createJoinRequest(input) {
+        // UPSERT on (conversationId, userId): status "pending", and clear
+        // resolvedAt/resolvedBy so a re-ask doesn't look decided.
+      },
+      async getJoinRequest({ conversationId, userId }) {
+        // That pair's request whatever its status, or null.
+      },
+      async listJoinRequests({ conversationId, status, limit }) {
+        // Newest-first, filtered by status when given.
+      },
+      async resolveJoinRequest({ conversationId, userId, status, resolvedBy, resolvedAt }) {
+        // Write the decision; core already checked it exists and is pending,
+        // and adds the participant itself. Throw if the row is gone.
+      },
+    },
   };
 }
 ```
@@ -1317,6 +1528,21 @@ export function myAdapter(client: MyDbClient): StorageAdapter {
   participants are `admin`).
 - Bumping the conversation's activity timestamp or `lastSeq` on a membership
   change (same trap as reactions: it reorders the list and poisons gap-fill).
+- `SELECT` an invite, check `uses < maxUses` in JS, then `UPDATE` - the same race
+  as a non-atomic `seq`, except here it hands a one-use link to two strangers.
+  `consumeInvite` must be one statement (invariant 17).
+- Filtering expired invites out of `getInvite`, which turns every 410 ("that link
+  expired, ask for a new one") into a 404 ("no such link").
+- Implementing `getInvite`/`consumeInvite` but omitting, say, `listInvites`: core
+  checks for the `invites` namespace, not for individual methods, so a partial
+  namespace crashes instead of reporting 501.
+- Ignoring `conversationId` in `deleteInvite`, letting one group's admin revoke
+  another group's links.
+- `ON CONFLICT ... DO NOTHING` in `createJoinRequest` (the opposite of
+  `addParticipants`): a user denied last week must be able to ask again, so the
+  upsert has to reset `status` to `pending` and clear `resolvedAt`/`resolvedBy`.
+- Generating the invite code in the adapter, or hashing/normalizing the one core
+  passed in - the code stored must be byte-identical to the one in the URL.
 
 ## Verify your adapter
 
@@ -1387,8 +1613,18 @@ if any fails, the bug is in the adapter.
     appears in all three users' `listConversations`, ordered by activity next
     to their DMs, and `type`/`name`/`role` survive a restart.
 17. **Privilege check (hosted DBs).** With the browser/anon credentials, a
-    direct read of `chatpack_messages`, `chatpack_message_reactions`, or
-    `chatpack_conversation_participants` returns nothing/denied.
+    direct read of `chatpack_messages`, `chatpack_message_reactions`,
+    `chatpack_conversation_invites`, or
+    `chatpack_conversation_participants` returns nothing/denied. Invite codes
+    matter most here: a leaked table is a leaked set of live links.
+18. **Invites, if you implemented them.** Mint a `maxUses: 1` link, then fire
+    5 parallel `acceptInvite` calls as 5 different users - exactly one succeeds,
+    `uses` is `1`, and the group gained exactly one member. Accept again as the
+    user who got in: still `status: "joined"`, and `uses` is *still* `1`.
+    Backdate `expires_at` by hand and accept - `INVITE_EXPIRED`, `uses`
+    unchanged. Deny a join request, then have the same user ask again - one row,
+    `status: "pending"`, `resolvedBy` back to `null`. Omit the `invites`
+    namespace entirely and every invite route must be a clean 501, not a crash.
 
 ## Real-time plugins and custom adapters
 

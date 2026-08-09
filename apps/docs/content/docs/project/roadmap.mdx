@@ -28,14 +28,16 @@ description: What shipped in v0, what's deliberately out of scope, and where Cha
 | `@chatpack/cli init`                     | ✅ Done (v0.next) |
 | Group chats: membership, roles, admin    | ✅ Done (v0.next) |
 | File attachments (`@chatpack/file`)      | ✅ Done (v0.next) |
+| Invite links + join requests             | ✅ Done (v0.next) |
 
 ## Deliberately not in scope yet
 
-- **Group features beyond membership and roles** - groups ship with
-  `admin`/`member`, a name, a 256-participant cap, and admin-gated management
-  ([ADR 0017](/docs/concepts/architecture)). Invite links, join requests,
-  per-group permission grants, mentions, and public/discoverable channels are
-  not part of it.
+- **Group features beyond membership, roles, and invites** - groups ship with
+  `admin`/`member`, a name, a 256-participant cap, admin-gated management
+  ([ADR 0017](/docs/concepts/architecture)), and shareable invite links with an
+  optional approval queue ([ADR 0019](/docs/concepts/architecture)). Per-group
+  permission grants, mentions, and public/discoverable channels are not part of
+  it.
 - **Message threads** - `replyToMessageId` is a flat pointer at one earlier
   message, not a thread tree: no thread ids, no per-thread reply counts, no
   nested pagination. See

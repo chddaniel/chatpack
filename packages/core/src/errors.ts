@@ -44,6 +44,35 @@ export type ChatpackErrorCode =
   | "LAST_ADMIN_REMAINING"
   /** The group would exceed `MAX_GROUP_PARTICIPANTS` (`docs/decisions/0017`). */
   | "GROUP_LIMIT_EXCEEDED"
+  /**
+   * The configured storage adapter does not provide invite storage - it has no
+   * `invites` capability (`docs/decisions/0019` §2).
+   */
+  | "INVITES_UNSUPPORTED"
+  /**
+   * No such invite code. A revoked invite is deliberately indistinguishable
+   * from one that never existed (`docs/decisions/0019`).
+   */
+  | "INVITE_NOT_FOUND"
+  /**
+   * The invite is past its `expiresAt` or has exhausted its `maxUses`. One
+   * code covers both because the client handling is identical - ask for a new
+   * link (`docs/decisions/0019` §9).
+   */
+  | "INVITE_EXPIRED"
+  /**
+   * The group already holds `MAX_INVITES_PER_CONVERSATION` invites
+   * (`docs/decisions/0019`).
+   */
+  | "INVITE_LIMIT_EXCEEDED"
+  /** No join request exists for that user in that conversation. */
+  | "JOIN_REQUEST_NOT_FOUND"
+  /**
+   * The caller asked to join a conversation they are already in. Unlike a
+   * replayed invite redemption there is no truthful success value to return
+   * here (`docs/decisions/0019` §5).
+   */
+  | "ALREADY_PARTICIPANT"
   /** Invalid input (empty body, self-conversation, bad limit, ...). */
   | "INVALID_INPUT";
 

@@ -1,6 +1,6 @@
 ---
 name: chatpack
-description: Integrate Chatpack (@chatpack/core) - an open-source TypeScript chat backend (1:1 and group conversations) with REST + real-time SSE - into any app. Use when adding chat, messaging, DMs, group chats, or an AI-assistant conversation to an app; when working with any @chatpack/* package, chatpack(), chat.handler(), or toNextRouteHandlers; or when debugging Chatpack integrations (401 UNAUTHENTICATED, 404 on /api/chat/*, EventSource /stream not receiving events, cookies dropped in preview iframes).
+description: Integrate Chatpack (@chatpack/core) - an open-source TypeScript chat backend (1:1 and group conversations) with REST + real-time SSE - into any app. Use when adding chat, messaging, DMs, group chats, invite links, join requests, or an AI-assistant conversation to an app; when working with any @chatpack/* package, chatpack(), chat.handler(), or toNextRouteHandlers; or when debugging Chatpack integrations (401 UNAUTHENTICATED, 404 on /api/chat/*, EventSource /stream not receiving events, cookies dropped in preview iframes, 501 INVITES_UNSUPPORTED).
 ---
 
 # Integrating Chatpack
@@ -28,7 +28,9 @@ installed `llms.txt` wins (it matches the installed version).
    `updateConversation`, `addParticipants`, `removeParticipant`,
    `setParticipantRole`, `sendMessage`, `listMessages`,
    `searchMessages`, `editMessage`, `deleteMessage`, `addReaction`, `removeReaction`, `markRead`,
-   `listMessagesAfter`.
+   `listMessagesAfter`, `createInvite`, `listInvites`, `revokeInvite`,
+   `getInvitePreview`, `acceptInvite`, `requestToJoin`, `listJoinRequests`,
+   `resolveJoinRequest`.
    `getOrCreateDirectConversation` is a storage-adapter method - never call the
    adapter directly. If a method name is not in this list, **it does not exist -
    do not invent it.**
@@ -255,6 +257,74 @@ added (the group appears in the list) and being removed (the conversation is
 dropped; your own `participant.removed` is the only signal you get). These
 events carry no `id:` line, so they are not gap-filled after a reconnect.
 
+**Invite links and join requests** are the way in when you don't have someone's
+user id. Eight routes, **no client wrappers yet** - use `fetch`. They need an
+optional storage capability: both first-party adapters have it, a custom adapter
+may not, and all eight then answer `501 INVITES_UNSUPPORTED` (check once at
+startup, not per call).
+
+```ts
+// mint a link (admin by default; `canInvite` can loosen it to any member).
+// Every field optional - a bodyless POST means "no expiry, unlimited uses".
+const { invite } = await fetch(`/api/chat/conversations/${groupId}/invites`, {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ expiresInSeconds: 86400, maxUses: 5 }),
+}).then((r) => r.json());
+// invite.code is 43 URL-safe chars - build your own /join/:code page from it
+
+// the landing page. An InvitePreview, NOT a conversation: a participant COUNT and
+// no user ids, because a non-member may call this.
+const preview = await fetch(`/api/chat/invites/${code}`).then((r) => r.json());
+// { conversationId, name, participantCount, requiresApproval, invitedBy, alreadyParticipant }
+
+// redeem. Branch on `status`, never on which field came back null.
+const result = await fetch(`/api/chat/invites/${code}/accept`, { method: "POST" }).then((r) =>
+  r.json(),
+);
+if (result.status === "joined")
+  result.conversation; // in - members get participant.added
+else result.joinRequest; // requiresApproval: true - an admin must resolve it
+
+// the other direction: ask to join a group you know the id of. No permission
+// needed. 409 ALREADY_PARTICIPANT if you're already in.
+await fetch(`/api/chat/conversations/${groupId}/join-requests`, {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ message: "I'm on the design team" }),
+});
+
+// the admin queue. NO event fires when a request arrives - poll this.
+const { joinRequests } = await fetch(`/api/chat/conversations/${groupId}/join-requests`).then((r) =>
+  r.json(),
+); // defaults to ?status=pending
+
+// resolve by USER id, not request id
+await fetch(`/api/chat/conversations/${groupId}/join-requests`, {
+  method: "PATCH",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ userId: "erin", decision: "approve" }), // or "deny"
+});
+```
+
+Invite rules core enforces (don't re-implement):
+
+- **The code is a capability URL, not a credential** - possession is the
+  permission, like a document share link. It rides in the path, so it lands in
+  access logs; bound it with `expiresInSeconds` / `maxUses` / revocation. 50
+  invites per group max (422 `INVITE_LIMIT_EXCEEDED`).
+- **Redeeming is idempotent and never over-charges the link.** Someone already in
+  gets the conversation back and consumes no use - even after the link is spent,
+  so a double-clicked one-use link still answers the person it admitted. A
+  redemption that would exceed 256 participants is 422 with the link intact.
+- **404 vs 410.** Unknown _or revoked_ code → 404 `INVITE_NOT_FOUND`. Expired or
+  out of uses → **410** `INVITE_EXPIRED`, meaning "ask for a new link".
+- **Joining publishes the existing `participant.added` event** - no new SSE types
+  to subscribe to. Creating a join request publishes nothing.
+- **One request per user per group**, resolved by user id. Re-asking replaces the
+  row, so **denial is not a block** - hard-blocking is yours to build. Resolving
+  twice is 404 `JOIN_REQUEST_NOT_FOUND`.
+
 Client semantics that trip up generated code:
 
 - HTTP responses are **enveloped**: `{ conversation }`, `{ message }`,
@@ -330,6 +400,16 @@ curl -si -X POST localhost:3000/api/chat/conversations/conv_2/participants \
 # 6. live stream (expect ": connected", then events as messages are sent;
 #    reaction.added and participant.* frames arrive with no `id:` line - correct)
 curl -sN localhost:3000/api/chat/stream -H 'cookie: demo_user=bob'
+
+# 7. invites, if the app has an invite UI (expect 201 with a 43-char code, then a
+#    preview carrying participantCount and NO user ids, then 200 status "joined").
+#    A 501 INVITES_UNSUPPORTED means the storage adapter lacks the capability.
+curl -si -X POST localhost:3000/api/chat/conversations/conv_2/invites \
+  -H 'cookie: demo_user=alice' -H 'content-type: application/json' -d '{"maxUses":1}'
+curl -s localhost:3000/api/chat/invites/THE_CODE -H 'cookie: demo_user=carol'
+curl -si -X POST localhost:3000/api/chat/invites/THE_CODE/accept -H 'cookie: demo_user=carol'
+# accept AGAIN as carol: still 200 "joined" (idempotent), NOT 410 - the link is
+# spent but she is already in. A third user now gets 410 INVITE_EXPIRED.
 ```
 
 Browser check: after "sign in", `document.cookie` must contain the demo cookie
@@ -352,17 +432,23 @@ AND the Network tab must show it on `/api/chat/*` requests.
 | Duplicate groups piling up                                 | Treating `createGroupConversation` as find-or-create. It always creates; store the returned id (Hard rule 4).                                                                          |
 | Second group insert fails on a unique-key error            | Custom adapter left the `pair_key` unique index total instead of partial (`WHERE pair_key IS NOT NULL`), so two `NULL` keys collide.                                                   |
 | An admin silently becomes a `member`                       | Custom adapter used `ON CONFLICT DO UPDATE` for participant inserts. Re-adding an existing member must be `DO NOTHING`.                                                                |
+| 501 `INVITES_UNSUPPORTED`                                  | The storage adapter has no `invites` capability. Both first-party adapters do; a custom one needs the whole nine-method namespace (all or nothing).                                    |
+| 410 `INVITE_EXPIRED` on a fresh-looking link               | Past `expiresAt`, or `maxUses` is spent. Mint a new one - the code is permanently done. A 404 instead means unknown _or revoked_.                                                      |
+| A one-use invite let in two people                         | Custom adapter did `SELECT`-then-`UPDATE` in `consumeInvite`. It must be one atomic statement, same rule as `seq`.                                                                     |
+| A denied user can't re-request                             | Custom adapter used `DO NOTHING` in `createJoinRequest`. Join requests are the one place that needs `DO UPDATE` - reset `status` to `pending` and clear the resolution.                |
 
 ## Custom storage adapter (Supabase JS / Convex / Firestore / other)
 
 Do NOT improvise: read **Part 2 of `llms.txt`** and follow it exactly - it
-contains the 19-required-method `StorageAdapter` contract plus optional search,
+contains the 19-required-method `StorageAdapter` contract plus two optional
+capabilities (search, and the nine-method `invites` namespace),
 the invariants (atomic
 `pairKey` creation, atomic per-conversation `seq`, `Date` instances not ISO
 strings, soft-delete as tombstone, newest-first vs oldest-first ordering,
 batched exact unread counts, participant-scoped ranked search when supported,
-idempotent reaction writes that never touch `lastSeq`/activity), the reference
-Postgres schema, a skeleton, and a 17-point verification checklist.
+idempotent reaction writes that never touch `lastSeq`/activity, single-statement
+invite consumption), the reference
+Postgres schema, a skeleton, and an 18-point verification checklist.
 The adapter must run server-side with privileged credentials; `chatpack_*`
 tables must never be readable by browser/anon clients.
 

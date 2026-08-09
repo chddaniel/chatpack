@@ -38,12 +38,20 @@ import type {
   AddMessageInput,
   AddParticipantsInput,
   Conversation,
+  ConversationInvite,
   CountUnreadInput,
   CreateGroupConversationInput,
+  CreateInviteInput,
+  CreateJoinRequestInput,
+  DeleteInviteInput,
+  GetJoinRequestInput,
   GetOrCreateDirectConversationInput,
   GetOrCreateDirectConversationResult,
+  JoinRequest,
+  JoinRequestStatus,
   ListConversationsInput,
   ListConversationsResult,
+  ListJoinRequestsInput,
   ListMessagesAfterSeqInput,
   ListMessagesInput,
   ListMessagesResult,
@@ -53,6 +61,7 @@ import type {
   Reaction,
   ReactionInput,
   RemoveParticipantInput,
+  ResolveJoinRequestInput,
   SearchMessagesInput,
   SearchMessagesResult,
   SetParticipantRoleInput,
@@ -64,8 +73,10 @@ import type {
 import { countSearchTokens, getSearchTerms } from "@chatpack/core";
 
 import {
+  conversationInvites,
   conversationParticipants,
   conversations,
+  joinRequests,
   messageReactions,
   messageSearchTokens,
   messages,
@@ -73,8 +84,10 @@ import {
 
 export {
   chatpackSchema,
+  conversationInvites,
   conversationParticipants,
   conversations,
+  joinRequests,
   messageReactions,
   messageSearchTokens,
   messages,
@@ -92,6 +105,8 @@ type ConversationRow = typeof conversations.$inferSelect;
 type ParticipantRow = typeof conversationParticipants.$inferSelect;
 type MessageRow = typeof messages.$inferSelect;
 type ReactionRow = typeof messageReactions.$inferSelect;
+type InviteRow = typeof conversationInvites.$inferSelect;
+type JoinRequestRow = typeof joinRequests.$inferSelect;
 
 interface SearchTokenRow {
   messageId: string;
@@ -184,6 +199,40 @@ function toReaction(row: ReactionRow): Reaction {
     userId: row.userId,
     emoji: row.emoji,
     createdAt: row.createdAt,
+  };
+}
+
+function toInvite(row: InviteRow): ConversationInvite {
+  return {
+    code: row.code,
+    conversationId: row.conversationId,
+    createdBy: row.createdBy,
+    createdAt: row.createdAt,
+    expiresAt: row.expiresAt,
+    maxUses: row.maxUses,
+    uses: row.uses,
+    requiresApproval: row.requiresApproval,
+    metadata: (row.metadata ?? {}) as Metadata,
+  };
+}
+
+function toJoinRequest(row: JoinRequestRow): JoinRequest {
+  return {
+    id: row.id,
+    conversationId: row.conversationId,
+    userId: row.userId,
+    // Plain text column, so an unrecognized value coerces to the safe default
+    // rather than widening the domain type - same rule as `type`/`role`.
+    status:
+      row.status === "approved" || row.status === "denied"
+        ? (row.status as JoinRequestStatus)
+        : "pending",
+    message: row.message,
+    inviteCode: row.inviteCode,
+    createdAt: row.createdAt,
+    resolvedAt: row.resolvedAt,
+    resolvedBy: row.resolvedBy,
+    metadata: (row.metadata ?? {}) as Metadata,
   };
 }
 
@@ -776,6 +825,186 @@ export function drizzleAdapter(db: DrizzlePgDatabase): StorageAdapter {
         // Earliest-first, which is the order core aggregates `userIds` in.
         .orderBy(asc(messageReactions.createdAt));
       return rows.map(toReaction);
+    },
+
+    /**
+     * Invite links and join requests (`docs/decisions/0019`) - the optional
+     * capability, implemented in full.
+     */
+    invites: {
+      async createInvite(input: CreateInviteInput): Promise<ConversationInvite> {
+        // The code is supplied by core, which owns entropy (ADR 0019 §3).
+        const [row] = await db
+          .insert(conversationInvites)
+          .values({
+            code: input.code,
+            conversationId: input.conversationId,
+            createdBy: input.createdBy,
+            createdAt: new Date(),
+            expiresAt: input.expiresAt,
+            maxUses: input.maxUses,
+            uses: 0,
+            requiresApproval: input.requiresApproval,
+            metadata: input.metadata,
+          })
+          .returning();
+        if (!row) {
+          throw new Error("drizzleAdapter: failed to create invite.");
+        }
+        return toInvite(row);
+      },
+
+      async getInvite(code: string): Promise<ConversationInvite | null> {
+        const [row] = await db
+          .select()
+          .from(conversationInvites)
+          .where(eq(conversationInvites.code, code))
+          .limit(1);
+        // Expired and exhausted invites come back as-is: core needs to tell
+        // "no such code" (404) from "no longer usable" (410).
+        return row ? toInvite(row) : null;
+      },
+
+      async listInvites(conversationId: string): Promise<ConversationInvite[]> {
+        const rows = await db
+          .select()
+          .from(conversationInvites)
+          .where(eq(conversationInvites.conversationId, conversationId))
+          .orderBy(desc(conversationInvites.createdAt), desc(conversationInvites.code));
+        return rows.map(toInvite);
+      },
+
+      async deleteInvite(input: DeleteInviteInput): Promise<void> {
+        // Scoped by conversation so an admin of one group cannot revoke
+        // another's by guessing a code. Deleting zero rows is success.
+        await db
+          .delete(conversationInvites)
+          .where(
+            and(
+              eq(conversationInvites.code, input.code),
+              eq(conversationInvites.conversationId, input.conversationId),
+            ),
+          );
+      },
+
+      async consumeInvite(code: string): Promise<ConversationInvite | null> {
+        const now = new Date();
+        // ONE conditional UPDATE ... RETURNING, never read-then-write: this is
+        // the only thing standing between two simultaneous redemptions of a
+        // `maxUses: 1` invite and both of them succeeding (ADR 0019 §2).
+        // Postgres evaluates the WHERE and applies the increment under a single
+        // row lock, so the loser matches zero rows and gets `null`.
+        const [row] = await db
+          .update(conversationInvites)
+          .set({ uses: sql`${conversationInvites.uses} + 1` })
+          .where(
+            and(
+              eq(conversationInvites.code, code),
+              or(
+                isNull(conversationInvites.maxUses),
+                lt(conversationInvites.uses, conversationInvites.maxUses),
+              ),
+              or(isNull(conversationInvites.expiresAt), gt(conversationInvites.expiresAt, now)),
+            ),
+          )
+          .returning();
+        return row ? toInvite(row) : null;
+      },
+
+      async createJoinRequest(input: CreateJoinRequestInput): Promise<JoinRequest> {
+        const [row] = await db
+          .insert(joinRequests)
+          .values({
+            id: generateId("jreq"),
+            conversationId: input.conversationId,
+            userId: input.userId,
+            status: "pending",
+            message: input.message,
+            inviteCode: input.inviteCode,
+            createdAt: new Date(),
+            resolvedAt: null,
+            resolvedBy: null,
+            metadata: input.metadata,
+          })
+          // One row per (conversation, user): a previously denied user asking
+          // again overwrites their old row with a fresh pending one, rather
+          // than stacking up in the queue (ADR 0019 §5). The resolution fields
+          // are reset explicitly - a leftover `resolvedBy` on a pending row
+          // would make it look decided.
+          .onConflictDoUpdate({
+            target: [joinRequests.conversationId, joinRequests.userId],
+            set: {
+              status: "pending",
+              message: input.message,
+              inviteCode: input.inviteCode,
+              createdAt: new Date(),
+              resolvedAt: null,
+              resolvedBy: null,
+              metadata: input.metadata,
+            },
+          })
+          .returning();
+        if (!row) {
+          throw new Error("drizzleAdapter: failed to create join request.");
+        }
+        return toJoinRequest(row);
+      },
+
+      async getJoinRequest(input: GetJoinRequestInput): Promise<JoinRequest | null> {
+        const [row] = await db
+          .select()
+          .from(joinRequests)
+          .where(
+            and(
+              eq(joinRequests.conversationId, input.conversationId),
+              eq(joinRequests.userId, input.userId),
+            ),
+          )
+          .limit(1);
+        return row ? toJoinRequest(row) : null;
+      },
+
+      async listJoinRequests(input: ListJoinRequestsInput): Promise<JoinRequest[]> {
+        const rows = await db
+          .select()
+          .from(joinRequests)
+          .where(
+            input.status === undefined
+              ? eq(joinRequests.conversationId, input.conversationId)
+              : and(
+                  eq(joinRequests.conversationId, input.conversationId),
+                  eq(joinRequests.status, input.status),
+                ),
+          )
+          // Newest-first, with the id breaking ties so the order is stable
+          // across reads (Postgres guarantees none without a full ORDER BY).
+          .orderBy(desc(joinRequests.createdAt), desc(joinRequests.id))
+          .limit(input.limit);
+        return rows.map(toJoinRequest);
+      },
+
+      async resolveJoinRequest(input: ResolveJoinRequestInput): Promise<JoinRequest> {
+        const [row] = await db
+          .update(joinRequests)
+          .set({
+            status: input.status,
+            resolvedAt: input.resolvedAt,
+            resolvedBy: input.resolvedBy,
+          })
+          .where(
+            and(
+              eq(joinRequests.conversationId, input.conversationId),
+              eq(joinRequests.userId, input.userId),
+            ),
+          )
+          .returning();
+        if (!row) {
+          throw new Error(
+            `drizzleAdapter: no join request from user "${input.userId}" in "${input.conversationId}".`,
+          );
+        }
+        return toJoinRequest(row);
+      },
     },
   };
 }

@@ -15,13 +15,20 @@ import type {
   AddMessageInput,
   AddParticipantsInput,
   Conversation,
+  ConversationInvite,
   ConversationType,
   CountUnreadInput,
   CreateGroupConversationInput,
+  CreateInviteInput,
+  CreateJoinRequestInput,
+  DeleteInviteInput,
+  GetJoinRequestInput,
   GetOrCreateDirectConversationInput,
   GetOrCreateDirectConversationResult,
+  JoinRequest,
   ListConversationsInput,
   ListConversationsResult,
+  ListJoinRequestsInput,
   ListMessagesAfterSeqInput,
   ListMessagesInput,
   ListMessagesResult,
@@ -30,6 +37,7 @@ import type {
   Reaction,
   ReactionInput,
   RemoveParticipantInput,
+  ResolveJoinRequestInput,
   SearchMessagesInput,
   SearchMessagesResult,
   SetParticipantRoleInput,
@@ -123,6 +131,16 @@ export function memoryAdapter(): StorageAdapter {
    * aggregates into `ReactionSummary.userIds` (ADR 0013).
    */
   const reactionsByMessage = new Map<string, Reaction[]>();
+  /** Invites by code - the code is both the identity and the secret (ADR 0019). */
+  const invitesByCode = new Map<string, ConversationInvite>();
+  /**
+   * Join requests keyed by conversation + user: at most one row per user per
+   * conversation (ADR 0019 §5). NUL separator, since ids are opaque strings and
+   * a printable one could be crafted to collide with a different pair.
+   */
+  const joinRequestsByKey = new Map<string, JoinRequest>();
+  const joinRequestKey = (conversationId: string, userId: string): string =>
+    `${conversationId}\u0000${userId}`;
 
   let idCounter = 0;
   const nextId = (prefix: string): string => `${prefix}_${(++idCounter).toString(36)}`;
@@ -506,6 +524,116 @@ export function memoryAdapter(): StorageAdapter {
         }
       }
       return result;
+    },
+
+    /**
+     * Invite links and join requests (`docs/decisions/0019`) - the optional
+     * capability, implemented in full. Provided as one object, so core's single
+     * `storage.invites` check is all the gating it needs.
+     */
+    invites: {
+      async createInvite(input: CreateInviteInput): Promise<ConversationInvite> {
+        // The code comes from core, which owns entropy (ADR 0019 §3) - store it
+        // verbatim rather than deriving anything from it.
+        const invite: ConversationInvite = {
+          code: input.code,
+          conversationId: input.conversationId,
+          createdBy: input.createdBy,
+          createdAt: new Date(),
+          expiresAt: input.expiresAt,
+          maxUses: input.maxUses,
+          uses: 0,
+          requiresApproval: input.requiresApproval,
+          metadata: { ...input.metadata },
+        };
+        invitesByCode.set(invite.code, invite);
+        return { ...invite };
+      },
+
+      async getInvite(code: string): Promise<ConversationInvite | null> {
+        const invite = invitesByCode.get(code);
+        // Expired and exhausted invites are returned as-is: core needs to tell
+        // "no such code" (404) from "no longer usable" (410).
+        return invite ? { ...invite } : null;
+      },
+
+      async listInvites(conversationId: string): Promise<ConversationInvite[]> {
+        return [...invitesByCode.values()]
+          .filter((invite) => invite.conversationId === conversationId)
+          .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+          .map((invite) => ({ ...invite }));
+      },
+
+      async deleteInvite(input: DeleteInviteInput): Promise<void> {
+        const invite = invitesByCode.get(input.code);
+        // Scoped by conversation and idempotent: an unknown code, or one from
+        // another group, is a silent no-op.
+        if (invite && invite.conversationId === input.conversationId) {
+          invitesByCode.delete(input.code);
+        }
+      },
+
+      async consumeInvite(code: string): Promise<ConversationInvite | null> {
+        const invite = invitesByCode.get(code);
+        if (!invite) return null;
+        if (invite.expiresAt !== null && invite.expiresAt.getTime() <= Date.now()) return null;
+        if (invite.maxUses !== null && invite.uses >= invite.maxUses) return null;
+        // Atomic by construction: single-threaded JS, and the check and the
+        // increment sit in one synchronous block with no await between them.
+        // A SQL adapter needs a conditional UPDATE ... RETURNING instead.
+        invite.uses += 1;
+        return { ...invite };
+      },
+
+      async createJoinRequest(input: CreateJoinRequestInput): Promise<JoinRequest> {
+        const request: JoinRequest = {
+          id: nextId("jreq"),
+          conversationId: input.conversationId,
+          userId: input.userId,
+          status: "pending",
+          message: input.message,
+          inviteCode: input.inviteCode,
+          createdAt: new Date(),
+          resolvedAt: null,
+          resolvedBy: null,
+          metadata: { ...input.metadata },
+        };
+        // Replaces any previous row for this pair, so a denied-then-reasking
+        // user gets one fresh pending request (ADR 0019 §5).
+        joinRequestsByKey.set(joinRequestKey(input.conversationId, input.userId), request);
+        return { ...request };
+      },
+
+      async getJoinRequest(input: GetJoinRequestInput): Promise<JoinRequest | null> {
+        const request = joinRequestsByKey.get(joinRequestKey(input.conversationId, input.userId));
+        return request ? { ...request } : null;
+      },
+
+      async listJoinRequests(input: ListJoinRequestsInput): Promise<JoinRequest[]> {
+        return [...joinRequestsByKey.values()]
+          .filter(
+            (request) =>
+              request.conversationId === input.conversationId &&
+              (input.status === undefined || request.status === input.status),
+          )
+          .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+          .slice(0, input.limit)
+          .map((request) => ({ ...request }));
+      },
+
+      async resolveJoinRequest(input: ResolveJoinRequestInput): Promise<JoinRequest> {
+        const key = joinRequestKey(input.conversationId, input.userId);
+        const request = joinRequestsByKey.get(key);
+        if (!request) {
+          throw new Error(
+            `memoryAdapter: no join request from user "${input.userId}" in "${input.conversationId}".`,
+          );
+        }
+        request.status = input.status;
+        request.resolvedAt = input.resolvedAt;
+        request.resolvedBy = input.resolvedBy;
+        return { ...request };
+      },
     },
   };
 }

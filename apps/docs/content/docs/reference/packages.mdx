@@ -6,12 +6,13 @@ description: Every @chatpack/* package, what it exports, and when you need it.
 All packages are MIT-licensed and published to npm. Everything is `0.x` until
 the public API stabilizes - expect minor breaking changes before `1.0`.
 
-The current package set covers direct and group conversations, text messages,
-permissions, read state and unread counts, SSE with gap-fill, memory and
-Drizzle storage, Redis event fan-out, typing/presence/receipts, reactions,
-quote-replies, participant-scoped search, the post-persistence mutation hook,
-the browser client with React hooks and polling fallback, Filepack-backed
-file attachments, and project setup with `@chatpack/cli init`.
+The current package set covers direct and group conversations, invite links and
+join requests, text messages, permissions, read state and unread counts, SSE
+with gap-fill, memory and Drizzle storage, Redis event fan-out,
+typing/presence/receipts, reactions, quote-replies, participant-scoped search,
+the post-persistence mutation hook, the browser client with React hooks and
+polling fallback, Filepack-backed file attachments, and project setup with
+`@chatpack/cli init`.
 
 Push notification providers, reusable React UI components, true message
 threads, and multi-node presence have not shipped.
@@ -23,17 +24,17 @@ The only package every integration needs.
 
 **Main exports:**
 
-| Export                    | What it is                                                                                                                                                                                                                                                                                      |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `chatpack(options)`       | The single factory - returns `{ api, handler, transport, telemetry, options }`                                                                                                                                                                                                                  |
-| `ChatpackError`           | Domain error with a stable `code`                                                                                                                                                                                                                                                               |
-| `pairKeyFor(a, b)`        | Deterministic DM pair key (internal detail, exported for adapters/tests)                                                                                                                                                                                                                        |
-| `inProcessTransport()`    | The default single-node transport                                                                                                                                                                                                                                                               |
-| `isEphemeralEvent(event)` | Type guard for `TransportEvent`                                                                                                                                                                                                                                                                 |
-| `isMessageEvent(event)`   | Type guard for the message half of `TransportEvent` - `TransportEvent` has four members (`ChatEvent`, `ReactionEvent`, `ConversationEvent`, `EphemeralEvent`), so "not ephemeral" no longer means "a message"                                                                                   |
-| `isReactionEvent(event)`  | Type guard for `reaction.added` / `reaction.removed`                                                                                                                                                                                                                                            |
-| `isConversationEvent(e)`  | Type guard for the membership events `participant.added` / `participant.removed` / `conversation.updated`                                                                                                                                                                                       |
-| Types                     | `ChatpackOptions`, `ChatpackUser`, `AuthHook`, `PermissionHooks`, `StorageAdapter`, `Transport`, `ChatpackPlugin`, `Conversation`, `ConversationType`, `Participant`, `ParticipantRole`, `Message`, `MessageWithDetails`, `Reaction`, `ReactionSummary`, `MessageRole`, `TelemetryPayload`, ... |
+| Export                    | What it is                                                                                                                                                                                                                                                                                                                                                                                  |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `chatpack(options)`       | The single factory - returns `{ api, handler, transport, telemetry, options }`                                                                                                                                                                                                                                                                                                              |
+| `ChatpackError`           | Domain error with a stable `code`                                                                                                                                                                                                                                                                                                                                                           |
+| `pairKeyFor(a, b)`        | Deterministic DM pair key (internal detail, exported for adapters/tests)                                                                                                                                                                                                                                                                                                                    |
+| `inProcessTransport()`    | The default single-node transport                                                                                                                                                                                                                                                                                                                                                           |
+| `isEphemeralEvent(event)` | Type guard for `TransportEvent`                                                                                                                                                                                                                                                                                                                                                             |
+| `isMessageEvent(event)`   | Type guard for the message half of `TransportEvent` - `TransportEvent` has four members (`ChatEvent`, `ReactionEvent`, `ConversationEvent`, `EphemeralEvent`), so "not ephemeral" no longer means "a message"                                                                                                                                                                               |
+| `isReactionEvent(event)`  | Type guard for `reaction.added` / `reaction.removed`                                                                                                                                                                                                                                                                                                                                        |
+| `isConversationEvent(e)`  | Type guard for the membership events `participant.added` / `participant.removed` / `conversation.updated`                                                                                                                                                                                                                                                                                   |
+| Types                     | `ChatpackOptions`, `ChatpackUser`, `AuthHook`, `PermissionHooks`, `StorageAdapter`, `InviteStorage`, `Transport`, `ChatpackPlugin`, `Conversation`, `ConversationType`, `Participant`, `ParticipantRole`, `Message`, `MessageWithDetails`, `Reaction`, `ReactionSummary`, `MessageRole`, `ConversationInvite`, `InvitePreview`, `JoinRequest`, `JoinRequestStatus`, `TelemetryPayload`, ... |
 
 **Subpath `@chatpack/core/plugins`:**
 
@@ -64,6 +65,11 @@ const result = await chatClient.conversations.list();
 `useMessages`, `useRealtimeStatus`, and first-party plugin hooks. It uses
 `useSyncExternalStore` and has no state-library dependency.
 
+The invite and join-request routes have no client wrappers yet - call them with
+`fetch` against the [REST contract](/docs/reference/rest-api#invite--join-request-routes).
+Redeeming an invite publishes the same `participant.added` event the group
+mutations do, so the conversation list updates itself.
+
 | Export                           | What it is                                                                                                          |
 | -------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | `createChatClient(options?)`     | One per-application client instance                                                                                 |
@@ -79,7 +85,8 @@ const result = await chatClient.conversations.list();
 ## `@chatpack/adapter-memory`
 
 In-memory storage - zero-setup demos and fast, deterministic tests. The
-reference `StorageAdapter` implementation.
+reference `StorageAdapter` implementation, including both optional capabilities
+(search, and the `invites` namespace behind invite links and join requests).
 
 | Export            | What it is                          |
 | ----------------- | ----------------------------------- |
@@ -92,14 +99,14 @@ reference `StorageAdapter` implementation.
 Drizzle ORM (Postgres) storage - real persistence for production. Peer
 dependency on `drizzle-orm`.
 
-| Export                                                                                             | What it is                                                 |
-| -------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| `drizzleAdapter(db)`                                                                               | Create the adapter from any Drizzle Postgres instance      |
-| `chatpackSchema`                                                                                   | Drizzle table objects (for your `drizzle-kit` flow)        |
-| `conversations`, `conversationParticipants`, `messages`, `messageReactions`, `messageSearchTokens` | The individual tables                                      |
-| `migrationSql`                                                                                     | Idempotent DDL as one string (no Drizzle needed to run it) |
-| `migrationStatements`                                                                              | The same DDL split for one-statement-per-call drivers      |
-| `backfillMessageSearchTokens(db)`                                                                  | Index existing message bodies for search after an upgrade  |
+| Export                                                                                                                                    | What it is                                                 |
+| ----------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `drizzleAdapter(db)`                                                                                                                      | Create the adapter from any Drizzle Postgres instance      |
+| `chatpackSchema`                                                                                                                          | Drizzle table objects (for your `drizzle-kit` flow)        |
+| `conversations`, `conversationParticipants`, `messages`, `messageReactions`, `messageSearchTokens`, `conversationInvites`, `joinRequests` | The individual tables                                      |
+| `migrationSql`                                                                                                                            | Idempotent DDL as one string (no Drizzle needed to run it) |
+| `migrationStatements`                                                                                                                     | The same DDL split for one-statement-per-call drivers      |
+| `backfillMessageSearchTokens(db)`                                                                                                         | Index existing message bodies for search after an upgrade  |
 
 → [Drizzle / Postgres](/docs/storage/drizzle)
 
