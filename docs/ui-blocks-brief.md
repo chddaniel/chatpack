@@ -66,7 +66,7 @@ Now check the connection before building anything:
 >
 > Open it and paste back exactly what appears. If it shows `null`, an empty list or an error, **do not try to fix it** — no `fetch`, no URL changes, no proxy, no API route, no new packages. Just tell me the error code plus the exact `baseURL` and `basePath` used.
 
-**Should see:** ugly raw data with two conversations (alice↔bob, alice↔carol). Anything else → the table at the bottom. Don't build on a broken connection; you'll debug components for hours over one wrong character in a URL.
+**Should see:** ugly raw data with three conversations (alice↔bob, alice↔carol, Design team). Anything else → the table at the bottom. Don't build on a broken connection; you'll debug components for hours over one wrong character in a URL.
 
 **Test with two people.** Open the preview in one window, and the same URL with `?user=bob` in a second. Type in one, watch the other — that's how you check typing dots, instant delivery and unread badges. **Do this on every piece before calling it finished**; it's the only way to catch what looks perfect sitting still and breaks the moment two people use it.
 
