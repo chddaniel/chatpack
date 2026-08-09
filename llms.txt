@@ -131,6 +131,27 @@ await chatClient.messages.react({ messageId: result.data.id, emoji: "👍" });
 await chatClient.messages.unreact({ messageId: result.data.id, emoji: "👍" });
 ```
 
+Search every conversation visible to the signed-in participant with
+`messages.search({ query, limit, cursor })`. React applications can use
+`useMessageSearch({ query, limit })`, which adds `loadMore()` and `refetch()`:
+
+```ts
+const page = await chatClient.messages.search({ query: "release ready", limit: 20 });
+const search = chatClient.useMessageSearch({ query: "release ready", limit: 20 });
+```
+
+Search is case-insensitive, whole-token, AND-matched, relevance-ranked, and
+cursor-paginated. Core and the adapter own participant scope, matching, ranking,
+tombstone exclusion, and cursor encoding. Adapters without the capability
+return a structured 501 `SEARCH_UNSUPPORTED` result. An empty hook query stays
+idle without a request; the imperative method still returns `INVALID_INPUT`.
+
+Search pages are snapshots. New messages are not inserted or re-ranked. Edits
+and tombstones patch loaded hits in place, and losing conversation access
+removes its hits. Call `refetch()` to recompute matches and rank. The hook sends
+a request whenever its query changes, so debounce text input before passing it;
+the client retains at most ten normalized query entries per instance.
+
 Client methods return `{ data, error }`; expected HTTP and network failures do
 not throw. The client never owns authentication, reads cookies, manages
 sessions, or places bearer tokens in the SSE URL. Native `EventSource` uses

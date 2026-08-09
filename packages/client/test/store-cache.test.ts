@@ -436,6 +436,53 @@ describe("message search cache", () => {
       isRefetching: false,
     });
   });
+
+  it("normalizes equivalent query keys and bounds retained searches", () => {
+    const cache = createChatpackCache();
+    cache.setMessageSearchLoading(" Release ");
+    cache.setMessageSearchLoading("ＲＥＬＥＡＳＥ");
+
+    expect(Object.keys(cache.getSnapshot().messageSearches)).toEqual(["release"]);
+
+    for (let index = 0; index < 10; index += 1) {
+      cache.setMessageSearchLoading(`query-${index}`);
+    }
+
+    const searches = cache.getSnapshot().messageSearches;
+    expect(Object.keys(searches)).toHaveLength(10);
+    expect(searches.release).toBeUndefined();
+    expect(searches["query-9"]).toBeDefined();
+  });
+
+  it("patches edits and tombstones in place without changing ranked order", () => {
+    const cache = createChatpackCache();
+    const first = makeMessage({ id: "ranked-first", seq: 1, body: "release release" });
+    const second = makeMessage({ id: "ranked-second", seq: 2, body: "release" });
+    cache.setMessageSearch(
+      "release",
+      { data: { messages: [first, second], nextCursor: null }, error: null },
+      false,
+    );
+
+    cache.applyEvent({
+      type: "message.updated",
+      conversationId: "c1",
+      message: { ...first, body: "changed", editedAt: "2026-01-02T00:00:00.000Z" },
+    });
+    cache.applyEvent({
+      type: "message.deleted",
+      conversationId: "c1",
+      message: { ...second, body: "", deletedAt: "2026-01-03T00:00:00.000Z" },
+    });
+
+    const messages = cache.getSnapshot().messageSearches.release!.data!.messages;
+    expect(messages.map((message) => message.id)).toEqual(["ranked-first", "ranked-second"]);
+    expect(messages[0]).toMatchObject({
+      body: "changed",
+      editedAt: "2026-01-02T00:00:00.000Z",
+    });
+    expect(messages[1]).toMatchObject({ body: "", deletedAt: "2026-01-03T00:00:00.000Z" });
+  });
 });
 
 describe("polled page merges (ADR 0016)", () => {
@@ -781,6 +828,17 @@ describe("conversation events (ADR 0017)", () => {
       { data: { messages: page.messages, nextCursor: null }, error: null },
       false,
     );
+    cache.setMessageSearch(
+      "hello",
+      {
+        data: {
+          messages: [page.messages[0]!, makeMessage({ id: "m2", conversationId: "c2", seq: 2 })],
+          nextCursor: null,
+        },
+        error: null,
+      },
+      false,
+    );
     cache.applyEvent({
       type: "participant.removed",
       conversationId: "c1",
@@ -792,6 +850,9 @@ describe("conversation events (ADR 0017)", () => {
     expect(snapshot.conversations.data!.conversations.map((c) => c.id)).toEqual(["c2"]);
     expect(snapshot.conversationsById["c1"]).toBeUndefined();
     expect(snapshot.messagesByConversation["c1"]).toBeUndefined();
+    expect(snapshot.messageSearches.hello!.data!.messages.map((message) => message.id)).toEqual([
+      "m2",
+    ]);
   });
 
   it("keeps the conversation when someone else is removed", () => {

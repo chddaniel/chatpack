@@ -113,4 +113,33 @@ describe("React client", () => {
     expect(renderer!.toJSON()).toEqual({ type: "span", props: {}, children: ["idle"] });
     client.dispose();
   });
+
+  it("reloads a mounted search if the bounded query cache evicts it", async () => {
+    const fetchImpl = vi.fn(
+      async (_input: RequestInfo | URL) =>
+        new Response(JSON.stringify({ messages: [], nextCursor: null }), { status: 200 }),
+    );
+    const client = createChatClient({ fetch: fetchImpl });
+    function View(): React.JSX.Element {
+      client.useMessageSearch({ query: "mounted" });
+      return <span />;
+    }
+
+    await act(async () => {
+      create(<View />);
+      await Promise.resolve();
+    });
+    expect(fetchImpl).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      for (let index = 0; index < 10; index += 1) {
+        client.$store.setMessageSearchLoading(`other-${index}`);
+      }
+      await Promise.resolve();
+    });
+
+    expect(fetchImpl).toHaveBeenCalledTimes(2);
+    expect(String(fetchImpl.mock.calls[1]?.[0])).toContain("q=mounted");
+    client.dispose();
+  });
 });

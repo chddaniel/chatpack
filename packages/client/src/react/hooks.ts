@@ -1,5 +1,5 @@
 /** React hooks that bind Chatpack cache and realtime state to a client. */
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import type {
   ChatClient,
   ChatClientWithPlugins,
@@ -179,6 +179,7 @@ export function useMessageSearch(
   );
   const key = messageSearchKey(requestInput.query);
   const searches = useExternalStore(client.$store).messageSearches;
+  const hasCachedSearch = searches[key] !== undefined;
   const query =
     key === ""
       ? { data: emptyMessagePage, error: null, isPending: false, isRefetching: false }
@@ -190,9 +191,14 @@ export function useMessageSearch(
         : client.messages.search(requestInput),
     [client, key, requestInput],
   );
+  const lastRequestedInput = useRef<typeof requestInput | null>(null);
   useEffect(() => {
+    if (lastRequestedInput.current === requestInput && (key === "" || hasCachedSearch)) {
+      return;
+    }
+    lastRequestedInput.current = requestInput;
     void refetch();
-  }, [refetch]);
+  }, [hasCachedSearch, key, refetch, requestInput]);
   const loadMore = useCallback(async () => {
     const current = client.$store.getSnapshot().messageSearches[key];
     if (current?.data == null) return refetch();

@@ -29,7 +29,7 @@ export interface ChatpackCacheSnapshot {
   conversations: QueryState<ClientConversationPage>;
   conversationsById: Record<string, QueryState<ClientConversation>>;
   messagesByConversation: Record<string, QueryState<ClientMessagePage>>;
-  /** Search snapshots keyed by the server-normalized query text. */
+  /** Search snapshots keyed by cache-normalized query text. */
   messageSearches: Record<string, QueryState<ClientMessagePage>>;
 }
 
@@ -37,9 +37,26 @@ function emptyQuery<T>(): QueryState<T> {
   return { data: null, error: null, isPending: true, isRefetching: false };
 }
 
-/** Cache key matching core's whitespace normalization without duplicating search semantics. */
+/** Normalize case and Unicode compatibility for cache reuse, without reproducing search logic. */
 export function messageSearchKey(query: string): string {
-  return query.trim();
+  return query.normalize("NFKC").trim().toLowerCase();
+}
+
+const MAX_MESSAGE_SEARCHES = 10;
+
+/** Add one query while bounding short-lived keys created by search-as-you-type UIs. */
+function setBoundedMessageSearch(
+  searches: Record<string, QueryState<ClientMessagePage>>,
+  key: string,
+  search: QueryState<ClientMessagePage>,
+): Record<string, QueryState<ClientMessagePage>> {
+  const next = { ...searches, [key]: search };
+  const keys = Object.keys(next);
+  while (keys.length > MAX_MESSAGE_SEARCHES) {
+    const oldest = keys.shift();
+    if (oldest !== undefined) delete next[oldest];
+  }
+  return next;
 }
 
 /** Options controlling how the cache interprets incoming events. */
@@ -236,6 +253,34 @@ function sameMessage(left: ClientMessage, right: ClientMessage): boolean {
     (left.replyTo?.deleted ?? null) === (right.replyTo?.deleted ?? null) &&
     sameReactions(left.reactions, right.reactions)
   );
+}
+
+/** Patch a search hit in place; ranking and membership remain server-owned snapshots. */
+function patchSearchMessage(
+  messages: readonly ClientMessage[],
+  message: ClientMessage,
+): ClientMessage[] | null {
+  const index = messages.findIndex((item) => item.id === message.id);
+  if (index === -1 || sameMessage(messages[index]!, message)) return null;
+  return messages.map((item, itemIndex) => (itemIndex === index ? message : item));
+}
+
+/** Remove unreadable hits without discarding unrelated results from the same query. */
+function dropConversationSearchMessages(
+  searches: Record<string, QueryState<ClientMessagePage>>,
+  conversationId: string,
+): Record<string, QueryState<ClientMessagePage>> {
+  let next = searches;
+  for (const [key, search] of Object.entries(searches)) {
+    if (search.data == null) continue;
+    const messages = search.data.messages.filter(
+      (message) => message.conversationId !== conversationId,
+    );
+    if (messages.length === search.data.messages.length) continue;
+    if (next === searches) next = { ...searches };
+    next[key] = { ...search, data: { ...search.data, messages } };
+  }
+  return next;
 }
 
 /**
@@ -505,6 +550,9 @@ export function createChatpackCache(options: ChatpackCacheOptions = {}): Chatpac
         next = { ...next, messagesByConversation };
       }
 
+      const messageSearches = dropConversationSearchMessages(next.messageSearches, conversationId);
+      if (messageSearches !== next.messageSearches) next = { ...next, messageSearches };
+
       return next;
     });
   }
@@ -684,18 +732,18 @@ export function createChatpackCache(options: ChatpackCacheOptions = {}): Chatpac
     },
     setMessageSearchLoading(query) {
       const key = messageSearchKey(query);
-      store.update((current) => ({
-        ...current,
-        messageSearches: {
-          ...current.messageSearches,
-          [key]: {
-            ...(current.messageSearches[key] ?? emptyQuery<ClientMessagePage>()),
-            isPending: current.messageSearches[key]?.data == null,
-            isRefetching: current.messageSearches[key]?.data != null,
-            error: null,
-          },
-        },
-      }));
+      store.update((current) => {
+        const search = {
+          ...(current.messageSearches[key] ?? emptyQuery<ClientMessagePage>()),
+          isPending: current.messageSearches[key]?.data == null,
+          isRefetching: current.messageSearches[key]?.data != null,
+          error: null,
+        };
+        return {
+          ...current,
+          messageSearches: setBoundedMessageSearch(current.messageSearches, key, search),
+        };
+      });
     },
     setMessageSearch(query, result, append) {
       const key = messageSearchKey(query);
@@ -726,7 +774,7 @@ export function createChatpackCache(options: ChatpackCacheOptions = {}): Chatpac
               };
         return {
           ...current,
-          messageSearches: { ...current.messageSearches, [key]: search },
+          messageSearches: setBoundedMessageSearch(current.messageSearches, key, search),
         };
       });
     },
@@ -785,6 +833,23 @@ export function createChatpackCache(options: ChatpackCacheOptions = {}): Chatpac
               [durable.conversationId]: applyDurableEvent(existing, durable),
             },
           };
+        }
+
+        // Search ranking and membership are snapshots, but a loaded hit must
+        // never retain content that an edit or tombstone made stale. Patch only
+        // an existing hit and keep its server-ranked position.
+        if (durable.type !== "message.created") {
+          let messageSearches = next.messageSearches;
+          for (const [key, search] of Object.entries(next.messageSearches)) {
+            if (search.data == null) continue;
+            const messages = patchSearchMessage(search.data.messages, durable.message);
+            if (messages === null) continue;
+            if (messageSearches === next.messageSearches) {
+              messageSearches = { ...next.messageSearches };
+            }
+            messageSearches[key] = { ...search, data: { ...search.data, messages } };
+          }
+          if (messageSearches !== next.messageSearches) next = { ...next, messageSearches };
         }
 
         if (!isNew) return next;

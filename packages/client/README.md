@@ -70,7 +70,21 @@ await search.loadMore();
 ```
 
 An empty or whitespace-only hook query stays idle with an empty page and sends
-no request.
+no request. The hook requests whenever `query` changes, so debounce text input
+before passing it to the hook:
+
+```tsx
+const [query, setQuery] = useState("");
+const [debouncedQuery, setDebouncedQuery] = useState(query);
+useEffect(() => {
+  const timer = setTimeout(() => setDebouncedQuery(query), 250);
+  return () => clearTimeout(timer);
+}, [query]);
+
+const search = chatClient.useMessageSearch({ query: debouncedQuery, limit: 20 });
+```
+
+The client retains at most ten normalized query entries per instance.
 
 ## API
 
@@ -108,8 +122,10 @@ request and preserves returned order.
 
 Adapters may omit search. In that case the result carries
 `error.code === "SEARCH_UNSUPPORTED"` and status 501. Search pages are snapshots,
-not live-ranked collections: stream and polling updates do not rewrite them.
-Call `refetch()` after relevant message changes.
+not live-ranked collections: new messages are not inserted and existing hits
+are not re-ranked. Edits and tombstones patch loaded hits in place, and losing
+access to a conversation removes its hits so stale bodies are not retained.
+Call `refetch()` after relevant message changes to recompute matches and rank.
 
 ## Replies and reactions
 
