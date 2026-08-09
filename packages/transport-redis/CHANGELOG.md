@@ -1,5 +1,12 @@
 # @chatpack/transport-redis
 
+## 0.1.4
+
+### Patch Changes
+
+- Updated dependencies [a9e6dd7]
+  - @chatpack/core@0.9.0
+
 ## 0.1.3
 
 ### Patch Changes

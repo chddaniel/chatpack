@@ -1,5 +1,16 @@
 # @chatpack/client
 
+## 0.5.1
+
+### Patch Changes
+
+- a9e6dd7: Recognize the six invite/join-request error codes (ADR 0019) as server errors
+  rather than transport failures, so `error.code` narrows correctly when you call
+  those routes with `fetch` alongside the client. No wrappers for the routes
+  themselves yet.
+- Updated dependencies [a9e6dd7]
+  - @chatpack/core@0.9.0
+
 ## 0.5.0
 
 ### Minor Changes
