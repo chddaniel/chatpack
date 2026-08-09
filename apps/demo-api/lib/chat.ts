@@ -122,9 +122,10 @@ export function chatFor(identity: DemoIdentity): ChatpackInstance {
  *
  * A UI block is useless against an empty backend - a vibe coder would see an
  * empty state and assume they wired it wrong. So the first time a sandbox is
- * touched we plant two conversations with a short scripted history, including
- * an edited message, a deleted one (tombstone), reactions, and a quote-reply
- * so blocks can be checked against the awkward states, not just the happy path.
+ * touched we plant two direct conversations and one group with short scripted
+ * histories, including an edited message, a deleted one (tombstone), reactions,
+ * and a quote-reply so blocks can be checked against awkward states, not just
+ * the happy path.
  */
 const seeded = new Set<string>();
 
@@ -142,6 +143,35 @@ const SEED_SCRIPT: readonly SeedLine[] = [
   { from: "carol", to: "alice", body: "quick one: did the deploy go through?" },
   { from: "alice", to: "carol", body: "it did - green across the board" },
 ];
+
+const GROUP_SEED_SCRIPT = [
+  { from: "alice", body: "morning team - final UI pass today" },
+  { from: "bob", body: "I'll check the conversation list and unread states" },
+  { from: "carol", body: "I'll polish the group header and member roles" },
+] as const;
+
+async function seedGroup(chat: ChatpackInstance): Promise<void> {
+  const designTeam = await chat.api.createGroupConversation({
+    userId: "alice",
+    userIds: ["bob", "carol"],
+    name: "Design team",
+  });
+  let reactionMessageId: string | undefined;
+  for (const line of GROUP_SEED_SCRIPT) {
+    const sent = await chat.api.sendMessage({
+      userId: line.from,
+      conversationId: designTeam.id,
+      body: line.body,
+    });
+    reactionMessageId ??= sent.id;
+  }
+
+  if (reactionMessageId !== undefined) {
+    for (const userId of ["alice", "bob", "carol"] as const) {
+      await chat.api.addReaction({ userId, messageId: reactionMessageId, emoji: "👍" });
+    }
+  }
+}
 
 export async function ensureSeeded(identity: DemoIdentity): Promise<void> {
   const key = identity.sandbox;
@@ -208,5 +238,15 @@ export async function ensureSeeded(identity: DemoIdentity): Promise<void> {
     // Seeding is a convenience, never a reason to fail a request.
     seeded.delete(key);
     console.error("chatpack demo: seeding failed", error);
+    return;
+  }
+
+  // Keep group-only failures outside the retryable direct-message script. A
+  // partial group is less harmful than replaying every non-idempotent message
+  // on the next request.
+  try {
+    await seedGroup(chat);
+  } catch (error) {
+    console.error("chatpack demo: group seeding failed", error);
   }
 }

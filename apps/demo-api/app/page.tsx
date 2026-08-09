@@ -71,6 +71,10 @@ export const currentUserId = "alice";`}</pre>
           <strong>alice ↔ carol</strong> — a second conversation, so list components have more than
           one row.
         </li>
+        <li>
+          <strong>Design team</strong> — a three-person group with Alice as admin, Bob and Carol as
+          members, messages from all three participants, and one reaction from each.
+        </li>
       </ul>
 
       <h2>Two windows = live chat</h2>
