@@ -73,7 +73,7 @@ export const currentUserId = "alice";`}</pre>
         </li>
         <li>
           <strong>Design team</strong> — a three-person group with Alice as admin, Bob and Carol as
-          members, and messages from all three participants.
+          members, messages from all three participants, and one reaction from each.
         </li>
       </ul>
 

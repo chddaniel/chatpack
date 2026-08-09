@@ -70,7 +70,7 @@ Now check the connection before building anything:
 
 **Test with two people.** Open the preview in one window, and the same URL with `?user=bob` in a second. Type in one, watch the other — that's how you check typing dots, instant delivery and unread badges. **Do this on every piece before calling it finished**; it's the only way to catch what looks perfect sitting still and breaks the moment two people use it.
 
-Your sandbox is pre-filled so you never design against a blank screen: alice↔bob (a short chat plus one edited message, one deleted, one with reactions — 👍 from two people, 🎉 from one — and one quote-reply) and alice↔carol. If the backend sleeps it wakes with that same data, so vanishing test messages are expected.
+Your sandbox is pre-filled so you never design against a blank screen: alice↔bob (a short chat plus one edited message, one deleted, one with reactions — 👍 from two people, 🎉 from one — and one quote-reply), alice↔carol, and a three-person Design team group. If the backend sleeps it wakes with that same data, so vanishing test messages are expected.
 
 ## 2. The rules
 
@@ -93,7 +93,7 @@ Your sandbox is pre-filled so you never design against a blank screen: alice↔b
 >
 > **Users have no profiles.** A user is an opaque ID string. Every component displaying a person takes `renderUser?: (userId: string) => ReactNode`, defaulting to the raw ID. Never fake names or avatars.
 >
-> **Scope:** build for 1:1 conversations only — assume exactly 2 participants. Chatpack itself does support group chats, but group blocks are a later batch, so don't build member lists, admin controls, or a rename UI. Two consequences to respect anyway: get "the other person" from `participants.find(p => p.userId !== currentUserId)`, never `participants[1]`, and don't hardcode `participants.length === 2` as a validity check.
+> **Scope:** build for 1:1 conversations only — assume exactly 2 participants. The seeded Design team group exercises Chatpack's group data but is outside this batch: filter conversation lists to `conversation.type === "direct"` before rendering, and never auto-select the group. Group blocks are a later batch, so don't build member lists, admin controls, or a rename UI. Two consequences to respect anyway: get "the other person" from `participants.find(p => p.userId !== currentUserId)`, never `participants[1]`, and don't hardcode `participants.length === 2` as a validity check.
 >
 > **Style:** React function components, TypeScript (no `any`), Tailwind only, tokens from `lib/chat-theme.ts`, light and dark mode. Accessible: real buttons, labelled inputs, focus rings, `aria-live` on message lists and typing indicators.
 >

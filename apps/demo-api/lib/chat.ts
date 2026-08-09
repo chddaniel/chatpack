@@ -150,6 +150,29 @@ const GROUP_SEED_SCRIPT = [
   { from: "carol", body: "I'll polish the group header and member roles" },
 ] as const;
 
+async function seedGroup(chat: ChatpackInstance): Promise<void> {
+  const designTeam = await chat.api.createGroupConversation({
+    userId: "alice",
+    userIds: ["bob", "carol"],
+    name: "Design team",
+  });
+  let reactionMessageId: string | undefined;
+  for (const line of GROUP_SEED_SCRIPT) {
+    const sent = await chat.api.sendMessage({
+      userId: line.from,
+      conversationId: designTeam.id,
+      body: line.body,
+    });
+    reactionMessageId ??= sent.id;
+  }
+
+  if (reactionMessageId !== undefined) {
+    for (const userId of ["alice", "bob", "carol"] as const) {
+      await chat.api.addReaction({ userId, messageId: reactionMessageId, emoji: "👍" });
+    }
+  }
+}
+
 export async function ensureSeeded(identity: DemoIdentity): Promise<void> {
   const key = identity.sandbox;
   if (seeded.has(key)) return;
@@ -211,25 +234,19 @@ export async function ensureSeeded(identity: DemoIdentity): Promise<void> {
         replyToMessageId: firstBobLine,
       });
     }
-
-    // Seed the group last so it is prominent in conversation lists. Alice is
-    // the creator/admin; Bob and Carol join as members, giving builders both
-    // participant roles and messages from every member to style against.
-    const designTeam = await chat.api.createGroupConversation({
-      userId: "alice",
-      userIds: ["bob", "carol"],
-      name: "Design team",
-    });
-    for (const line of GROUP_SEED_SCRIPT) {
-      await chat.api.sendMessage({
-        userId: line.from,
-        conversationId: designTeam.id,
-        body: line.body,
-      });
-    }
   } catch (error) {
     // Seeding is a convenience, never a reason to fail a request.
     seeded.delete(key);
     console.error("chatpack demo: seeding failed", error);
+    return;
+  }
+
+  // Keep group-only failures outside the retryable direct-message script. A
+  // partial group is less harmful than replaying every non-idempotent message
+  // on the next request.
+  try {
+    await seedGroup(chat);
+  } catch (error) {
+    console.error("chatpack demo: group seeding failed", error);
   }
 }
