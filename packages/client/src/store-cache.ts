@@ -44,17 +44,21 @@ export function messageSearchKey(query: string): string {
 
 const MAX_MESSAGE_SEARCHES = 10;
 
-/** Add one query while bounding short-lived keys created by search-as-you-type UIs. */
+/** Add or refresh one query in bounded LRU order, independent of object-key enumeration. */
 function setBoundedMessageSearch(
   searches: Record<string, QueryState<ClientMessagePage>>,
+  recency: Map<string, undefined>,
   key: string,
   search: QueryState<ClientMessagePage>,
 ): Record<string, QueryState<ClientMessagePage>> {
+  recency.delete(key);
+  recency.set(key, undefined);
   const next = { ...searches, [key]: search };
-  const keys = Object.keys(next);
-  while (keys.length > MAX_MESSAGE_SEARCHES) {
-    const oldest = keys.shift();
-    if (oldest !== undefined) delete next[oldest];
+  while (recency.size > MAX_MESSAGE_SEARCHES) {
+    const oldest = recency.keys().next().value;
+    if (oldest === undefined) break;
+    recency.delete(oldest);
+    delete next[oldest];
   }
   return next;
 }
@@ -455,6 +459,7 @@ export function createChatpackCache(options: ChatpackCacheOptions = {}): Chatpac
    * bump `unreadCount`.
    */
   const seenSeq = new Map<string, number>();
+  const messageSearchRecency = new Map<string, undefined>();
   let viewerId = options.userId;
 
   /** Shared by the stream event and the local echo of a react/unreact call. */
@@ -741,7 +746,12 @@ export function createChatpackCache(options: ChatpackCacheOptions = {}): Chatpac
         };
         return {
           ...current,
-          messageSearches: setBoundedMessageSearch(current.messageSearches, key, search),
+          messageSearches: setBoundedMessageSearch(
+            current.messageSearches,
+            messageSearchRecency,
+            key,
+            search,
+          ),
         };
       });
     },
@@ -774,7 +784,12 @@ export function createChatpackCache(options: ChatpackCacheOptions = {}): Chatpac
               };
         return {
           ...current,
-          messageSearches: setBoundedMessageSearch(current.messageSearches, key, search),
+          messageSearches: setBoundedMessageSearch(
+            current.messageSearches,
+            messageSearchRecency,
+            key,
+            search,
+          ),
         };
       });
     },

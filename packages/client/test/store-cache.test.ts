@@ -454,6 +454,35 @@ describe("message search cache", () => {
     expect(searches["query-9"]).toBeDefined();
   });
 
+  it("retains a newly added numeric query when the cache is full", () => {
+    const cache = createChatpackCache();
+    for (let index = 0; index < 10; index += 1) {
+      cache.setMessageSearchLoading(`query-${index}`);
+    }
+
+    cache.setMessageSearchLoading("2026");
+
+    const searches = cache.getSnapshot().messageSearches;
+    expect(Object.keys(searches)).toHaveLength(10);
+    expect(searches["2026"]).toBeDefined();
+    expect(searches["query-0"]).toBeUndefined();
+  });
+
+  it("refreshes recency when an existing query runs again", () => {
+    const cache = createChatpackCache();
+    for (let index = 0; index < 10; index += 1) {
+      cache.setMessageSearchLoading(`query-${index}`);
+    }
+
+    cache.setMessageSearchLoading("query-0");
+    cache.setMessageSearchLoading("query-10");
+
+    const searches = cache.getSnapshot().messageSearches;
+    expect(searches["query-0"]).toBeDefined();
+    expect(searches["query-1"]).toBeUndefined();
+    expect(searches["query-10"]).toBeDefined();
+  });
+
   it("patches edits and tombstones in place without changing ranked order", () => {
     const cache = createChatpackCache();
     const first = makeMessage({ id: "ranked-first", seq: 1, body: "release release" });
