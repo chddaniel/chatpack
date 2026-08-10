@@ -1,6 +1,6 @@
 {
   "name": "@chatpack/transport-redis",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Redis pub/sub transport for Chatpack - multi-node SSE fan-out",
   "license": "MIT",
   "homepage": "https://github.com/chddaniel/chatpack#readme",
