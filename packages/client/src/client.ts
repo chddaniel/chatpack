@@ -100,6 +100,14 @@ export interface MessageListInput {
   cursor?: string;
 }
 
+/** Participant-scoped, relevance-ranked message search input. */
+export interface MessageSearchInput {
+  /** Plain-text terms matched case-insensitively as whole tokens by the server. */
+  query: string;
+  limit?: number;
+  cursor?: string;
+}
+
 /** Input for sending a message. */
 export interface MessageSendInput {
   conversationId: string;
@@ -186,6 +194,11 @@ export interface ConversationActions {
 export interface MessageActions {
   list(
     input: MessageListInput,
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<ClientMessagePage>>;
+  /** Search every conversation visible to the authenticated participant. */
+  search(
+    input: MessageSearchInput,
     options?: ChatClientRequestOptions,
   ): Promise<ChatClientResult<ClientMessagePage>>;
   send(
@@ -612,6 +625,15 @@ export function createChatClient<
         },
       );
       cache.setMessages(input.conversationId, result, input.cursor !== undefined);
+      return result;
+    },
+    async search(input, optionsForRequest) {
+      cache.setMessageSearchLoading(input.query);
+      const result = await requester.request<ClientMessagePage>("/search/messages", {
+        query: { q: input.query, limit: input.limit, cursor: input.cursor },
+        ...requestOptions(optionsForRequest),
+      });
+      cache.setMessageSearch(input.query, result, input.cursor !== undefined);
       return result;
     },
     async send(input, optionsForRequest) {

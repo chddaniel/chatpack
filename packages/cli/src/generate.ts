@@ -168,7 +168,8 @@ export function clientPath(sourceRoot: string, language: Language): string {
 
 export function renderClient(framework: "next" | "hono" | "express" | "web"): string {
   const directive = framework === "next" ? '"use client";\n\n' : "";
-  return `${directive}import { createChatClient } from "@chatpack/client";
+  const clientPackage = framework === "next" ? "@chatpack/client/react" : "@chatpack/client";
+  return `${directive}import { createChatClient } from "${clientPackage}";
 
 export const chatClient = createChatClient({
   credentials: "include",

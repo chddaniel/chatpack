@@ -16,6 +16,7 @@ export type {
   MessageEditInput,
   MessageListInput,
   MessageReactInput,
+  MessageSearchInput,
   MessageSendInput,
   ParticipantAddInput,
   ParticipantRemoveInput,

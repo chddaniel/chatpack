@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdir, mkdtemp, rm, symlink } from "node:fs/promises";
+import { copyFile, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -27,5 +27,35 @@ describe("installed bin entrypoint", () => {
     const { stdout } = await execFileAsync(process.execPath, [bin, "--help"]);
 
     expect(stdout).toContain("Usage:");
+  });
+
+  it("runs bundled ESM and CJS artifacts without installed dependencies", async () => {
+    const root = await mkdtemp(join("/tmp", "chatpack-cli-bundle-"));
+    temporaryRoots.push(root);
+    const dist = fileURLToPath(new URL("../dist/", import.meta.url));
+    await writeFile(join(root, "package.json"), '{"type":"module"}\n');
+    await copyFile(join(dist, "index.js"), join(root, "index.js"));
+    await copyFile(join(dist, "index.cjs"), join(root, "index.cjs"));
+    const fixture = join(root, "fixture");
+    await mkdir(fixture);
+    await writeFile(join(fixture, "package.json"), '{"name":"fixture","type":"module"}\n');
+
+    for (const artifact of ["index.js", "index.cjs"]) {
+      const { stdout } = await execFileAsync(process.execPath, [
+        join(root, artifact),
+        "init",
+        "--cwd",
+        fixture,
+        "--framework",
+        "web",
+        "--adapter",
+        "memory",
+        "--package-manager",
+        "npm",
+        "--yes",
+        "--dry-run",
+      ]);
+      expect(stdout).toContain("Dry run complete. No packages installed and no files changed.");
+    }
   });
 });

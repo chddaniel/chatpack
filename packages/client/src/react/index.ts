@@ -5,11 +5,13 @@ import type { ChatClientPlugin } from "../plugin";
 import {
   createReactChatClient,
   type ChatClientHookResult,
+  type MessageSearchHookResult,
   type MessagesHookResult,
   type ReactChatClient,
   useConversation,
   useConversations,
   useMessages,
+  useMessageSearch,
   usePresence,
   useReceipts,
   useRealtimeStatus,
@@ -27,9 +29,10 @@ export {
   useConversation,
   useConversations,
   useMessages,
+  useMessageSearch,
   usePresence,
   useReceipts,
   useRealtimeStatus,
   useTyping,
 };
-export type { ChatClientHookResult, MessagesHookResult, ReactChatClient };
+export type { ChatClientHookResult, MessageSearchHookResult, MessagesHookResult, ReactChatClient };

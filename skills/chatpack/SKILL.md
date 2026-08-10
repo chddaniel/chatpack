@@ -329,6 +329,13 @@ Client semantics that trip up generated code:
 
 - HTTP responses are **enveloped**: `{ conversation }`, `{ message }`,
   `{ messages, nextCursor }` - unwrap them. (`chat.api.*` returns bare objects.)
+- Search with `messages.search({ query, limit, cursor })` or React's
+  `useMessageSearch({ query, limit })`. Results cover only conversations the
+  signed-in user participates in and are whole-token, case-insensitive,
+  AND-matched, ranked snapshots. `SEARCH_UNSUPPORTED` is a structured 501, not
+  a thrown exception. Debounce hook input; call `refetch()` to recompute rank.
+  Edits and tombstones patch existing hits, and access loss removes them, but
+  new messages are not inserted into a loaded search page.
 - Message lists are **newest-first**; reverse for a transcript; paginate with
   `nextCursor` → `?cursor=`.
 - Every conversation object carries the viewer's **`unreadCount`** (messages

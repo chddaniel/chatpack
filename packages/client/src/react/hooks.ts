@@ -1,15 +1,16 @@
 /** React hooks that bind Chatpack cache and realtime state to a client. */
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useRef } from "react";
 import type {
   ChatClient,
   ChatClientWithPlugins,
   ConversationListInput,
   MessageListInput,
+  MessageSearchInput,
 } from "../client";
 import type { ChatClientResult, ChatpackClientError } from "../errors";
 import type { ChatClientPlugin } from "../plugin";
 import type { ChatRealtimeSnapshot } from "../realtime";
-import type { QueryState } from "../store-cache";
+import { messageSearchKey, type QueryState } from "../store-cache";
 import type { ClientConversation, ClientConversationPage, ClientMessagePage } from "../wire";
 import type { PresenceSnapshot } from "../plugins/presence";
 import type { ReceiptSnapshot } from "../plugins/receipts";
@@ -29,6 +30,9 @@ export interface ChatClientHookResult<T> {
 export interface MessagesHookResult extends ChatClientHookResult<ClientMessagePage> {
   loadMore(): Promise<ChatClientResult<ClientMessagePage>>;
 }
+
+/** Result shape for participant-scoped message search and ranked pagination. */
+export type MessageSearchHookResult = MessagesHookResult;
 
 const emptyConversationPage: ClientConversationPage = { conversations: [], nextCursor: null };
 const emptyMessagePage: ClientMessagePage = { messages: [], nextCursor: null };
@@ -160,6 +164,51 @@ export function useMessages(client: ChatClient, input: MessageListInput): Messag
   return { ...useQuery(query, refetch, emptyMessagePage), loadMore };
 }
 
+/** Searches the authenticated participant's conversations and keeps each query isolated. */
+export function useMessageSearch(
+  client: ChatClient,
+  input: MessageSearchInput,
+): MessageSearchHookResult {
+  const requestInput = useMemo(
+    () => ({
+      query: input.query,
+      ...(input.limit === undefined ? {} : { limit: input.limit }),
+      ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
+    }),
+    [input.cursor, input.limit, input.query],
+  );
+  const key = messageSearchKey(requestInput.query);
+  const searches = useExternalStore(client.$store).messageSearches;
+  const hasCachedSearch = searches[key] !== undefined;
+  const query =
+    key === ""
+      ? { data: emptyMessagePage, error: null, isPending: false, isRefetching: false }
+      : (searches[key] ?? { data: null, error: null, isPending: true, isRefetching: false });
+  const refetch = useCallback(
+    () =>
+      key === ""
+        ? Promise.resolve({ data: emptyMessagePage, error: null })
+        : client.messages.search(requestInput),
+    [client, key, requestInput],
+  );
+  const lastRequestedInput = useRef<typeof requestInput | null>(null);
+  useEffect(() => {
+    if (lastRequestedInput.current === requestInput && (key === "" || hasCachedSearch)) {
+      return;
+    }
+    lastRequestedInput.current = requestInput;
+    void refetch();
+  }, [hasCachedSearch, key, refetch, requestInput]);
+  const loadMore = useCallback(async () => {
+    const current = client.$store.getSnapshot().messageSearches[key];
+    if (current?.data == null) return refetch();
+    const nextCursor = current.data.nextCursor;
+    if (nextCursor === null) return { data: current.data, error: null };
+    return client.messages.search({ ...requestInput, cursor: nextCursor });
+  }, [client, key, refetch, requestInput]);
+  return { ...useQuery(query, refetch, emptyMessagePage), loadMore };
+}
+
 /** Subscribes to realtime connection status and starts the stream. */
 export function useRealtimeStatus(client: ChatClient): ChatRealtimeSnapshot {
   const snapshot = useExternalStore({
@@ -217,6 +266,7 @@ export type ReactChatClient<Plugins extends readonly ChatClientPlugin[]> = ChatC
   useConversations(input?: ConversationListInput): ChatClientHookResult<ClientConversationPage>;
   useConversation(input: { conversationId: string }): ChatClientHookResult<ClientConversation>;
   useMessages(input: MessageListInput): MessagesHookResult;
+  useMessageSearch(input: MessageSearchInput): MessageSearchHookResult;
   useRealtimeStatus(): ChatRealtimeSnapshot;
   useTyping(input: { conversationId: string }): TypingIndicator | null;
   usePresence(input?: { userIds?: readonly string[] }): PresenceSnapshot;
@@ -233,6 +283,7 @@ export function createReactChatClient<Plugins extends readonly ChatClientPlugin[
     useConversations: (input?: ConversationListInput) => useConversations(client, input),
     useConversation: (input: { conversationId: string }) => useConversation(client, input),
     useMessages: (input: MessageListInput) => useMessages(client, input),
+    useMessageSearch: (input: MessageSearchInput) => useMessageSearch(client, input),
     useRealtimeStatus: () => useRealtimeStatus(client),
     useTyping: (input: { conversationId: string }) => useTyping(client, input),
     usePresence: (input?: { userIds?: readonly string[] }) => usePresence(client, input),
