@@ -56,8 +56,16 @@ describe("generated setup", () => {
   });
 
   it("only marks Next.js client modules for the client runtime", () => {
-    expect(renderClient("next")).toContain('"use client";');
-    expect(renderClient("hono")).not.toContain('"use client";');
+    const next = renderClient("next");
+    expect(next).toContain('"use client";');
+    expect(next).toContain('from "@chatpack/client/react"');
+
+    for (const framework of ["hono", "express", "web"] as const) {
+      const client = renderClient(framework);
+      expect(client).not.toContain('"use client";');
+      expect(client).toContain('from "@chatpack/client"');
+      expect(client).not.toContain("realtime:");
+    }
   });
 
   it("does not emit TypeScript auth syntax in JavaScript", () => {

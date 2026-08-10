@@ -1,5 +1,4 @@
 import { realpathSync } from "node:fs";
-import { fileURLToPath } from "node:url";
 
 import { parseArgs, usage } from "./args";
 import { runInit } from "./commands/init";
@@ -23,7 +22,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
 function isCliEntrypoint(): boolean {
   if (!process.argv[1]) return false;
   try {
-    return realpathSync(process.argv[1]) === fileURLToPath(import.meta.url);
+    return realpathSync(process.argv[1]) === realpathSync(__filename);
   } catch {
     return false;
   }

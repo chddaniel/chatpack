@@ -29,10 +29,38 @@ export interface ChatpackCacheSnapshot {
   conversations: QueryState<ClientConversationPage>;
   conversationsById: Record<string, QueryState<ClientConversation>>;
   messagesByConversation: Record<string, QueryState<ClientMessagePage>>;
+  /** Search snapshots keyed by cache-normalized query text. */
+  messageSearches: Record<string, QueryState<ClientMessagePage>>;
 }
 
 function emptyQuery<T>(): QueryState<T> {
   return { data: null, error: null, isPending: true, isRefetching: false };
+}
+
+/** Normalize case and Unicode compatibility for cache reuse, without reproducing search logic. */
+export function messageSearchKey(query: string): string {
+  return query.normalize("NFKC").trim().toLowerCase();
+}
+
+const MAX_MESSAGE_SEARCHES = 10;
+
+/** Add or refresh one query in bounded LRU order, independent of object-key enumeration. */
+function setBoundedMessageSearch(
+  searches: Record<string, QueryState<ClientMessagePage>>,
+  recency: Map<string, undefined>,
+  key: string,
+  search: QueryState<ClientMessagePage>,
+): Record<string, QueryState<ClientMessagePage>> {
+  recency.delete(key);
+  recency.set(key, undefined);
+  const next = { ...searches, [key]: search };
+  while (recency.size > MAX_MESSAGE_SEARCHES) {
+    const oldest = recency.keys().next().value;
+    if (oldest === undefined) break;
+    recency.delete(oldest);
+    delete next[oldest];
+  }
+  return next;
 }
 
 /** Options controlling how the cache interprets incoming events. */
@@ -64,6 +92,12 @@ export interface ChatpackCache extends ReadonlyStore<ChatpackCacheSnapshot> {
   setMessagesLoading(conversationId: string): void;
   setMessages(
     conversationId: string,
+    result: ChatClientResult<ClientMessagePage>,
+    append: boolean,
+  ): void;
+  setMessageSearchLoading(query: string): void;
+  setMessageSearch(
+    query: string,
     result: ChatClientResult<ClientMessagePage>,
     append: boolean,
   ): void;
@@ -177,6 +211,15 @@ function mergeMessages(current: ClientMessage[], incoming: ClientMessage[]): Cli
   return merged;
 }
 
+/** Append another ranked search page without re-sorting the server-owned order. */
+function appendSearchMessages(
+  current: ClientMessage[],
+  incoming: ClientMessage[],
+): ClientMessage[] {
+  const seen = new Set(current.map((message) => message.id));
+  return [...current, ...incoming.filter((message) => !seen.has(message.id))];
+}
+
 function sameReactions(
   left: readonly ClientMessage["reactions"][number][],
   right: readonly ClientMessage["reactions"][number][],
@@ -214,6 +257,34 @@ function sameMessage(left: ClientMessage, right: ClientMessage): boolean {
     (left.replyTo?.deleted ?? null) === (right.replyTo?.deleted ?? null) &&
     sameReactions(left.reactions, right.reactions)
   );
+}
+
+/** Patch a search hit in place; ranking and membership remain server-owned snapshots. */
+function patchSearchMessage(
+  messages: readonly ClientMessage[],
+  message: ClientMessage,
+): ClientMessage[] | null {
+  const index = messages.findIndex((item) => item.id === message.id);
+  if (index === -1 || sameMessage(messages[index]!, message)) return null;
+  return messages.map((item, itemIndex) => (itemIndex === index ? message : item));
+}
+
+/** Remove unreadable hits without discarding unrelated results from the same query. */
+function dropConversationSearchMessages(
+  searches: Record<string, QueryState<ClientMessagePage>>,
+  conversationId: string,
+): Record<string, QueryState<ClientMessagePage>> {
+  let next = searches;
+  for (const [key, search] of Object.entries(searches)) {
+    if (search.data == null) continue;
+    const messages = search.data.messages.filter(
+      (message) => message.conversationId !== conversationId,
+    );
+    if (messages.length === search.data.messages.length) continue;
+    if (next === searches) next = { ...searches };
+    next[key] = { ...search, data: { ...search.data, messages } };
+  }
+  return next;
 }
 
 /**
@@ -379,6 +450,7 @@ export function createChatpackCache(options: ChatpackCacheOptions = {}): Chatpac
     conversations: emptyQuery<ClientConversationPage>(),
     conversationsById: {},
     messagesByConversation: {},
+    messageSearches: {},
   });
   /**
    * Highest message seq seen per conversation, from REST pages and stream
@@ -387,6 +459,7 @@ export function createChatpackCache(options: ChatpackCacheOptions = {}): Chatpac
    * bump `unreadCount`.
    */
   const seenSeq = new Map<string, number>();
+  const messageSearchRecency = new Map<string, undefined>();
   let viewerId = options.userId;
 
   /** Shared by the stream event and the local echo of a react/unreact call. */
@@ -481,6 +554,9 @@ export function createChatpackCache(options: ChatpackCacheOptions = {}): Chatpac
           next.messagesByConversation;
         next = { ...next, messagesByConversation };
       }
+
+      const messageSearches = dropConversationSearchMessages(next.messageSearches, conversationId);
+      if (messageSearches !== next.messageSearches) next = { ...next, messageSearches };
 
       return next;
     });
@@ -659,6 +735,64 @@ export function createChatpackCache(options: ChatpackCacheOptions = {}): Chatpac
         };
       });
     },
+    setMessageSearchLoading(query) {
+      const key = messageSearchKey(query);
+      store.update((current) => {
+        const search = {
+          ...(current.messageSearches[key] ?? emptyQuery<ClientMessagePage>()),
+          isPending: current.messageSearches[key]?.data == null,
+          isRefetching: current.messageSearches[key]?.data != null,
+          error: null,
+        };
+        return {
+          ...current,
+          messageSearches: setBoundedMessageSearch(
+            current.messageSearches,
+            messageSearchRecency,
+            key,
+            search,
+          ),
+        };
+      });
+    },
+    setMessageSearch(query, result, append) {
+      const key = messageSearchKey(query);
+      store.update((current) => {
+        const previous = current.messageSearches[key];
+        const search =
+          result.error !== null
+            ? {
+                data: previous?.data ?? null,
+                error: result.error,
+                isPending: false,
+                isRefetching: false,
+              }
+            : {
+                data:
+                  append && previous?.data != null
+                    ? {
+                        messages: appendSearchMessages(
+                          previous.data.messages,
+                          result.data.messages,
+                        ),
+                        nextCursor: result.data.nextCursor,
+                      }
+                    : result.data,
+                error: null,
+                isPending: false,
+                isRefetching: false,
+              };
+        return {
+          ...current,
+          messageSearches: setBoundedMessageSearch(
+            current.messageSearches,
+            messageSearchRecency,
+            key,
+            search,
+          ),
+        };
+      });
+    },
     applyEvent(event, eventOptions = {}) {
       if ("ephemeral" in event) return;
 
@@ -714,6 +848,23 @@ export function createChatpackCache(options: ChatpackCacheOptions = {}): Chatpac
               [durable.conversationId]: applyDurableEvent(existing, durable),
             },
           };
+        }
+
+        // Search ranking and membership are snapshots, but a loaded hit must
+        // never retain content that an edit or tombstone made stale. Patch only
+        // an existing hit and keep its server-ranked position.
+        if (durable.type !== "message.created") {
+          let messageSearches = next.messageSearches;
+          for (const [key, search] of Object.entries(next.messageSearches)) {
+            if (search.data == null) continue;
+            const messages = patchSearchMessage(search.data.messages, durable.message);
+            if (messages === null) continue;
+            if (messageSearches === next.messageSearches) {
+              messageSearches = { ...next.messageSearches };
+            }
+            messageSearches[key] = { ...search, data: { ...search.data, messages } };
+          }
+          if (messageSearches !== next.messageSearches) next = { ...next, messageSearches };
         }
 
         if (!isNew) return next;

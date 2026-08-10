@@ -61,6 +61,31 @@ export function ConversationList() {
 The React adapter uses `useSyncExternalStore`, shares one per-client cache and
 one lazy SSE connection, and has no state-library dependency.
 
+Search is a paginated snapshot across every conversation visible to the signed-in
+participant:
+
+```tsx
+const search = chatClient.useMessageSearch({ query: "release ready", limit: 20 });
+await search.loadMore();
+```
+
+An empty or whitespace-only hook query stays idle with an empty page and sends
+no request. The hook requests whenever `query` changes, so debounce text input
+before passing it to the hook:
+
+```tsx
+const [query, setQuery] = useState("");
+const [debouncedQuery, setDebouncedQuery] = useState(query);
+useEffect(() => {
+  const timer = setTimeout(() => setDebouncedQuery(query), 250);
+  return () => clearTimeout(timer);
+}, [query]);
+
+const search = chatClient.useMessageSearch({ query: debouncedQuery, limit: 20 });
+```
+
+The client retains at most ten normalized query entries per instance.
+
 ## API
 
 The framework-agnostic client mirrors the server routes from `@chatpack/core`:
@@ -72,6 +97,7 @@ The framework-agnostic client mirrors the server routes from `@chatpack/core`:
 | `conversations.get`      | `GET /conversations/:id`                              |
 | `conversations.markRead` | `POST /conversations/:id/read`                        |
 | `messages.list`          | `GET /conversations/:id/messages`                     |
+| `messages.search`        | `GET /search/messages?q=...`                          |
 | `messages.send`          | `POST /conversations/:id/messages`                    |
 | `messages.edit`          | `PATCH /messages/:id`                                 |
 | `messages.delete`        | `DELETE /messages/:id`                                |
@@ -84,6 +110,22 @@ to the server and never replaces the server's auth hook. The optional `userId`
 option is a cache hint, not a credential: it keeps the viewer's own messages
 from counting as unread. Omit it and the client infers the id from the first
 message it sends.
+
+## Message search
+
+`messages.search({ query, limit, cursor })` and `useMessageSearch` return
+participant-scoped, relevance-ranked pages. Matching is case-insensitive and
+whole-token: every distinct query term must appear, so `deploy` does not match
+`deployment`. Core and the storage adapter own tokenization, permission checks,
+ranking, tombstone exclusion, and cursor encoding; the client only forwards the
+request and preserves returned order.
+
+Adapters may omit search. In that case the result carries
+`error.code === "SEARCH_UNSUPPORTED"` and status 501. Search pages are snapshots,
+not live-ranked collections: new messages are not inserted and existing hits
+are not re-ranked. Edits and tombstones patch loaded hits in place, and losing
+access to a conversation removes its hits so stale bodies are not retained.
+Call `refetch()` after relevant message changes to recompute matches and rank.
 
 ## Replies and reactions
 

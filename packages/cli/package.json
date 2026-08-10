@@ -37,6 +37,8 @@
     "dist",
     "README.md",
     "CHANGELOG.md",
+    "LICENSE",
+    "LICENSE.typescript",
     "llms.txt"
   ],
   "scripts": {
@@ -48,12 +50,10 @@
     "lint": "eslint src",
     "prepack": "node -e \"require('fs').copyFileSync('../../llms.txt','llms.txt')\""
   },
-  "dependencies": {
-    "typescript": "^5.7.2"
-  },
   "devDependencies": {
     "@types/node": "^26.1.1",
     "tsup": "^8.3.5",
+    "typescript": "^5.7.2",
     "vitest": "^3.0.0"
   },
   "engines": {
