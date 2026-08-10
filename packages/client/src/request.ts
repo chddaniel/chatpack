@@ -75,6 +75,8 @@ const serverErrorCodes = {
   INVITE_LIMIT_EXCEEDED: true,
   JOIN_REQUEST_NOT_FOUND: true,
   ALREADY_PARTICIPANT: true,
+  CHANNELS_UNSUPPORTED: true,
+  NOT_PUBLIC_CONVERSATION: true,
   INVALID_INPUT: true,
 } satisfies Record<ChatpackErrorCode, true>;
 

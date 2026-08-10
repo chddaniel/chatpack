@@ -6,8 +6,9 @@
  * - `chatpack_conversations` - one row per conversation. DMs are unique per
  *   `pair_key` (see `docs/decisions/0002-pair-key.md`); groups carry a null
  *   pair key and an optional `name` (ADR 0017). Also holds the
- *   per-conversation `last_seq` counter (atomic message ordering, ADR 0003)
- *   and `last_activity_at` (most-recently-active conversation listing).
+ *   per-conversation `last_seq` counter (atomic message ordering, ADR 0003),
+ *   `last_activity_at` (most-recently-active conversation listing), and the
+ *   `visibility`/`join_policy` channel columns (ADR 0020).
  * - `chatpack_conversation_participants` - exactly two rows per DM, N per
  *   group; carries each member's `role` (ADR 0017) and durable read-state
  *   (`last_read_message_id`).
@@ -63,6 +64,18 @@ export const conversations = pgTable(
     pairKey: text("pair_key"),
     /** Group title, or null. DMs never carry one - the UI derives it. */
     name: text("name"),
+    /**
+     * `"private"` | `"public"` (`docs/decisions/0020`). Public groups appear in
+     * the channel directory; everything else is unlisted, which is the default
+     * so existing rows keep their current behavior after the migration.
+     */
+    visibility: text("visibility").notNull().default("private"),
+    /**
+     * `"open"` | `"approval"` (`docs/decisions/0020`). How a stranger who found
+     * a public channel gets in. Inert while `visibility` is `"private"`;
+     * defaults to the safer of the two.
+     */
+    joinPolicy: text("join_policy").notNull().default("approval"),
     createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
     metadata: jsonb("metadata").notNull().default({}),
     /**
@@ -83,6 +96,13 @@ export const conversations = pgTable(
       .on(table.pairKey)
       .where(sql`${table.pairKey} IS NOT NULL`),
     index("chatpack_conversations_activity_idx").on(table.lastActivityAt, table.id),
+    // Partial, on the same (activity, id) keyset the directory pages by: public
+    // channels are a small minority of rows, so indexing only them keeps the
+    // directory query off a full scan without paying for every DM
+    // (`docs/decisions/0020`).
+    index("chatpack_conversations_public_idx")
+      .on(table.lastActivityAt, table.id)
+      .where(sql`${table.visibility} = 'public'`),
   ],
 );
 
@@ -289,6 +309,8 @@ export const migrationStatements: readonly string[] = [
   "type" text NOT NULL DEFAULT 'direct',
   "pair_key" text,
   "name" text,
+  "visibility" text NOT NULL DEFAULT 'private',
+  "join_policy" text NOT NULL DEFAULT 'approval',
   "created_at" timestamptz NOT NULL,
   "metadata" jsonb NOT NULL DEFAULT '{}',
   "last_seq" integer NOT NULL DEFAULT 0,
@@ -316,6 +338,16 @@ export const migrationStatements: readonly string[] = [
   ON "chatpack_conversations" ("pair_key") WHERE "pair_key" IS NOT NULL`,
   `CREATE INDEX IF NOT EXISTS "chatpack_conversations_activity_idx"
   ON "chatpack_conversations" ("last_activity_at", "id")`,
+  // ADR 0020. Two column additions with defaults that reproduce today's
+  // behavior, so existing rows need no backfill: every conversation that
+  // predates channels is unlisted, which is what 'private' says. Postgres 11+
+  // adds a defaulted column without rewriting the table.
+  `ALTER TABLE "chatpack_conversations"
+  ADD COLUMN IF NOT EXISTS "visibility" text NOT NULL DEFAULT 'private'`,
+  `ALTER TABLE "chatpack_conversations"
+  ADD COLUMN IF NOT EXISTS "join_policy" text NOT NULL DEFAULT 'approval'`,
+  `CREATE INDEX IF NOT EXISTS "chatpack_conversations_public_idx"
+  ON "chatpack_conversations" ("last_activity_at", "id") WHERE "visibility" = 'public'`,
   `CREATE TABLE IF NOT EXISTS "chatpack_conversation_participants" (
   "conversation_id" text NOT NULL REFERENCES "chatpack_conversations"("id") ON DELETE CASCADE,
   "user_id" text NOT NULL,

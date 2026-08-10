@@ -73,6 +73,21 @@ export type ChatpackErrorCode =
    * here (`docs/decisions/0019` §5).
    */
   | "ALREADY_PARTICIPANT"
+  /**
+   * The configured storage adapter does not provide the channel directory - it
+   * has no `channels` capability. Also raised when creating or updating a
+   * conversation with a non-default `visibility` or `joinPolicy`, so an adapter
+   * that ignores those fields cannot silently hand back a private group
+   * (`docs/decisions/0020` §4).
+   */
+  | "CHANNELS_UNSUPPORTED"
+  /**
+   * Joining was attempted on a conversation that is not a public channel - a
+   * private group, or a DM. Deliberately 403 rather than 404: core knows the
+   * row exists, and a lie it would have to keep telling consistently is worse
+   * than a refusal (`docs/decisions/0020` §7).
+   */
+  | "NOT_PUBLIC_CONVERSATION"
   /** Invalid input (empty body, self-conversation, bad limit, ...). */
   | "INVALID_INPUT";
 

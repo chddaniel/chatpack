@@ -14,6 +14,8 @@
 import type {
   AddMessageInput,
   AddParticipantsInput,
+  ChannelJoinPolicy,
+  ChannelVisibility,
   Conversation,
   ConversationInvite,
   ConversationType,
@@ -32,6 +34,8 @@ import type {
   ListMessagesAfterSeqInput,
   ListMessagesInput,
   ListMessagesResult,
+  ListPublicConversationsInput,
+  ListPublicConversationsResult,
   Message,
   Participant,
   Reaction,
@@ -54,6 +58,10 @@ interface ConversationRecord {
   /** `null` for groups - only DMs have a uniqueness key (`docs/decisions/0017`). */
   pairKey: string | null;
   name: string | null;
+  /** Whether the conversation is listed in the public directory (ADR 0020). */
+  visibility: ChannelVisibility;
+  /** How strangers get into a public channel (ADR 0020). Inert while private. */
+  joinPolicy: ChannelJoinPolicy;
   createdAt: Date;
   metadata: Record<string, unknown>;
   participants: Map<string, Participant>;
@@ -153,10 +161,40 @@ export function memoryAdapter(): StorageAdapter {
       type: record.type,
       pairKey: record.pairKey,
       name: record.name,
+      visibility: record.visibility,
+      joinPolicy: record.joinPolicy,
       createdAt: record.createdAt,
       metadata: { ...record.metadata },
       participants: [...record.participants.values()].map((p) => ({ ...p })),
     };
+  }
+
+  /**
+   * Page a set of conversations most-recently-active first: latest message tick
+   * wins, then creation time, then id for a stable total order.
+   *
+   * Shared by `listConversations` and the ADR 0020 channel directory - the two
+   * differ only in which rows they select, and a directory that ordered
+   * differently would be a second thing for clients to learn.
+   */
+  function pageByActivity(
+    records: ConversationRecord[],
+    limit: number,
+    cursor: string | undefined,
+  ): ListConversationsResult {
+    const sorted = records.sort(
+      (a, b) =>
+        b.lastActivityTick - a.lastActivityTick ||
+        b.createdAt.getTime() - a.createdAt.getTime() ||
+        (a.id < b.id ? 1 : -1),
+    );
+
+    const start = cursor ? sorted.findIndex((c) => c.id === cursor) + 1 : 0;
+    const page = sorted.slice(start, start + limit);
+    const last = page[page.length - 1];
+    const nextCursor = last && start + limit < sorted.length ? last.id : null;
+
+    return { conversations: page.map(toConversation), nextCursor };
   }
 
   /** Read a conversation for mutation, or throw the adapter's "unknown" error. */
@@ -187,6 +225,10 @@ export function memoryAdapter(): StorageAdapter {
         // A DM's title is always derived from the other participant by the UI,
         // never stored (`docs/decisions/0017`).
         name: null,
+        // A DM is never discoverable and never joinable. Core refuses to change
+        // either field on one, so these stay pinned for the row's whole life.
+        visibility: "private",
+        joinPolicy: "approval",
         createdAt: now,
         metadata: { ...input.metadata },
         participants: new Map(
@@ -242,6 +284,9 @@ export function memoryAdapter(): StorageAdapter {
         // groups with identical membership stay distinct (`docs/decisions/0017`).
         pairKey: null,
         name: input.name,
+        // Always resolved by core, never undefined (ADR 0020 §4).
+        visibility: input.visibility,
+        joinPolicy: input.joinPolicy,
         createdAt: now,
         metadata: { ...input.metadata },
         participants,
@@ -293,7 +338,11 @@ export function memoryAdapter(): StorageAdapter {
 
     async updateConversation(input: UpdateConversationInput): Promise<Conversation> {
       const record = requireRecord(input.conversationId);
+      // Every field is the resolved new value, not a patch - core filled in
+      // whatever the caller omitted (ADR 0020 §5), so write all three.
       record.name = input.name;
+      record.visibility = input.visibility;
+      record.joinPolicy = input.joinPolicy;
       return toConversation(record);
     },
 
@@ -303,23 +352,11 @@ export function memoryAdapter(): StorageAdapter {
     },
 
     async listConversations(input: ListConversationsInput): Promise<ListConversationsResult> {
-      // Most-recently-active first: latest message seq wins, then creation
-      // time, then id for a stable total order.
-      const mine = [...conversations.values()]
-        .filter((c) => c.participants.has(input.userId))
-        .sort(
-          (a, b) =>
-            b.lastActivityTick - a.lastActivityTick ||
-            b.createdAt.getTime() - a.createdAt.getTime() ||
-            (a.id < b.id ? 1 : -1),
-        );
-
-      const start = input.cursor ? mine.findIndex((c) => c.id === input.cursor) + 1 : 0;
-      const page = mine.slice(start, start + input.limit);
-      const last = page[page.length - 1];
-      const nextCursor = last && start + input.limit < mine.length ? last.id : null;
-
-      return { conversations: page.map(toConversation), nextCursor };
+      return pageByActivity(
+        [...conversations.values()].filter((c) => c.participants.has(input.userId)),
+        input.limit,
+        input.cursor,
+      );
     },
 
     async addMessage(input: AddMessageInput): Promise<Message> {
@@ -524,6 +561,27 @@ export function memoryAdapter(): StorageAdapter {
         }
       }
       return result;
+    },
+
+    /**
+     * The public channel directory (`docs/decisions/0020`) - the other optional
+     * capability. Its presence is also core's signal that this adapter persists
+     * `visibility` and `joinPolicy`, which it does (see `ConversationRecord`).
+     */
+    channels: {
+      async listPublicConversations(
+        input: ListPublicConversationsInput,
+      ): Promise<ListPublicConversationsResult> {
+        // Groups only, and public only. Core already refuses to make a DM
+        // public, but the filter is cheap and a hand-edited record must not leak.
+        return pageByActivity(
+          [...conversations.values()].filter(
+            (c) => c.type === "group" && c.visibility === "public",
+          ),
+          input.limit,
+          input.cursor,
+        );
+      },
     },
 
     /**

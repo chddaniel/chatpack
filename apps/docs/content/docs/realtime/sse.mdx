@@ -51,7 +51,9 @@ events.addEventListener("participant.removed", (e) => {
   // conversation. It's the last event you'll get for it.
   // Otherwise: replace your cached copy with `conversation`.
 });
-// participant.added and conversation.updated carry the same shape
+// participant.added and conversation.updated carry the same shape - including
+// when someone self-joins a public channel (they are their own `actorId`) and
+// when an admin flips a group's visibility (a `conversation.updated`)
 
 events.onerror = () => {
   if (events.readyState === EventSource.CLOSED) {

@@ -29,13 +29,13 @@ Groups and DMs are the same `Conversation` shape, told apart by `type`. These
 routes exist only for `type: "group"` - calling one on a DM is
 `409 NOT_GROUP_CONVERSATION`.
 
-| Method | Path                              | Request body                     | Who                     | Response                 |
-| ------ | --------------------------------- | -------------------------------- | ----------------------- | ------------------------ |
-| POST   | `/conversations/group`            | `{ name?, userIds?, metadata? }` | any signed-in user      | `{ conversation }` (201) |
-| PATCH  | `/conversations/:id`              | `{ name }` (string or `null`)    | admin                   | `{ conversation }`       |
-| POST   | `/conversations/:id/participants` | `{ userIds }`                    | admin                   | `{ conversation }`       |
-| DELETE | `/conversations/:id/participants` | `{ userId }`                     | admin, or self to leave | `{ conversation }`       |
-| PATCH  | `/conversations/:id/participants` | `{ userId, role }`               | admin                   | `{ conversation }`       |
+| Method | Path                              | Request body                                               | Who                     | Response                 |
+| ------ | --------------------------------- | ---------------------------------------------------------- | ----------------------- | ------------------------ |
+| POST   | `/conversations/group`            | `{ name?, userIds?, metadata?, visibility?, joinPolicy? }` | any signed-in user      | `{ conversation }` (201) |
+| PATCH  | `/conversations/:id`              | `{ name?, visibility?, joinPolicy? }`                      | admin                   | `{ conversation }`       |
+| POST   | `/conversations/:id/participants` | `{ userIds }`                                              | admin                   | `{ conversation }`       |
+| DELETE | `/conversations/:id/participants` | `{ userId }`                                               | admin, or self to leave | `{ conversation }`       |
+| PATCH  | `/conversations/:id/participants` | `{ userId, role }`                                         | admin                   | `{ conversation }`       |
 
 Everything else - messages, read-state, search, reactions, the stream - is
 identical for both types.
@@ -113,6 +113,76 @@ may not.
   conversation and nothing on any screen is wrong, so admins poll
   `GET /conversations/:id/join-requests`.
 
+## Channel routes
+
+A **channel** is a group with `visibility: "public"` - not a third conversation
+type. Public groups appear in a browsable directory that any signed-in user can
+read, and they can be joined without an invite.
+
+These need their own optional storage capability, separate from invites. Without
+it, both routes below - _and_ any attempt to set a non-default `visibility` or
+`joinPolicy` - return `501 CHANNELS_UNSUPPORTED`. Explicitly sending the
+defaults (`"private"` / `"approval"`) still works, so an existing client is
+unaffected. Both first-party adapters have the capability.
+
+| Method | Path                      | Request body / query | Who                | Response                                |
+| ------ | ------------------------- | -------------------- | ------------------ | --------------------------------------- |
+| GET    | `/channels`               | `?limit=&cursor=`    | any signed-in user | `{ channels, nextCursor }` - previews   |
+| POST   | `/conversations/:id/join` | `{ message? }`       | any signed-in user | `{ status, conversation, joinRequest }` |
+
+### Semantics
+
+- **Two fields, both on every conversation.** `visibility: "private" | "public"`
+  (default `"private"`) decides whether the group is listed;
+  `joinPolicy: "open" | "approval"` (default `"approval"`) decides what happens
+  when someone joins. Set them at creation or flip them later with
+  `PATCH /conversations/:id`. They are independent - omitting one on a PATCH
+  leaves it as it was, it is not a reset.
+- **Publishing needs admin authority, not invite authority.** The flip is
+  guarded by `canManage`, so loosening `canInvite` to "any member" doesn't also
+  let a member expose the group to everyone. On a DM it is
+  `409 NOT_GROUP_CONVERSATION` - a DM has no audience to open to.
+- **A public group defaults to `"approval"`.** Between "a stranger is in the
+  room" and "a stranger is in a queue", only one is recoverable, so setting
+  `visibility` without thinking about policy gets you the safer of the two.
+- **`GET /channels` returns `ChannelPreview`s, not conversations** -
+  `{ conversationId, name, participantCount, joinPolicy, createdAt, metadata, alreadyParticipant, requestPending }`,
+  most-recently-active first, paginated with the same `?limit=&cursor=` keyset as
+  `GET /conversations`. A count rather than a member list, for the same reason
+  the invite preview is thin: this is a route strangers can read. Only public
+  groups appear - never a DM, never a private group. `alreadyParticipant` and
+  `requestPending` are viewer-relative, so render "Open", "Pending", or "Join"
+  straight from them.
+- **Public means discoverable, not readable.** Browsing grants no read access:
+  `GET /conversations/:id` and the message routes still answer
+  `403 FORBIDDEN_READ` to a non-member. The permission layer is untouched by this
+  feature - to read a channel you join it. And `/channels` is not anonymous:
+  auth runs before routing, so no session is still `401`.
+- **Joining is the same discriminated union as accepting an invite.**
+  `POST /conversations/:id/join` gives
+  `{ status: "joined", conversation, joinRequest: null }` on an `"open"` channel
+  and `{ status: "pending", conversation: null, joinRequest }` on an
+  `"approval"` one - both **200**, so branch on `status`. Re-asking while pending
+  returns the same row (it can't be used to jump a newest-first queue); joining a
+  channel you're in is `409 ALREADY_PARTICIPANT`; a group that isn't public is
+  `403 NOT_PUBLIC_CONVERSATION`.
+- **403, not 404, for a private group.** Core knows the row exists, and a lie it
+  would then have to keep telling consistently is worse than a plain refusal.
+  Use an unguessable conversation id if you need private groups to be
+  unprobeable.
+- **A directory join has `inviteCode: null`.** That's how an admin working the
+  queue tells "found us in the directory" from "someone handed them a link". The
+  request lands in the same `GET /conversations/:id/join-requests` queue, and an
+  `"approval"` channel therefore needs the **invites** capability too - without
+  it, joining is `501 INVITES_UNSUPPORTED`.
+- **An invite always overrides the channel's policy.** The policy lives on
+  whatever the joiner presents: a link minted without `requiresApproval` walks
+  straight into an `"approval"` channel (the admin who minted it vouched for the
+  holder), and a link minted with it queues even in an `"open"` one.
+- **Joining publishes `participant.added`; a flip publishes
+  `conversation.updated`** - both existing events, with the joiner as their own
+  `actorId`. No new SSE types, so a client written for groups already handles it.
+
 ## Plugin routes
 
 Only present when the plugin is passed to `chatpack({ plugins })` - consulted
@@ -172,7 +242,11 @@ These trip up hand-written and generated clients alike:
   `SEARCH_UNSUPPORTED`. First-party adapters normalize with Unicode NFKC,
   lowercase, and treat punctuation as a separator; every unique query term is
   required and term occurrences determine relevance.
-- **The message text field is `body`** (not `text` / `content`).
+- **The message text field is `body`** (not `text` / `content`), and it must be
+  a **non-empty string after trimming** on both send and edit - whitespace-only
+  is `400 INVALID_INPUT`. There are no body-less messages, so an
+  attachment-only or sticker-only composer has to synthesize one (a file name,
+  say) rather than send `""`.
 - **Every message carries `reactions` and its reply fields.** `reactions` is
   grouped: `[{ emoji, count, userIds }]`, `userIds` earliest-first (at most two
   per emoji in a DM, up to the participant count in a group - enough to render
@@ -540,24 +614,25 @@ JSON with a stable machine-readable code and a mapped HTTP status:
 { "error": { "code": "FORBIDDEN_READ", "message": "…" } }
 ```
 
-| Status | Code(s)                                                    | When                                             |
-| ------ | ---------------------------------------------------------- | ------------------------------------------------ |
-| 401    | `UNAUTHENTICATED`                                          | `auth` returned `null` (or a non-`ChatpackUser`) |
-| 400    | `INVALID_INPUT`                                            | bad body/query params                            |
-| 403    | `FORBIDDEN_READ`, `FORBIDDEN_WRITE`, `NOT_MESSAGE_SENDER`  | not allowed                                      |
-| 403    | `NOT_CONVERSATION_ADMIN`                                   | a group management call by a non-admin           |
-| 404    | `CONVERSATION_NOT_FOUND`, `MESSAGE_NOT_FOUND`, `NOT_FOUND` | missing resource/route                           |
-| 404    | `INVITE_NOT_FOUND`, `JOIN_REQUEST_NOT_FOUND`               | unknown or revoked code; no such pending request |
-| 409    | `MESSAGE_DELETED`                                          | editing a deleted message                        |
-| 409    | `NOT_GROUP_CONVERSATION`                                   | a group-only call on a DM                        |
-| 409    | `LAST_ADMIN_REMAINING`                                     | removing or demoting a group's only admin        |
-| 409    | `ALREADY_PARTICIPANT`                                      | asking to join a group you are already in        |
-| 410    | `INVITE_EXPIRED`                                           | the link is past its expiry, or out of uses      |
-| 422    | `MESSAGE_REJECTED`                                         | a `beforeMessageSend` hook refused the message   |
-| 422    | `GROUP_LIMIT_EXCEEDED`                                     | a group would exceed 256 participants            |
-| 422    | `INVITE_LIMIT_EXCEEDED`                                    | the group already holds 50 invites               |
-| 500    | `INTERNAL_ERROR`                                           | unexpected server error (opaque)                 |
-| 501    | `SEARCH_UNSUPPORTED`, `INVITES_UNSUPPORTED`                | the adapter lacks that optional capability       |
+| Status | Code(s)                                                             | When                                             |
+| ------ | ------------------------------------------------------------------- | ------------------------------------------------ |
+| 401    | `UNAUTHENTICATED`                                                   | `auth` returned `null` (or a non-`ChatpackUser`) |
+| 400    | `INVALID_INPUT`                                                     | bad body/query params                            |
+| 403    | `FORBIDDEN_READ`, `FORBIDDEN_WRITE`, `NOT_MESSAGE_SENDER`           | not allowed                                      |
+| 403    | `NOT_CONVERSATION_ADMIN`                                            | a group management call by a non-admin           |
+| 403    | `NOT_PUBLIC_CONVERSATION`                                           | joining a group that is not a public channel     |
+| 404    | `CONVERSATION_NOT_FOUND`, `MESSAGE_NOT_FOUND`, `NOT_FOUND`          | missing resource/route                           |
+| 404    | `INVITE_NOT_FOUND`, `JOIN_REQUEST_NOT_FOUND`                        | unknown or revoked code; no such pending request |
+| 409    | `MESSAGE_DELETED`                                                   | editing a deleted message                        |
+| 409    | `NOT_GROUP_CONVERSATION`                                            | a group-only call on a DM                        |
+| 409    | `LAST_ADMIN_REMAINING`                                              | removing or demoting a group's only admin        |
+| 409    | `ALREADY_PARTICIPANT`                                               | asking to join a group you are already in        |
+| 410    | `INVITE_EXPIRED`                                                    | the link is past its expiry, or out of uses      |
+| 422    | `MESSAGE_REJECTED`                                                  | a `beforeMessageSend` hook refused the message   |
+| 422    | `GROUP_LIMIT_EXCEEDED`                                              | a group would exceed 256 participants            |
+| 422    | `INVITE_LIMIT_EXCEEDED`                                             | the group already holds 50 invites               |
+| 500    | `INTERNAL_ERROR`                                                    | unexpected server error (opaque)                 |
+| 501    | `SEARCH_UNSUPPORTED`, `INVITES_UNSUPPORTED`, `CHANNELS_UNSUPPORTED` | the adapter lacks that optional capability       |
 
 More on branching by code in [Error handling](/docs/concepts/errors).
 
@@ -590,11 +665,11 @@ been open. `@chatpack/client` does that for you.
 Membership events follow the same no-`id:` rule, for the same reason - a
 membership change allocates no `seq`:
 
-| Event                  | Data                                         | When                                   |
-| ---------------------- | -------------------------------------------- | -------------------------------------- |
-| `participant.added`    | `{ actorId, affectedUserIds, conversation }` | members were added to a group          |
-| `participant.removed`  | `{ actorId, affectedUserIds, conversation }` | a member was removed, or left          |
-| `conversation.updated` | `{ actorId, affectedUserIds, conversation }` | a group was renamed, or a role changed |
+| Event                  | Data                                         | When                                                       |
+| ---------------------- | -------------------------------------------- | ---------------------------------------------------------- |
+| `participant.added`    | `{ actorId, affectedUserIds, conversation }` | members were added to a group                              |
+| `participant.removed`  | `{ actorId, affectedUserIds, conversation }` | a member was removed, or left                              |
+| `conversation.updated` | `{ actorId, affectedUserIds, conversation }` | a group was renamed, a role changed, or visibility flipped |
 
 `conversation` is the complete post-change snapshot, participants included -
 render from it rather than patching. `actorId` is who did it (an admin, or the
@@ -612,7 +687,7 @@ the stream reopens.
 
 <Callout type="warn">
   `@chatpack/client` does not subscribe to these three events yet, and has no wrappers for the
-  group, invite, or join-request routes. Call them with `fetch` and refetch afterwards.
+  group, invite, join-request, or channel routes. Call them with `fetch` and refetch afterwards.
 </Callout>
 
 Ephemeral plugin events (never stored, never replayed, no `id:` field):

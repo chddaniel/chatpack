@@ -55,6 +55,14 @@ referenced **by id only** - there is no foreign key into your users table.
 </Callout>
 
 <Callout type="info">
+  The channel migration is gentle too: `visibility` and `join_policy` are added to
+  `chatpack_conversations` with `NOT NULL DEFAULT` values, so every existing conversation becomes a
+  private, approval-gated one without a backfill - and old code that never selects the columns keeps
+  working. It also adds `chatpack_conversations_public_idx`, a *partial* index (`WHERE visibility =
+  'public'`) so the directory query doesn't index every private conversation you own.
+</Callout>
+
+<Callout type="info">
   The group migration rewrites the pair-key index rather than adding one: a *partial* unique index
   (`WHERE pair_key IS NOT NULL`) lets unlimited null-keyed groups coexist with one-DM-per-pair.
   Postgres can't swap a total index for a partial one under the same name, so the migration drops
@@ -175,6 +183,13 @@ emoji) DO NOTHING` against a unique index on the triple, so five concurrent
   person. Zero rows back means "spent", which core turns into `410`. Join
   requests are the one place that **does** use `DO UPDATE` - a re-ask has to
   replace a stale denial with a fresh `pending` row.
+- **Channel joins ride the same idempotency** - a self-join into an `"open"`
+  channel goes through `addParticipants`, so eight concurrent joins by one user
+  leave one participant row. The directory query filters on `type = 'group' AND
+visibility = 'public'` (both, not just visibility) and reads `visibility` /
+  `join_policy` through a narrowing coercion, so a legacy `NULL` or a
+  hand-edited value comes back as `"private"` / `"approval"` instead of leaking
+  out of the union.
 
 ## Testing
 

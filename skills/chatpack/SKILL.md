@@ -1,6 +1,6 @@
 ---
 name: chatpack
-description: Integrate Chatpack (@chatpack/core) - an open-source TypeScript chat backend (1:1 and group conversations) with REST + real-time SSE - into any app. Use when adding chat, messaging, DMs, group chats, invite links, join requests, or an AI-assistant conversation to an app; when working with any @chatpack/* package, chatpack(), chat.handler(), or toNextRouteHandlers; or when debugging Chatpack integrations (401 UNAUTHENTICATED, 404 on /api/chat/*, EventSource /stream not receiving events, cookies dropped in preview iframes, 501 INVITES_UNSUPPORTED).
+description: Integrate Chatpack (@chatpack/core) - an open-source TypeScript chat backend (1:1 and group conversations) with REST + real-time SSE - into any app. Use when adding chat, messaging, DMs, group chats, invite links, join requests, public channels, or an AI-assistant conversation to an app; when working with any @chatpack/* package, chatpack(), chat.handler(), or toNextRouteHandlers; or when debugging Chatpack integrations (401 UNAUTHENTICATED, 404 on /api/chat/*, EventSource /stream not receiving events, cookies dropped in preview iframes, 501 INVITES_UNSUPPORTED, 501 CHANNELS_UNSUPPORTED).
 ---
 
 # Integrating Chatpack
@@ -30,7 +30,7 @@ installed `llms.txt` wins (it matches the installed version).
    `searchMessages`, `editMessage`, `deleteMessage`, `addReaction`, `removeReaction`, `markRead`,
    `listMessagesAfter`, `createInvite`, `listInvites`, `revokeInvite`,
    `getInvitePreview`, `acceptInvite`, `requestToJoin`, `listJoinRequests`,
-   `resolveJoinRequest`.
+   `resolveJoinRequest`, `listPublicConversations`, `joinConversation`.
    `getOrCreateDirectConversation` is a storage-adapter method - never call the
    adapter directly. If a method name is not in this list, **it does not exist -
    do not invent it.**
@@ -325,12 +325,61 @@ Invite rules core enforces (don't re-implement):
   row, so **denial is not a block** - hard-blocking is yours to build. Resolving
   twice is 404 `JOIN_REQUEST_NOT_FOUND`.
 
+**Public channels** are for the other shape of "let people in": a directory
+anyone signed in can browse, no link and no user ids needed. A channel is **not a
+new conversation type** - it's a group with `visibility: "public"`. Two routes, no
+client wrappers yet, and a second optional capability (`501
+CHANNELS_UNSUPPORTED`, independent of invites).
+
+```ts
+// publish an existing group, or set the fields at creation. Admin-only
+// (canManage, NOT canInvite). Defaults are "private" + "approval".
+await fetch(`/api/chat/conversations/${groupId}`, {
+  method: "PATCH",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ visibility: "public", joinPolicy: "open" }),
+});
+// PATCH is a real patch: sending only `visibility` keeps the name. An empty
+// PATCH is 400 - it's a mistake, not a no-op.
+
+// browse. No permission needed. Thin previews, cursor-paginated.
+const { channels, nextCursor } = await fetch("/api/chat/channels?limit=20").then((r) => r.json());
+// each: { conversationId, name, participantCount, joinPolicy, lastActivityAt,
+//         alreadyParticipant, requestPending } - a COUNT, never member ids
+
+// join. Bodyless POST. Same discriminated union as accepting an invite.
+const result = await fetch(`/api/chat/conversations/${id}/join`, { method: "POST" }).then((r) =>
+  r.json(),
+);
+if (result.status === "joined")
+  result.conversation; // "open" - in immediately
+else result.joinRequest; // "approval" - an admin resolves it, inviteCode is null
+```
+
+Channel rules core enforces:
+
+- **Discoverable is not readable.** Browsing gives you a preview; `GET
+/conversations/:id` and the messages routes still 403 `FORBIDDEN_READ` for a
+  non-member. Build the UI as browse → join → read, and don't try to preload a
+  transcript for a channel the user hasn't joined.
+- **A public group defaults to `"approval"`**, and joining a private group is 403
+  `NOT_PUBLIC_CONVERSATION` (not 404 - you can't probe for private groups anyway,
+  since you'd need the id).
+- **An invite still overrides the policy** in both directions: a link into an
+  `"approval"` channel admits instantly, and one into an `"open"` channel is
+  still a valid link. The admin who minted it already decided.
+- **No new SSE events.** Joining publishes `participant.added` with the joiner as
+  their own `actorId`; flipping the fields publishes `conversation.updated`.
+
 Client semantics that trip up generated code:
 
 - HTTP responses are **enveloped**: `{ conversation }`, `{ message }`,
   `{ messages, nextCursor }` - unwrap them. (`chat.api.*` returns bare objects.)
 - Message lists are **newest-first**; reverse for a transcript; paginate with
   `nextCursor` → `?cursor=`.
+- `body` must be a **non-empty string after trimming**, on send and on edit.
+  There are no body-less messages: an attachment-only or sticker-only composer
+  must synthesize one (the file name, say), and whitespace won't pass.
 - Every conversation object carries the viewer's **`unreadCount`** (messages
   newer than their read-state, excluding their own) - read the badge from
   there, don't count client-side.
@@ -410,6 +459,18 @@ curl -s localhost:3000/api/chat/invites/THE_CODE -H 'cookie: demo_user=carol'
 curl -si -X POST localhost:3000/api/chat/invites/THE_CODE/accept -H 'cookie: demo_user=carol'
 # accept AGAIN as carol: still 200 "joined" (idempotent), NOT 410 - the link is
 # spent but she is already in. A third user now gets 410 INVITE_EXPIRED.
+
+# 8. channels, if the app has a directory (expect 200 with the group listed,
+#    previews carrying participantCount and NO user ids, then 200 "joined").
+#    A 501 CHANNELS_UNSUPPORTED means the storage adapter lacks the capability.
+curl -si -X PATCH localhost:3000/api/chat/conversations/conv_2 \
+  -H 'cookie: demo_user=alice' -H 'content-type: application/json' \
+  -d '{"visibility":"public","joinPolicy":"open"}'
+curl -s 'localhost:3000/api/chat/channels?limit=20' -H 'cookie: demo_user=dave'
+curl -si -X POST localhost:3000/api/chat/conversations/conv_2/join -H 'cookie: demo_user=dave'
+# and the check that proves the boundary: GET a public channel as a user who has
+# only browsed it - still 403 FORBIDDEN_READ, because discoverable isn't readable.
+curl -si localhost:3000/api/chat/conversations/conv_2 -H 'cookie: demo_user=erin'
 ```
 
 Browser check: after "sign in", `document.cookie` must contain the demo cookie
@@ -417,38 +478,47 @@ AND the Network tab must show it on `/api/chat/*` requests.
 
 ## Troubleshooting
 
-| Symptom                                                    | Cause & fix                                                                                                                                                                            |
-| ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 401 on everything                                          | **Read the response body first** - it names the exact failure (bad hook return shape vs missing cookie vs unparsed cookie). Auth runs before routing, so fix auth before chasing 404s. |
-| 401 only in the preview pane, works in a real tab          | Cross-site iframe dropped a `SameSite=Lax` cookie. Re-set it with `SameSite=None; Secure; Partitioned`.                                                                                |
-| 404 `NOT_FOUND` after auth passes                          | Mount path/basePath mismatch, or the route file isn't a catch-all (`[...chatpack]` / `chat.$`).                                                                                        |
-| `chat.api.getOrCreateDirectConversation is not a function` | Hallucinated method - the API method is `getOrCreateConversation` (Hard rule 2).                                                                                                       |
-| Messages send but never appear live                        | Custom-written stream route, second `chatpack()` instance, or non-streaming Express bridge. One instance, one handler (Hard rules 1 & 5).                                              |
-| `EventSource` closes and never retries                     | Fatal response (usually 401): browser won't reconnect on its own - re-auth, then create a new `EventSource`.                                                                           |
-| Chat state vanishes between requests                       | `memoryAdapter` on serverless/multi-isolate, or HMR wiped an unguarded instance. Database adapter / `globalThis` guard.                                                                |
-| Old package version right after a release (Bun)            | Bun's `minimumReleaseAge` guard - check `npm view @chatpack/core dist-tags`.                                                                                                           |
-| 409 `NOT_GROUP_CONVERSATION`                               | A group-only call (add/remove/role/rename) aimed at a DM. DM membership is fixed at creation.                                                                                          |
-| 409 `LAST_ADMIN_REMAINING`                                 | Removing or demoting a group's only admin. Promote a successor first - Chatpack refuses rather than leave a group nobody can manage.                                                   |
-| Duplicate groups piling up                                 | Treating `createGroupConversation` as find-or-create. It always creates; store the returned id (Hard rule 4).                                                                          |
-| Second group insert fails on a unique-key error            | Custom adapter left the `pair_key` unique index total instead of partial (`WHERE pair_key IS NOT NULL`), so two `NULL` keys collide.                                                   |
-| An admin silently becomes a `member`                       | Custom adapter used `ON CONFLICT DO UPDATE` for participant inserts. Re-adding an existing member must be `DO NOTHING`.                                                                |
-| 501 `INVITES_UNSUPPORTED`                                  | The storage adapter has no `invites` capability. Both first-party adapters do; a custom one needs the whole nine-method namespace (all or nothing).                                    |
-| 410 `INVITE_EXPIRED` on a fresh-looking link               | Past `expiresAt`, or `maxUses` is spent. Mint a new one - the code is permanently done. A 404 instead means unknown _or revoked_.                                                      |
-| A one-use invite let in two people                         | Custom adapter did `SELECT`-then-`UPDATE` in `consumeInvite`. It must be one atomic statement, same rule as `seq`.                                                                     |
-| A denied user can't re-request                             | Custom adapter used `DO NOTHING` in `createJoinRequest`. Join requests are the one place that needs `DO UPDATE` - reset `status` to `pending` and clear the resolution.                |
+| Symptom                                                                          | Cause & fix                                                                                                                                                                            |
+| -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 401 on everything                                                                | **Read the response body first** - it names the exact failure (bad hook return shape vs missing cookie vs unparsed cookie). Auth runs before routing, so fix auth before chasing 404s. |
+| 401 only in the preview pane, works in a real tab                                | Cross-site iframe dropped a `SameSite=Lax` cookie. Re-set it with `SameSite=None; Secure; Partitioned`.                                                                                |
+| 404 `NOT_FOUND` after auth passes                                                | Mount path/basePath mismatch, or the route file isn't a catch-all (`[...chatpack]` / `chat.$`).                                                                                        |
+| `chat.api.getOrCreateDirectConversation is not a function`                       | Hallucinated method - the API method is `getOrCreateConversation` (Hard rule 2).                                                                                                       |
+| Messages send but never appear live                                              | Custom-written stream route, second `chatpack()` instance, or non-streaming Express bridge. One instance, one handler (Hard rules 1 & 5).                                              |
+| `EventSource` closes and never retries                                           | Fatal response (usually 401): browser won't reconnect on its own - re-auth, then create a new `EventSource`.                                                                           |
+| Chat state vanishes between requests                                             | `memoryAdapter` on serverless/multi-isolate, or HMR wiped an unguarded instance. Database adapter / `globalThis` guard.                                                                |
+| Old package version right after a release (Bun)                                  | Bun's `minimumReleaseAge` guard - check `npm view @chatpack/core dist-tags`.                                                                                                           |
+| 409 `NOT_GROUP_CONVERSATION`                                                     | A group-only call (add/remove/role/rename) aimed at a DM. DM membership is fixed at creation.                                                                                          |
+| 409 `LAST_ADMIN_REMAINING`                                                       | Removing or demoting a group's only admin. Promote a successor first - Chatpack refuses rather than leave a group nobody can manage.                                                   |
+| Duplicate groups piling up                                                       | Treating `createGroupConversation` as find-or-create. It always creates; store the returned id (Hard rule 4).                                                                          |
+| Second group insert fails on a unique-key error                                  | Custom adapter left the `pair_key` unique index total instead of partial (`WHERE pair_key IS NOT NULL`), so two `NULL` keys collide.                                                   |
+| An admin silently becomes a `member`                                             | Custom adapter used `ON CONFLICT DO UPDATE` for participant inserts. Re-adding an existing member must be `DO NOTHING`.                                                                |
+| 501 `INVITES_UNSUPPORTED`                                                        | The storage adapter has no `invites` capability. Both first-party adapters do; a custom one needs the whole nine-method namespace (all or nothing).                                    |
+| 410 `INVITE_EXPIRED` on a fresh-looking link                                     | Past `expiresAt`, or `maxUses` is spent. Mint a new one - the code is permanently done. A 404 instead means unknown _or revoked_.                                                      |
+| A one-use invite let in two people                                               | Custom adapter did `SELECT`-then-`UPDATE` in `consumeInvite`. It must be one atomic statement, same rule as `seq`.                                                                     |
+| A denied user can't re-request                                                   | Custom adapter used `DO NOTHING` in `createJoinRequest`. Join requests are the one place that needs `DO UPDATE` - reset `status` to `pending` and clear the resolution.                |
+| 501 `CHANNELS_UNSUPPORTED`                                                       | The storage adapter has no `channels` capability - and it also blocks _setting_ `visibility`/`joinPolicy`, so a `POST /conversations/group` with `visibility: "public"` fails too.     |
+| 403 `NOT_PUBLIC_CONVERSATION` on join                                            | The group is still `visibility: "private"`. An admin must PATCH it public first; joining is only ever self-service for channels.                                                       |
+| A channel was published but the directory is empty                               | Custom adapter stored `visibility` nowhere (the columns are part of the **required** contract, not the `channels` namespace), or its query filters on `visibility` without `type`.     |
+| Renaming happened by accident when flipping visibility                           | Custom adapter tried to write only the field it thought changed. Core sends all three already resolved against the current row - write all three.                                      |
+| A user can browse a channel but gets 403 reading it                              | Working as designed: discoverable is not readable. Call the join route first; there is no read-without-membership mode.                                                                |
+| 400 `INVALID_INPUT` sending an image with no caption                             | `body` is required and non-empty after trimming; attachments never substitute for it. Synthesize a body (a space won't do - it's trimmed).                                             |
+| Chrome uploads fail as `CLIENT_NETWORK_ERROR` with no request in the Network tab | `@filepack/client` ≤ 0.1.1 calls an unbound `globalThis.fetch` ("Illegal invocation"). Pass `controlFetch: (input, init) => fetch(input, init)` to `createChatpackFileClient`.         |
 
 ## Custom storage adapter (Supabase JS / Convex / Firestore / other)
 
 Do NOT improvise: read **Part 2 of `llms.txt`** and follow it exactly - it
-contains the 19-required-method `StorageAdapter` contract plus two optional
-capabilities (search, and the nine-method `invites` namespace),
+contains the 19-required-method `StorageAdapter` contract plus three optional
+capabilities (search, the nine-method `invites` namespace, and the one-method
+`channels` namespace),
 the invariants (atomic
 `pairKey` creation, atomic per-conversation `seq`, `Date` instances not ISO
 strings, soft-delete as tombstone, newest-first vs oldest-first ordering,
 batched exact unread counts, participant-scoped ranked search when supported,
 idempotent reaction writes that never touch `lastSeq`/activity, single-statement
-invite consumption), the reference
-Postgres schema, a skeleton, and an 18-point verification checklist.
+invite consumption, `visibility`/`joinPolicy` round-tripping with coercion on
+read), the reference
+Postgres schema, a skeleton, and a 19-point verification checklist.
 The adapter must run server-side with privileged credentials; `chatpack_*`
 tables must never be readable by browser/anon clients.
 
@@ -462,3 +532,10 @@ partial index in `ON CONFLICT` when the insert **repeats the same predicate** -
 so the DM upsert needs `WHERE pair_key IS NOT NULL` too. Membership inserts use
 `ON CONFLICT DO NOTHING`, never `DO UPDATE`: an update would demote an admin to
 `member` when someone re-adds them.
+
+Channels split across both halves of the contract, which is the one thing to get
+right: the `visibility` and `join_policy` **columns are required** (add them with
+`NOT NULL DEFAULT 'private'` / `'approval'` - no backfill needed), while only the
+directory query lives in the optional `channels` namespace. Omitting the namespace
+makes core refuse to set a non-default value, so a pre-channels adapter reports a
+clean 501 instead of quietly storing a "public" channel nobody can find.

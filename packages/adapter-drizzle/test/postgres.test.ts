@@ -1408,6 +1408,214 @@ describe("invites and join requests on Postgres (ADR 0019)", () => {
   });
 });
 
+describe("public channels on Postgres (ADR 0020)", () => {
+  async function seedChannel(
+    overrides: { name?: string; joinPolicy?: "open" | "approval"; userIds?: string[] } = {},
+  ): Promise<string> {
+    const channel = await chat.api.createGroupConversation({
+      userId: "alice",
+      name: overrides.name ?? "General",
+      visibility: "public",
+      joinPolicy: overrides.joinPolicy ?? "open",
+      ...(overrides.userIds ? { userIds: overrides.userIds } : {}),
+    });
+    return channel.id;
+  }
+
+  it("persists visibility and join_policy as columns, defaulted on DMs", async () => {
+    const channelId = await seedChannel({ joinPolicy: "approval" });
+    const dm = await chat.api.getOrCreateConversation({ userId: "alice", otherUserId: "bob" });
+
+    const rows = await pglite.query<{ id: string; visibility: string; join_policy: string }>(
+      `SELECT "id", "visibility", "join_policy" FROM "chatpack_conversations" ORDER BY "id"`,
+    );
+    const byId = new Map(rows.rows.map((row) => [row.id, row]));
+    expect(byId.get(channelId)).toMatchObject({ visibility: "public", join_policy: "approval" });
+    expect(byId.get(dm.id)).toMatchObject({ visibility: "private", join_policy: "approval" });
+  });
+
+  it("creates the partial index the directory query is shaped for", async () => {
+    const result = await pglite.query<{ indexname: string; indexdef: string }>(
+      `SELECT indexname, indexdef FROM pg_indexes WHERE tablename = 'chatpack_conversations'`,
+    );
+    const index = result.rows.find((r) => r.indexname === "chatpack_conversations_public_idx");
+    // Partial, not total: the directory must not pay to sort every DM in the
+    // table, and private rows never enter the index at all.
+    expect(index?.indexdef).toContain("WHERE (visibility = 'public'");
+    expect(index?.indexdef).toContain("last_activity_at");
+  });
+
+  it("coerces an unrecognized column value instead of leaking it", async () => {
+    const channelId = await seedChannel();
+    // A text column can hold anything a migration or a human puts there. Reading
+    // it back as-is would let `visibility: "publik"` become a value core never
+    // planned for; toConversation narrows to the union instead.
+    await pglite.query(
+      `UPDATE "chatpack_conversations" SET "visibility" = 'publik', "join_policy" = 'whenever'
+       WHERE "id" = $1`,
+      [channelId],
+    );
+
+    const conversation = await chat.api.getConversation({
+      userId: "alice",
+      conversationId: channelId,
+    });
+    expect(conversation).toMatchObject({ visibility: "private", joinPolicy: "approval" });
+    // And it drops out of the directory, which is the safe direction to fail.
+    const { channels } = await chat.api.listPublicConversations({ userId: "carol" });
+    expect(channels).toHaveLength(0);
+  });
+
+  it("lists public groups most-recently-active first with keyset pagination", async () => {
+    const first = await seedChannel({ name: "First" });
+    const second = await seedChannel({ name: "Second" });
+    const third = await seedChannel({ name: "Third" });
+    await chat.api.createGroupConversation({ userId: "alice", name: "Private" });
+    await chat.api.getOrCreateConversation({ userId: "alice", otherUserId: "bob" });
+
+    await chat.api.sendMessage({ userId: "alice", conversationId: first, body: "1" });
+
+    const page1 = await chat.api.listPublicConversations({ userId: "carol", limit: 2 });
+    expect(page1.channels.map((c) => c.conversationId)).toEqual([first, third]);
+    expect(page1.nextCursor).not.toBeNull();
+
+    const page2 = await chat.api.listPublicConversations({
+      userId: "carol",
+      limit: 2,
+      cursor: page1.nextCursor!,
+    });
+    // Private groups and DMs never appear, whoever is browsing.
+    expect(page2.channels.map((c) => c.conversationId)).toEqual([second]);
+    expect(page2.nextCursor).toBeNull();
+  });
+
+  it("computes alreadyParticipant and requestPending per viewer", async () => {
+    const open = await seedChannel({ name: "Open" });
+    const gated = await seedChannel({ name: "Gated", joinPolicy: "approval" });
+    await chat.api.joinConversation({ userId: "carol", conversationId: open });
+    await chat.api.joinConversation({ userId: "carol", conversationId: gated });
+
+    const carol = await chat.api.listPublicConversations({ userId: "carol" });
+    const dave = await chat.api.listPublicConversations({ userId: "dave" });
+
+    const byId = new Map(carol.channels.map((c) => [c.conversationId, c]));
+    expect(byId.get(open)).toMatchObject({ alreadyParticipant: true, requestPending: false });
+    expect(byId.get(gated)).toMatchObject({ alreadyParticipant: false, requestPending: true });
+    // Same two rows, different answers: the flags are viewer-relative, never
+    // stored (the ADR 0009 rule for unreadCount, applied again).
+    for (const channel of dave.channels) {
+      expect(channel).toMatchObject({ alreadyParticipant: false, requestPending: false });
+    }
+    expect(carol.channels.every((c) => !("participants" in c))).toBe(true);
+  });
+
+  it("admits one joiner per user under concurrent self-joins", async () => {
+    const channelId = await seedChannel();
+
+    // Eight tabs, one user: the unique (conversation_id, user_id) participant
+    // index is what keeps this from creating duplicate memberships.
+    const results = await Promise.allSettled(
+      Array.from({ length: 8 }, () =>
+        chat.api.joinConversation({ userId: "carol", conversationId: channelId }),
+      ),
+    );
+
+    expect(results.filter((r) => r.status === "fulfilled").length).toBeGreaterThanOrEqual(1);
+    const rows = await pglite.query<{ count: number }>(
+      `SELECT count(*)::int AS count FROM "chatpack_conversation_participants"
+       WHERE "conversation_id" = $1 AND "user_id" = 'carol'`,
+      [channelId],
+    );
+    expect(rows.rows[0]!.count).toBe(1);
+  });
+
+  it("queues an approval join as a pending row with no invite code", async () => {
+    const channelId = await seedChannel({ joinPolicy: "approval" });
+
+    const result = await chat.api.joinConversation({
+      userId: "carol",
+      conversationId: channelId,
+      message: "found you in the directory",
+    });
+
+    expect(result.status).toBe("pending");
+    const row = await pglite.query<{
+      status: string;
+      invite_code: string | null;
+      message: string | null;
+    }>(
+      `SELECT "status", "invite_code", "message" FROM "chatpack_join_requests"
+       WHERE "conversation_id" = $1 AND "user_id" = 'carol'`,
+      [channelId],
+    );
+    // A null invite_code is the signal an admin reads as "walked in off the
+    // directory" rather than "someone handed them a link".
+    expect(row.rows[0]).toEqual({
+      status: "pending",
+      invite_code: null,
+      message: "found you in the directory",
+    });
+  });
+
+  it("keeps a repeat ask to one row", async () => {
+    const channelId = await seedChannel({ joinPolicy: "approval" });
+    const first = await chat.api.joinConversation({
+      userId: "carol",
+      conversationId: channelId,
+      message: "first",
+    });
+    const second = await chat.api.joinConversation({
+      userId: "carol",
+      conversationId: channelId,
+      message: "second",
+    });
+
+    expect(second.joinRequest!.id).toBe(first.joinRequest!.id);
+    const rows = await pglite.query<{ count: number }>(
+      `SELECT count(*)::int AS count FROM "chatpack_join_requests"
+       WHERE "conversation_id" = $1 AND "user_id" = 'carol'`,
+      [channelId],
+    );
+    expect(rows.rows[0]!.count).toBe(1);
+  });
+
+  it("refuses to join a private group and refuses to publish a DM", async () => {
+    const group = await chat.api.createGroupConversation({ userId: "alice", name: "Private" });
+    const dm = await chat.api.getOrCreateConversation({ userId: "alice", otherUserId: "bob" });
+
+    await expect(
+      chat.api.joinConversation({ userId: "carol", conversationId: group.id }),
+    ).rejects.toMatchObject({ code: "NOT_PUBLIC_CONVERSATION" });
+    await expect(
+      chat.api.updateConversation({ userId: "alice", conversationId: dm.id, visibility: "public" }),
+    ).rejects.toMatchObject({ code: "NOT_GROUP_CONVERSATION" });
+  });
+
+  it("writes a flip to both columns without disturbing the name", async () => {
+    const group = await chat.api.createGroupConversation({ userId: "alice", name: "Standup" });
+
+    await chat.api.updateConversation({
+      userId: "alice",
+      conversationId: group.id,
+      visibility: "public",
+      joinPolicy: "open",
+    });
+
+    const row = await pglite.query<{
+      name: string | null;
+      visibility: string;
+      join_policy: string;
+    }>(`SELECT "name", "visibility", "join_policy" FROM "chatpack_conversations" WHERE "id" = $1`, [
+      group.id,
+    ]);
+    expect(row.rows[0]).toEqual({
+      name: "Standup",
+      visibility: "public",
+      join_policy: "open",
+    });
+  });
+});
+
 describe("upgrading a pre-ADR-0013 database", () => {
   it("adds reply_to_message_id and the reactions table to an existing schema", async () => {
     const legacy = new PGlite();
@@ -1538,6 +1746,23 @@ describe("upgrading a pre-ADR-0013 database", () => {
       expect(
         (await upgraded.api.getOrCreateConversation({ userId: "bob", otherUserId: "alice" })).id,
       ).toBe(conversation.id);
+
+      // ADR 0020: the two channel columns arrive with defaults, so every row
+      // written before the upgrade reads back as a private, approval-gated
+      // conversation rather than as undefined.
+      expect(legacyConversation).toMatchObject({
+        visibility: "private",
+        joinPolicy: "approval",
+      });
+      const published = await upgraded.api.updateConversation({
+        userId: "alice",
+        conversationId: group.id,
+        visibility: "public",
+        joinPolicy: "open",
+      });
+      expect(published).toMatchObject({ visibility: "public", joinPolicy: "open" });
+      const { channels } = await upgraded.api.listPublicConversations({ userId: "carol" });
+      expect(channels.map((c) => c.conversationId)).toEqual([group.id]);
 
       // And the migration stays idempotent when run a third time.
       await legacy.exec(migrationSql);

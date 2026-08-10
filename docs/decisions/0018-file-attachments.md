@@ -83,3 +83,31 @@ Filepack file; hosts can use the Filepack server API when they need that action.
   collection policy can reclaim unattached files without a message cascade.
 - Direct S3/R2 targets remain provider-signed. Handler targets remain short
   lived and private.
+
+## Amendment (2026-08-09): three behaviours found by dogfooding
+
+Recorded here because all three were discovered only by building a real app
+against the published packages, and each one looks like a bug in the host's
+code rather than a documented rule.
+
+- **There are no attachment-only messages.** Core requires `body` to be a
+  non-empty string after trimming, on send and on edit, so an image-only
+  message is `400 INVALID_INPUT`. This follows from attachments living in
+  metadata - they are a property of a message, never a substitute for one -
+  but it was never stated, and an image-only composer is an obvious UI to
+  build. Hosts must synthesize a body; whitespace will not do, since it is
+  trimmed.
+- **`@filepack/client` <= 0.1.1 breaks every browser upload unless the host
+  passes `controlFetch`.** It stores `globalThis.fetch` unbound and invokes it
+  as a method, which Chrome's brand check rejects; the error is caught and
+  mislabeled `CLIENT_NETWORK_ERROR` with no request sent. Node's `fetch`
+  tolerates the same call, which is why no test caught it. Reported upstream;
+  documented in `llms.txt` and the `@chatpack/file` README until it is fixed.
+- **Filepack's `complete`/`abort` controls demanded `request.body === null`,
+  which Next.js App Router cannot satisfy** - it hands route handlers a
+  present-but-empty body. Hosts were working around this with their own
+  `stripEmptyBody()`. `@chatpack/file` now normalizes an empty body on exactly
+  those two routes before forwarding, so the framework difference no longer
+  reaches the host. A body carrying real bytes is still forwarded untouched and
+  still rejected: this normalizes emptiness, it does not discard payloads.
+  `parts/prepare` and `parts/record` genuinely take JSON and are excluded.

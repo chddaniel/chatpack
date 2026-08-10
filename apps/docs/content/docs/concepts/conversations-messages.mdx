@@ -30,6 +30,16 @@ Four entities, all stored through the adapter:
         "Group title (trimmed, 1-200 chars), or null. Always null for DMs, and legitimately null for an untitled group.",
       type: "string | null",
     },
+    visibility: {
+      description:
+        'Whether the group appears in the public channel directory. Defaults to "private"; a group set to "public" is what Chatpack calls a channel. Always "private" for DMs.',
+      type: "ChannelVisibility",
+    },
+    joinPolicy: {
+      description:
+        'What happens when someone joins a public channel: "open" admits them instantly, "approval" files a join request. Defaults to "approval" and is inert while visibility is "private".',
+      type: "ChannelJoinPolicy",
+    },
     createdAt: {
       description: "Creation time. Date on the server, ISO string over HTTP.",
       type: "Date",
@@ -77,7 +87,8 @@ Four entities, all stored through the adapter:
     conversationId: { description: "The conversation the message belongs to.", type: "string" },
     senderId: { description: "The sending user id.", type: "string" },
     body: {
-      description: "The message text. The field is body - not text or content.",
+      description:
+        "The message text. The field is body - not text or content. Required and non-empty after trimming, on send and on edit.",
       type: "string",
     },
     role: {
@@ -195,6 +206,43 @@ admin mints and someone redeems, or a **join request** an outsider files and an
 admin resolves - live behind an optional storage capability. See
 [Invites & join requests](/docs/reference/rest-api#invite--join-request-routes);
 both end in the same `participant.added` event, so nothing downstream changes.
+
+### Channels: a public group, not a third type
+
+A group carries two more fields: `visibility` (`"private"` by default) and
+`joinPolicy` (`"approval"` by default). Set `visibility: "public"` and the group
+becomes a **channel** - it appears in `GET /channels`, a directory any signed-in
+user can browse, and can be joined without anyone knowing your user id.
+
+```ts
+const channel = await chat.api.createGroupConversation({
+  userId: "alice",
+  name: "General",
+  visibility: "public",
+  joinPolicy: "open", // omit and it stays "approval"
+});
+channel.type; // still "group" - a channel is not a new ConversationType
+```
+
+There is no `type: "channel"` on purpose: everything about a channel - messages,
+`seq`, read-state, reactions, membership, SSE - is group behavior, and a third
+type would have forced every `type === "group"` check in Chatpack and in your app
+to become a two-value check for no gain.
+
+The parts worth internalizing, both deliberate:
+
+- **Discoverable is not readable.** Browsing returns a thin preview - a name, a
+  participant _count_, `joinPolicy`, and two viewer-relative flags - and never
+  member ids or messages. The permission layer is unchanged, so `getConversation`
+  and `listMessages` still throw `FORBIDDEN_READ` for a non-member. Reading a
+  channel means joining it.
+- **A public group defaults to `"approval"`.** Between "a stranger is in the
+  room" and "a stranger is in a queue", only one is recoverable.
+
+Joining publishes the same `participant.added` event, with the joiner as their
+own `actorId`; flipping the fields publishes `conversation.updated`. Both are
+existing events - there are still no new SSE types. See
+[Channel routes](/docs/reference/rest-api#channel-routes).
 
 ## Message ordering: `seq`, not timestamps
 

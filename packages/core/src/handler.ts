@@ -14,7 +14,7 @@
  * | POST   | `/conversations/group`            | create a group               |
  * | GET    | `/conversations?limit&cursor`     | list my conversations        |
  * | GET    | `/conversations/:id`              | fetch one conversation       |
- * | PATCH  | `/conversations/:id`              | rename a group               |
+ * | PATCH  | `/conversations/:id`              | rename / set visibility      |
  * | POST   | `/conversations/:id/participants` | add group members            |
  * | DELETE | `/conversations/:id/participants` | remove a member / leave      |
  * | PATCH  | `/conversations/:id/participants` | change a member's role       |
@@ -34,6 +34,8 @@
  * | POST   | `/conversations/:id/join-requests` | ask to join a group         |
  * | GET    | `/conversations/:id/join-requests?status&limit` | moderation queue |
  * | PATCH  | `/conversations/:id/join-requests` | approve/deny a request      |
+ * | GET    | `/channels?limit&cursor`          | browse public channels       |
+ * | POST   | `/conversations/:id/join`         | join a public channel        |
  * | GET    | `/stream`                         | SSE: live events for me      |
  *
  * Plugins (`chatpack({ plugins: [...] })`) may add routes of their own; they
@@ -114,6 +116,11 @@ const STATUS_BY_CODE: Record<ChatpackErrorCode, number> = {
   INVITE_LIMIT_EXCEEDED: 422,
   JOIN_REQUEST_NOT_FOUND: 404,
   ALREADY_PARTICIPANT: 409,
+  CHANNELS_UNSUPPORTED: 501,
+  // 403 Forbidden, not 404: the conversation exists and core knows it. A 404
+  // would be a lie every other route would then have to keep telling to stay
+  // consistent, and the caller already had the id (ADR 0020 §7).
+  NOT_PUBLIC_CONVERSATION: 403,
 };
 
 function json(status: number, payload: unknown): Response {
@@ -220,6 +227,32 @@ function optionalBoolean(value: unknown, field: string): boolean | undefined {
   }
   return value;
 }
+
+/**
+ * Parse one of the two ADR 0020 channel enums off a request body.
+ *
+ * The valid-value check is duplicated in core (which is also reachable without
+ * HTTP), and deliberately so: the handler's job is to reject a body it cannot
+ * even shape into an api input, so `visibility: 7` never reaches the engine as
+ * a number the type system was told is a union member.
+ */
+function optionalEnum<T extends string>(
+  value: unknown,
+  field: string,
+  allowed: readonly T[],
+): T | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "string" || !allowed.includes(value as T)) {
+    throw new ChatpackError(
+      "INVALID_INPUT",
+      `"${field}" must be ${allowed.map((a) => `"${a}"`).join(" or ")}.`,
+    );
+  }
+  return value as T;
+}
+
+const VISIBILITIES = ["private", "public"] as const;
+const JOIN_POLICIES = ["open", "approval"] as const;
 
 function parseLimit(params: URLSearchParams): number | undefined {
   const raw = params.get("limit");
@@ -534,11 +567,15 @@ export function createHandler(
         const name = optionalString(body["name"], "name");
         const userIds = optionalStringArray(body["userIds"], "userIds");
         const metadata = optionalMetadata(body["metadata"]);
+        const visibility = optionalEnum(body["visibility"], "visibility", VISIBILITIES);
+        const joinPolicy = optionalEnum(body["joinPolicy"], "joinPolicy", JOIN_POLICIES);
         const conversation = await api.createGroupConversation({
           userId,
           ...(name !== undefined ? { name } : {}),
           ...(userIds !== undefined ? { userIds } : {}),
           ...(metadata !== undefined ? { metadata } : {}),
+          ...(visibility !== undefined ? { visibility } : {}),
+          ...(joinPolicy !== undefined ? { joinPolicy } : {}),
         });
         return json(201, { conversation });
       }
@@ -552,21 +589,29 @@ export function createHandler(
         return json(200, { conversation });
       }
 
-      // PATCH /conversations/:id - rename a group (ADR 0017). `name: null`
-      // clears the title, so the field is required but nullable.
+      // PATCH /conversations/:id - rename a group (ADR 0017) and/or set channel
+      // visibility (ADR 0020). `name: null` clears the title, so it is nullable
+      // rather than merely optional.
       if (method === "PATCH" && segments.length === 2 && segments[0] === "conversations") {
         const body = await readJsonBody(request);
-        if (!("name" in body)) {
+        const visibility = optionalEnum(body["visibility"], "visibility", VISIBILITIES);
+        const joinPolicy = optionalEnum(body["joinPolicy"], "joinPolicy", JOIN_POLICIES);
+        // `name` became optional when ADR 0020 added two sibling fields, but it
+        // stays required when it is the only field present - so `PATCH {}` is
+        // still the same 400 it always was, and no existing caller changes.
+        if (!("name" in body) && visibility === undefined && joinPolicy === undefined) {
           throw new ChatpackError("INVALID_INPUT", `"name" is required.`);
         }
         const raw = body["name"];
-        if (raw !== null && typeof raw !== "string") {
+        if (raw !== undefined && raw !== null && typeof raw !== "string") {
           throw new ChatpackError("INVALID_INPUT", `"name" must be a string or null.`);
         }
         const conversation = await api.updateConversation({
           userId,
           conversationId: segments[1]!,
-          name: raw,
+          ...("name" in body ? { name: raw as string | null } : {}),
+          ...(visibility !== undefined ? { visibility } : {}),
+          ...(joinPolicy !== undefined ? { joinPolicy } : {}),
         });
         return json(200, { conversation });
       }
@@ -890,6 +935,41 @@ export function createHandler(
           conversationId: segments[1]!,
           targetUserId: requiredString(body["userId"], "userId"),
           decision,
+        });
+        return json(200, result);
+      }
+
+      // GET /channels - browse the public directory (ADR 0020). Its own prefix
+      // rather than /conversations/public because it does not return
+      // conversations: hanging previews off that prefix invites clients to
+      // assume otherwise.
+      if (method === "GET" && segments.length === 1 && segments[0] === "channels") {
+        const limit = parseLimit(url.searchParams);
+        const cursor = url.searchParams.get("cursor") ?? undefined;
+        const result = await api.listPublicConversations({
+          userId,
+          ...(limit !== undefined ? { limit } : {}),
+          ...(cursor !== undefined ? { cursor } : {}),
+        });
+        return json(200, result);
+      }
+
+      // POST /conversations/:id/join - self-service entry into a public channel
+      // (ADR 0020). 200 rather than 201 for both outcomes: "joined" creates no
+      // new addressable resource, and a `status`-discriminated body already
+      // tells the client which of the two happened.
+      if (
+        method === "POST" &&
+        segments.length === 3 &&
+        segments[0] === "conversations" &&
+        segments[2] === "join"
+      ) {
+        const body = await readOptionalJsonBody(request);
+        const message = optionalString(body["message"], "message");
+        const result = await api.joinConversation({
+          userId,
+          conversationId: segments[1]!,
+          ...(message !== undefined ? { message } : {}),
         });
         return json(200, result);
       }

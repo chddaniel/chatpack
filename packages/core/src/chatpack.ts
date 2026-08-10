@@ -24,6 +24,9 @@ import {
 } from "./transport";
 import { TelemetryCounters, resolveTelemetryEnabled, startTelemetryFlusher } from "./telemetry";
 import type {
+  ChannelJoinPolicy,
+  ChannelPreview,
+  ChannelVisibility,
   Conversation,
   ConversationInvite,
   ConversationWithUnread,
@@ -120,6 +123,18 @@ export interface CreateGroupConversationApiInput {
    * {@link MAX_CONVERSATION_NAME_LENGTH} characters. Omit for an unnamed group.
    */
   name?: string;
+  /**
+   * Whether to list the group in the public channel directory (ADR 0020).
+   * Defaults to `"private"`. Anything other than `"private"` requires the
+   * storage adapter's `channels` capability, else `CHANNELS_UNSUPPORTED`.
+   */
+  visibility?: ChannelVisibility;
+  /**
+   * How strangers joining a public channel are handled. Defaults to
+   * `"approval"`. Settable while still private (it takes effect when you flip
+   * visibility), but like `visibility` it needs the `channels` capability.
+   */
+  joinPolicy?: ChannelJoinPolicy;
   metadata?: Metadata;
 }
 
@@ -150,13 +165,26 @@ export interface SetParticipantRoleApiInput {
   role: ParticipantRole;
 }
 
-/** Input for {@link ChatpackApi.updateConversation} (ADR 0017). */
+/** Input for {@link ChatpackApi.updateConversation} (ADR 0017, ADR 0020). */
 export interface UpdateConversationApiInput {
   /** The acting user. Must be able to manage the conversation. */
   userId: string;
   conversationId: string;
-  /** The new title, or `null` to clear it. */
-  name: string | null;
+  /**
+   * The new title, or `null` to clear it. Omit to leave the current title
+   * alone - which is only useful when you are changing `visibility` or
+   * `joinPolicy` instead, since an update that changes nothing is rejected.
+   */
+  name?: string | null;
+  /**
+   * Flip the channel in or out of the public directory (ADR 0020). Omit to
+   * leave it unchanged. Requires the `channels` storage capability; requires
+   * manage permission, like every other field here - going public is a
+   * property of the room, not an invitation.
+   */
+  visibility?: ChannelVisibility;
+  /** Change how strangers join. Omit to leave it unchanged. */
+  joinPolicy?: ChannelJoinPolicy;
 }
 
 /** Input for {@link ChatpackApi.listConversations}. */
@@ -387,6 +415,59 @@ export interface ResolveJoinRequestApiResult {
   conversation: ConversationWithUnread | null;
 }
 
+/** Input for {@link ChatpackApi.listPublicConversations} (ADR 0020). */
+export interface ListPublicConversationsApiInput {
+  /**
+   * The acting user. Any authenticated user may browse; the id is used only to
+   * fill in `alreadyParticipant` and `requestPending` on each row.
+   */
+  userId: string;
+  limit?: number;
+  cursor?: string;
+}
+
+/** Result of {@link ChatpackApi.listPublicConversations} (ADR 0020). */
+export interface ListPublicConversationsApiResult {
+  /** Thin previews, most-recently-active first. Never participant ids. */
+  channels: ChannelPreview[];
+  nextCursor: string | null;
+}
+
+/** Input for {@link ChatpackApi.joinConversation} (ADR 0020). */
+export interface JoinConversationApiInput {
+  /** The joining user. Must not already be a participant. */
+  userId: string;
+  /** The public channel to join. Private groups and DMs are refused. */
+  conversationId: string;
+  /**
+   * A note for the admins, used only when the channel's `joinPolicy` is
+   * `"approval"`. Trimmed, at most {@link MAX_JOIN_REQUEST_MESSAGE_LENGTH}
+   * characters.
+   */
+  message?: string;
+}
+
+/**
+ * What joining a channel produced (ADR 0020 §5): either membership, or a
+ * request awaiting approval. Deliberately the same shape as
+ * {@link AcceptInviteResult} - a client that can render one can render the
+ * other, because from the joiner's side the two paths are the same event.
+ */
+export type JoinConversationResult =
+  | {
+      status: "joined";
+      /** The channel, now including the caller. */
+      conversation: ConversationWithUnread;
+      joinRequest: null;
+    }
+  | {
+      status: "pending";
+      /** Not yet a member, so no conversation is returned. */
+      conversation: null;
+      /** The pending request an admin must resolve. */
+      joinRequest: JoinRequest;
+    };
+
 /**
  * The server-side core API. Every method takes the acting `userId` explicitly
  * and enforces permissions at the core boundary around storage access.
@@ -560,6 +641,33 @@ export interface ChatpackApi {
    * on the same request cannot both apply it.
    */
   resolveJoinRequest(input: ResolveJoinRequestApiInput): Promise<ResolveJoinRequestApiResult>;
+
+  /**
+   * Browse public channels (`docs/decisions/0020`), most-recently-active first.
+   * Any authenticated user may call this; there is no permission hook, because
+   * "public" is the permission.
+   *
+   * Returns {@link ChannelPreview}s, not conversations: the directory is the
+   * widest-reaching read in Chatpack, so it carries a participant *count* and
+   * never ids - the same reasoning as {@link ChatpackApi.getInvitePreview},
+   * applied to a bigger audience. Throws `CHANNELS_UNSUPPORTED` if the storage
+   * adapter has no `channels` capability.
+   */
+  listPublicConversations(
+    input: ListPublicConversationsApiInput,
+  ): Promise<ListPublicConversationsApiResult>;
+
+  /**
+   * Join a public channel by id (`docs/decisions/0020` §5): admitted
+   * immediately when its `joinPolicy` is `"open"`, or given a pending
+   * {@link JoinRequest} when it is `"approval"`. Check `status` on the result.
+   *
+   * Throws `NOT_PUBLIC_CONVERSATION` for a private group or a DM,
+   * `ALREADY_PARTICIPANT` when the caller is already in, and
+   * `GROUP_LIMIT_EXCEEDED` when the channel is full. An `"approval"` channel
+   * also needs the `invites` capability, since the queue lives there.
+   */
+  joinConversation(input: JoinConversationApiInput): Promise<JoinConversationResult>;
 }
 
 /** The object returned by {@link chatpack}. */
@@ -703,6 +811,91 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
       );
     }
     return invites;
+  }
+
+  /**
+   * The adapter's channel capability, or `CHANNELS_UNSUPPORTED` (ADR 0020 §4).
+   *
+   * Gates the directory query *and* every write of a non-default `visibility` or
+   * `joinPolicy`. The second one is the important one: those are plain fields on
+   * an input object, so a pre-0020 adapter accepts them and drops them silently -
+   * you would create a public channel, get a 201, and never find it in any
+   * directory. Failing at the write turns that into an error the developer sees
+   * once, rather than a channel their users can't reach.
+   */
+  function requireChannelStorage() {
+    const channels = storage.channels;
+    if (!channels) {
+      throw new ChatpackError(
+        "CHANNELS_UNSUPPORTED",
+        "Public channels are not supported by this storage adapter.",
+      );
+    }
+    return channels;
+  }
+
+  /** Validate a {@link ChannelVisibility}, falling back to `fallback`. */
+  function normalizeVisibility(
+    value: ChannelVisibility | undefined,
+    fallback: ChannelVisibility,
+  ): ChannelVisibility {
+    if (value === undefined) return fallback;
+    if (value !== "private" && value !== "public") {
+      throw new ChatpackError(
+        "INVALID_INPUT",
+        `"visibility" must be "private" or "public", got ${JSON.stringify(value)}.`,
+      );
+    }
+    return value;
+  }
+
+  /**
+   * Validate a {@link ChannelJoinPolicy}, falling back to `fallback`.
+   *
+   * New conversations fall back to `"approval"`, the safer of the two: between
+   * "a stranger is in the room" and "a stranger is in a queue", only one is
+   * recoverable (ADR 0020 §3).
+   */
+  function normalizeJoinPolicy(
+    value: ChannelJoinPolicy | undefined,
+    fallback: ChannelJoinPolicy,
+  ): ChannelJoinPolicy {
+    if (value === undefined) return fallback;
+    if (value !== "open" && value !== "approval") {
+      throw new ChatpackError(
+        "INVALID_INPUT",
+        `"joinPolicy" must be "open" or "approval", got ${JSON.stringify(value)}.`,
+      );
+    }
+    return value;
+  }
+
+  /**
+   * Resolve `visibility`/`joinPolicy` against the current (or default) values,
+   * requiring the `channels` capability only when the result is not the
+   * all-private default (ADR 0020 §4).
+   *
+   * Keyed on the resolved values, not on which fields were present: a client
+   * that always sends `visibility: "private"` must keep working on an adapter
+   * with no `channels` capability, because nothing it asked for needs one.
+   */
+  function resolveChannelFields(
+    visibility: ChannelVisibility | undefined,
+    joinPolicy: ChannelJoinPolicy | undefined,
+    current: { visibility: ChannelVisibility; joinPolicy: ChannelJoinPolicy } = {
+      visibility: "private",
+      joinPolicy: "approval",
+    },
+  ): { visibility: ChannelVisibility; joinPolicy: ChannelJoinPolicy } {
+    const resolved = {
+      visibility: normalizeVisibility(visibility, current.visibility),
+      joinPolicy: normalizeJoinPolicy(joinPolicy, current.joinPolicy),
+    };
+    const changed =
+      resolved.visibility !== current.visibility || resolved.joinPolicy !== current.joinPolicy;
+    const nonDefault = resolved.visibility !== "private" || resolved.joinPolicy !== "approval";
+    if (changed && nonDefault) requireChannelStorage();
+    return resolved;
   }
 
   /** Validate the optional note on a join request (ADR 0019). */
@@ -1297,10 +1490,14 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
         );
       }
 
+      const { visibility, joinPolicy } = resolveChannelFields(input.visibility, input.joinPolicy);
+
       const conversation = await storage.createGroupConversation({
         creatorId: input.userId,
         userIds,
         name,
+        visibility,
+        joinPolicy,
         metadata: input.metadata ?? {},
       });
 
@@ -1448,10 +1645,32 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
       requireGroup(conversation);
       await requireManage(input.userId, conversation);
 
-      const name = normalizeGroupName(input.name);
+      // Three independently-optional fields (ADR 0020 §5): an omitted one keeps
+      // its current value, so `visibility`-only and `name`-only calls both work.
+      // An update with nothing in it is a mistake worth reporting, not a no-op.
+      if (
+        input.name === undefined &&
+        input.visibility === undefined &&
+        input.joinPolicy === undefined
+      ) {
+        throw new ChatpackError(
+          "INVALID_INPUT",
+          `An update must change something - provide "name", "visibility", or "joinPolicy".`,
+        );
+      }
+
+      const name = input.name === undefined ? conversation.name : normalizeGroupName(input.name);
+      const { visibility, joinPolicy } = resolveChannelFields(
+        input.visibility,
+        input.joinPolicy,
+        conversation,
+      );
+
       const updated = await storage.updateConversation({
         conversationId: conversation.id,
         name,
+        visibility,
+        joinPolicy,
       });
       publishConversation(
         "conversation.updated",
@@ -2025,6 +2244,110 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
 
       const updated = await admitToGroup(conversation, input.targetUserId, input.userId);
       return { joinRequest, conversation: await withUnreadOne(input.userId, updated) };
+    },
+
+    async listPublicConversations(input) {
+      const channels = requireChannelStorage();
+      requireNonEmptyId(input.userId, "userId");
+
+      const { conversations, nextCursor } = await channels.listPublicConversations({
+        limit: normalizeLimit(input.limit),
+        cursor: input.cursor,
+      });
+
+      // `requestPending` needs the invite capability, which channels do not
+      // require: an all-`open` directory works without it. Without it nothing is
+      // ever pending, which is the truth for that adapter.
+      const invites = storage.invites;
+      const pending = new Set<string>();
+      if (invites) {
+        const rows = await Promise.all(
+          conversations.map(async (conversation) => {
+            const request = await invites.getJoinRequest({
+              conversationId: conversation.id,
+              userId: input.userId,
+            });
+            return request && request.status === "pending" ? conversation.id : null;
+          }),
+        );
+        for (const id of rows) if (id !== null) pending.add(id);
+      }
+
+      return {
+        channels: conversations.map((conversation) => ({
+          conversationId: conversation.id,
+          name: conversation.name,
+          participantCount: conversation.participants.length,
+          joinPolicy: conversation.joinPolicy,
+          createdAt: conversation.createdAt,
+          metadata: conversation.metadata,
+          alreadyParticipant: conversation.participants.some((p) => p.userId === input.userId),
+          requestPending: pending.has(conversation.id),
+        })),
+        nextCursor,
+      };
+    },
+
+    async joinConversation(input) {
+      requireChannelStorage();
+      requireNonEmptyId(input.userId, "userId");
+      const message = normalizeJoinMessage(input.message);
+      const conversation = await requireConversation(input.conversationId);
+
+      // 403, not 404: core knows the row exists, and a 404 here is a lie it
+      // would then have to tell consistently everywhere else (ADR 0020 §7).
+      // The group check comes first only so a DM gets the more specific error.
+      requireGroup(conversation);
+      if (conversation.visibility !== "public") {
+        throw new ChatpackError(
+          "NOT_PUBLIC_CONVERSATION",
+          `Conversation "${conversation.id}" is not a public channel - you need an invite.`,
+        );
+      }
+
+      // No truthful "you joined" to return, and unlike a replayed invite
+      // redemption there is no link use to protect (ADR 0019 §5).
+      if (conversation.participants.some((p) => p.userId === input.userId)) {
+        throw new ChatpackError(
+          "ALREADY_PARTICIPANT",
+          `User "${input.userId}" is already a participant of conversation "${conversation.id}".`,
+        );
+      }
+
+      if (conversation.joinPolicy === "approval") {
+        // The queue is invite storage, so an approval channel needs that
+        // capability too - checked here rather than at the top, because an
+        // all-`open` directory legitimately has no use for it.
+        const invites = requireInviteStorage();
+        const existing = await invites.getJoinRequest({
+          conversationId: conversation.id,
+          userId: input.userId,
+        });
+        // Same idempotency as `requestToJoin`: re-asking while pending returns
+        // the same row rather than bumping yourself up a newest-first queue.
+        if (existing && existing.status === "pending") {
+          return { status: "pending", conversation: null, joinRequest: existing };
+        }
+
+        const joinRequest = await invites.createJoinRequest({
+          conversationId: conversation.id,
+          userId: input.userId,
+          message,
+          // No invite was presented - the channel's own policy sent them here.
+          inviteCode: null,
+          metadata: {},
+        });
+        return { status: "pending", conversation: null, joinRequest };
+      }
+
+      // Open channel: the joiner is their own actor. Nobody vouched for them,
+      // and the channel being public is the authorization.
+      const updated = await admitToGroup(conversation, input.userId, input.userId);
+      return {
+        status: "joined",
+        conversation: await withUnreadOne(input.userId, updated),
+        joinRequest: null,
+      };
     },
   };
 

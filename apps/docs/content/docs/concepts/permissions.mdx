@@ -25,8 +25,8 @@ const chat = chatpack({
     canWrite: ({ user, conversation }) =>
       conversation.participantIds.includes(user.id) && !isBanned(user.id),
 
-    // May `user` manage this group - add/remove members, change roles, rename?
-    // Default: participants whose role is "admin".
+    // May `user` manage this group - add/remove members, change roles, rename,
+    // publish it as a public channel? Default: participants whose role is "admin".
     canManage: ({ user, conversation }) =>
       conversation.participants.some((p) => p.userId === user.id && p.role === "admin"),
 
@@ -65,8 +65,10 @@ both over HTTP and as a thrown `ChatpackError` from `chat.api.*`.
   non-sender gets `403 NOT_MESSAGE_SENDER`. This rule is not hook-overridable.
 - **`canManage` gates group administration only.** It runs on
   `addParticipants`, `removeParticipant`, `setParticipantRole` and
-  `updateConversation`. Reading and sending are unaffected: a plain `member`
-  is a full participant for every other purpose.
+  `updateConversation` - which is also where a group's `visibility` and
+  `joinPolicy` change, so making a group a public channel is an admin action, not
+  an invite action. Reading and sending are unaffected: a plain `member` is a
+  full participant for every other purpose.
 - **Leaving is exempt from `canManage`.** Removing _yourself_ always works,
   even when your `canManage` returns `false`, so a member is never trapped in
   a group.
@@ -80,7 +82,16 @@ both over HTTP and as a thrown `ChatpackError` from `chat.api.*`.
   variation of this feature - doesn't require loosening `canManage`, which would
   also hand every member the power to remove others and rewrite roles. It
   defaults to the same admin check, so adding invites changes no existing
-  deployment's behavior.
+  deployment's behavior. Note the asymmetry with the point above: loosening
+  `canInvite` to "any member" hands out links, but publishing the group to every
+  user on the platform stays with `canManage`.
+- **Nothing gates browsing or joining a public channel.** `GET /channels` and
+  `POST /conversations/:id/join` are open to any signed-in user by design - that
+  is what "public" means - so there is no hook to loosen. What protects a channel
+  is that discovery is not read access: the directory returns a name and a
+  participant count, and `canRead` still runs unchanged on the conversation and
+  its messages. To restrict who may join, leave `visibility` private and use
+  invite links instead.
 - **Read permission gates live delivery too.** SSE events are only delivered
   for conversations the connected user may read - participation is re-checked
   server-side per event.

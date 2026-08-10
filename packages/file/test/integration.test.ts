@@ -219,4 +219,80 @@ describe("Filepack capability transfers through Chatpack", () => {
     expect(auth).toHaveBeenCalledTimes(3);
     expect(filepackAuth).toHaveBeenCalledTimes(2);
   });
+
+  // Filepack's `complete`/`abort` controls call `rejectOperationBody`, which
+  // throws INVALID_REQUEST unless `request.body === null`. Next.js hands route
+  // handlers a non-null (empty) body, so hosts had to strip it themselves.
+  // Absorbed here so the framework difference never reaches the host.
+  it("accepts complete and abort with an empty but non-null body (Next.js shape)", async () => {
+    const { filepack, handler } = await fixture();
+    const content = new TextEncoder().encode("hello");
+    const [plan] = await filepack.createUploadPlans({
+      actor,
+      route: "chat",
+      routeInput: undefined as never,
+      files: [{ name: "photo.png", type: "image/png", size: content.byteLength }],
+    });
+    if (plan === undefined || plan.target.kind !== "single")
+      throw new Error("single plan expected");
+
+    const uploaded = await handler.PUT(
+      new Request(transferUrl(plan.target.url, "/filepack"), {
+        method: "PUT",
+        headers: { ...plan.target.headers, "content-type": "image/png" },
+        body: content,
+      }),
+    );
+    expect(uploaded.status).toBe(204);
+
+    // The shape Next.js produces: a body that is present but empty.
+    const completed = await handler.POST(
+      new Request(chatPath(`/uploads/${plan.attemptId}/complete`), {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-user-id": "alice" },
+        body: "",
+      }),
+    );
+    expect(completed.status).toBe(200);
+
+    // Same for abort, on a fresh attempt.
+    const [second] = await filepack.createUploadPlans({
+      actor,
+      route: "chat",
+      routeInput: undefined as never,
+      files: [{ name: "other.png", type: "image/png", size: 5 }],
+    });
+    if (second === undefined) throw new Error("second plan expected");
+    const aborted = await handler.POST(
+      new Request(chatPath(`/uploads/${second.attemptId}/abort`), {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-user-id": "alice" },
+        body: "",
+      }),
+    );
+    expect(aborted.status).toBe(200);
+  });
+
+  // The empty-body normalization must not become "ignore whatever the caller
+  // sent". A control route that carries real bytes is still Filepack's to
+  // reject, so the request is forwarded untouched.
+  it("still rejects an upload control that carries a real body", async () => {
+    const { filepack, handler } = await fixture();
+    const [plan] = await filepack.createUploadPlans({
+      actor,
+      route: "chat",
+      routeInput: undefined as never,
+      files: [{ name: "photo.png", type: "image/png", size: 5 }],
+    });
+    if (plan === undefined) throw new Error("plan expected");
+
+    const withPayload = await handler.POST(
+      new Request(chatPath(`/uploads/${plan.attemptId}/abort`), {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-user-id": "alice" },
+        body: JSON.stringify({ unexpected: "payload" }),
+      }),
+    );
+    expect(withPayload.status).toBe(400);
+  });
 });

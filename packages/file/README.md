@@ -63,9 +63,22 @@ never deletes a Filepack file.
 ```ts
 import { createChatpackFileClient } from "@chatpack/file/client";
 
-const files = createChatpackFileClient({ basePath: "/api/chat/files" });
+const files = createChatpackFileClient({
+  basePath: "/api/chat/files",
+  // Required with @filepack/client <= 0.1.1 in a browser - see below.
+  controlFetch: (input, init) => fetch(input, init),
+});
 const resolved = await files.resolveTarget({ conversationId, fileId });
 ```
+
+**Pass `controlFetch` explicitly while `@filepack/client` is at or below
+0.1.1.** It stores `globalThis.fetch` unbound and later invokes it as a method,
+which Chrome's brand check rejects with "Illegal invocation". The failure is
+mislabeled `CLIENT_NETWORK_ERROR` and no HTTP request is ever sent, so it looks
+like a network or CORS problem rather than a call-site bug. Node's `fetch` is
+lenient about this, which is why it only breaks in browsers. Wrapping the call
+(`(input, init) => fetch(input, init)`) restores the correct receiver and fixes
+every upload.
 
 Resolution is lazy and cached by conversation plus file ID. Available targets
 are reused while valid and refreshed automatically shortly before `expiresAt`.

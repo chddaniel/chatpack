@@ -287,6 +287,24 @@ same queue any user lands in by asking directly
 (`POST /conversations/:id/join-requests`). Either way, joining publishes the
 existing `participant.added` event, so live clients need no new code.
 
+When you want people to find the room themselves, publish the group as a
+**public channel** - a group with `visibility: "public"`, not a third
+conversation type:
+
+```sh
+curl -X PATCH /api/chat/conversations/conv_2 \
+  -H 'content-type: application/json' \
+  -d '{"visibility": "public", "joinPolicy": "open"}'
+```
+
+`GET /channels` is then a browsable directory for any signed-in user, returning
+thin previews - a name, a participant **count**, and two viewer-relative flags -
+and `POST /conversations/:id/join` gets them in: instantly when the policy is
+`"open"`, or as a join request when it's `"approval"` (the default, because a
+stranger in a queue is recoverable and a stranger in the room isn't).
+**Discoverable is not readable**: browsing grants nothing, so reading the
+transcript still means joining first.
+
 Send a message - note the field is **`body`**:
 
 ```sh
@@ -442,8 +460,8 @@ Group management is wrapped too (client 0.5.0+): `conversations.createGroup`,
 `addParticipants`, `removeParticipant` (your own id = leave),
 `setParticipantRole`, and `update` for renames - and membership events keep
 the cache in sync, including dropping a conversation you were removed from.
-Invites and join requests are **not** wrapped yet; call those eight routes with
-`fetch` and refetch afterwards.
+Invites, join requests, and channels are **not** wrapped yet; call those ten
+routes with `fetch` and refetch afterwards.
 
 See [`@chatpack/client`](./packages/client) for the framework-agnostic API,
 React hooks, the polling fallback, and client plugin usage.
@@ -571,8 +589,9 @@ await chat.api.removeParticipant({
 
 That's it. Only participants can read or write - enforced by default,
 customizable via the `permissions` hooks (`canRead`, `canWrite`, `canManage` for
-the group-management methods, and `canInvite` for minting links - the last two
-default to admins only). Need content
+the group-management methods including publishing a channel, and `canInvite` for
+minting links - the last two default to admins only, and browsing or joining a
+public channel is gated by neither). Need content
 rules (length caps, profanity filters) or post-send side-effects? Add
 `hooks: { beforeMessageSend, afterMessageMutation }` - block or rewrite a
 message before it persists, react after send/edit/delete persistence (see [`@chatpack/core`'s
@@ -717,6 +736,7 @@ Want to write your own plugin? The seam is public - see `ChatpackPlugin` in
 | Group chats: membership, roles, admin   | ✅ Done (v0.next) |
 | File attachments (`@chatpack/file`)     | ✅ Done (v0.next) |
 | Invite links + join requests            | ✅ Done (v0.next) |
+| Public channels (browsable directory)   | ✅ Done (v0.next) |
 
 Push notification providers, reusable UI components, true message threads,
 and multi-node presence have not shipped. Replies are flat pointers, not

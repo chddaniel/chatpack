@@ -66,6 +66,14 @@ referenced **by id only** - there is no foreign key into your users table.
 > `chatpack_join_requests` are **pure table additions** - no column changes and no
 > index swaps on existing tables - so that part is safe to apply before deploying
 > the new code.
+>
+> Public channels are gentle too: `visibility` and `join_policy` are added to
+> `chatpack_conversations` as `NOT NULL` columns with the closed defaults
+> (`'private'` / `'approval'`), so every existing conversation is correct without a
+> backfill and old code that never selects them keeps working. The migration also
+> adds `chatpack_conversations_public_idx`, a **partial** index
+> (`WHERE visibility = 'public'`) so the directory query doesn't index every
+> private conversation in the database.
 
 **Option A - your `drizzle-kit` flow (recommended).** Re-export the schema and
 generate a migration like any other table you own:
@@ -176,6 +184,14 @@ adapter does them (details in
   requests are the one place that **does** use `DO UPDATE` - a re-ask has to
   replace a stale denial with a fresh `pending` row
   ([ADR 0019](../../docs/decisions/0019-invites-and-join-requests.md)).
+- **Channels reuse that idempotency, and never trust the stored string** - a
+  self-join into an `"open"` channel goes through `addParticipants`, so eight
+  concurrent joins by one user leave one participant row. The directory query
+  filters on `type = 'group' AND visibility = 'public'` (both, so a hand-edited DM
+  row can't surface), and reads both columns through a narrowing coercion, so a
+  legacy `NULL` or an out-of-union value comes back as `"private"` / `"approval"`
+  instead of leaking to clients
+  ([ADR 0020](../../docs/decisions/0020-public-channels.md)).
 
 ## Testing
 

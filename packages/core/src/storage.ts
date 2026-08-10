@@ -25,6 +25,8 @@
  */
 
 import type {
+  ChannelJoinPolicy,
+  ChannelVisibility,
   Conversation,
   ConversationInvite,
   JoinRequest,
@@ -51,6 +53,18 @@ export interface CreateGroupConversationInput {
   userIds: string[];
   /** Group title, already trimmed and length-checked by core, or `null`. */
   name: string | null;
+  /**
+   * Whether the group is listed in the public directory. Core always resolves
+   * this (defaulting to `"private"`), so it is never `undefined` here - store
+   * it verbatim (`docs/decisions/0020` §4).
+   */
+  visibility: ChannelVisibility;
+  /**
+   * How joining a public channel is handled. Also always resolved by core
+   * (defaulting to `"approval"`), and stored even while `visibility` is
+   * `"private"`, where it simply has no effect yet.
+   */
+  joinPolicy: ChannelJoinPolicy;
   /** Metadata to set on the new conversation. */
   metadata: Metadata;
 }
@@ -83,11 +97,23 @@ export interface SetParticipantRoleInput {
   role: ParticipantRole;
 }
 
-/** Input for {@link StorageAdapter.updateConversation}. */
+/**
+ * Input for {@link StorageAdapter.updateConversation}.
+ *
+ * Every field is the **resolved** new value, not a patch: core reads the
+ * current row first and fills in whatever the caller left out, so an adapter
+ * can write all three unconditionally. Two concurrent updates therefore
+ * last-write-wins across the whole set, which is what a `PATCH` of a single
+ * row already meant (`docs/decisions/0020` §5).
+ */
 export interface UpdateConversationInput {
   conversationId: string;
   /** The new group title, or `null` to clear it. */
   name: string | null;
+  /** The new directory visibility. */
+  visibility: ChannelVisibility;
+  /** The new join policy. */
+  joinPolicy: ChannelJoinPolicy;
 }
 
 /** Input for {@link StorageAdapter.getOrCreateDirectConversation}. */
@@ -382,6 +408,60 @@ export interface InviteStorage {
   resolveJoinRequest(input: ResolveJoinRequestInput): Promise<JoinRequest>;
 }
 
+/** Input for {@link ChannelStorage.listPublicConversations}. */
+export interface ListPublicConversationsInput {
+  /** Max channels to return. */
+  limit: number;
+  /**
+   * Opaque cursor from a previous page's `nextCursor`, or `undefined` for the
+   * first page. Adapter-defined encoding, exactly like
+   * {@link ListConversationsInput.cursor}, and the same ordering:
+   * most-recently-active first (latest message `seq`, falling back to creation
+   * time). There is no `userId` here - the directory is the same for everyone
+   * (`docs/decisions/0020` §4).
+   */
+  cursor?: string | undefined;
+}
+
+/** Result of {@link ChannelStorage.listPublicConversations}. */
+export interface ListPublicConversationsResult {
+  /**
+   * Full conversation rows. Core narrows each one to a `ChannelPreview` before
+   * it leaves the API - do not pre-strip fields here.
+   */
+  conversations: Conversation[];
+  /** Cursor for the next page, or `null` when there are no more results. */
+  nextCursor: string | null;
+}
+
+/**
+ * The public channel directory (`docs/decisions/0020`) - an **optional**
+ * storage capability, following the {@link InviteStorage} precedent.
+ *
+ * One method today, and still a namespace: its presence is what core tests to
+ * decide whether `visibility` and `joinPolicy` are storable at all. An adapter
+ * written before ADR 0020 accepts those fields (they are plain properties on an
+ * input object) and silently drops them, so a "public" channel would read back
+ * private. Requiring the namespace turns that into `CHANNELS_UNSUPPORTED`
+ * (501) at the moment of writing, instead of a channel nobody can find.
+ *
+ * Implementing it is a promise about two things: the directory query, and that
+ * `visibility`/`joinPolicy` round-trip through your conversation rows.
+ */
+export interface ChannelStorage {
+  /**
+   * Public channels, most-recently-active first, cursor-paginated.
+   *
+   * Must return **only** rows with `visibility: "public"`, and only groups -
+   * core refuses to make a DM public, but a hand-edited row must not leak
+   * either. No name search or filtering in v1: ordering is the whole query
+   * (ADR 0020 §4).
+   */
+  listPublicConversations(
+    input: ListPublicConversationsInput,
+  ): Promise<ListPublicConversationsResult>;
+}
+
 /**
  * Durable reads/writes for the chat domain.
  *
@@ -557,4 +637,19 @@ export interface StorageAdapter {
    * optional methods.
    */
   invites?: InviteStorage;
+
+  /**
+   * The public channel directory (`docs/decisions/0020`) - **optional**.
+   *
+   * Omit it and `GET /channels` returns `CHANNELS_UNSUPPORTED` (501), joining
+   * by conversation id is unavailable, and every conversation stays
+   * `visibility: "private"` - attempting to create or flip one to `"public"`
+   * fails loudly rather than appearing to work. Providing it asserts that your
+   * conversation rows persist `visibility` and `joinPolicy`; see
+   * {@link ChannelStorage}.
+   *
+   * Approval-gated channels additionally need {@link StorageAdapter.invites} -
+   * a pending join is a {@link JoinRequest}, and that lives there.
+   */
+  channels?: ChannelStorage;
 }

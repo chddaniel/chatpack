@@ -49,6 +49,11 @@ export {
   type ListJoinRequestsApiInput,
   type ResolveJoinRequestApiInput,
   type ResolveJoinRequestApiResult,
+  // Public channels (docs/decisions/0020)
+  type ListPublicConversationsApiInput,
+  type ListPublicConversationsApiResult,
+  type JoinConversationApiInput,
+  type JoinConversationResult,
 } from "./chatpack";
 
 // Configuration
@@ -85,6 +90,10 @@ export type {
   InvitePreview,
   JoinRequest,
   JoinRequestStatus,
+  // Public channels (docs/decisions/0020)
+  ChannelJoinPolicy,
+  ChannelPreview,
+  ChannelVisibility,
 } from "./types";
 
 // Storage adapter contract (for adapter authors)
@@ -118,6 +127,10 @@ export type {
   GetJoinRequestInput,
   ListJoinRequestsInput,
   ResolveJoinRequestInput,
+  // Public channels (docs/decisions/0020) - optional capability
+  ChannelStorage,
+  ListPublicConversationsInput,
+  ListPublicConversationsResult,
 } from "./storage";
 
 // Canonical message-search semantics for first-party adapters.

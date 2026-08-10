@@ -21,7 +21,7 @@ enforces the same permissions.
 | `api.createGroupConversation` | Create a group with the caller as its first admin - **always a new one**, never find-or-create                                            |
 | `api.listConversations`       | List a user's conversations (DMs and groups), most recent first                                                                           |
 | `api.getConversation`         | Fetch one conversation (read-permission checked)                                                                                          |
-| `api.updateConversation`      | Rename a group, or clear its name with `null` (admin only)                                                                                |
+| `api.updateConversation`      | Rename a group (or clear its name with `null`), and/or set its `visibility` / `joinPolicy` (admin only)                                   |
 | `api.addParticipants`         | Add members to a group as `member` (admin only); idempotent                                                                               |
 | `api.removeParticipant`       | Remove a member, or leave by passing your own id (admin, or self); idempotent                                                             |
 | `api.setParticipantRole`      | Promote to `admin` or demote to `member` (admin only)                                                                                     |
@@ -42,6 +42,8 @@ enforces the same permissions.
 | `api.requestToJoin`           | Ask to join a group by id; no permission needed, but not if you're already in                                                             |
 | `api.listJoinRequests`        | The moderation queue, `pending` by default (admin only)                                                                                   |
 | `api.resolveJoinRequest`      | Approve or deny one user's request (admin only)                                                                                           |
+| `api.listPublicConversations` | Browse the public-channel directory as `ChannelPreview`s, most recently active first                                                      |
+| `api.joinConversation`        | Join a public channel by id: admitted instantly, or filed as a request                                                                    |
 
 The four group-management methods work on `type: "group"` conversations only;
 calling one with a DM's id throws `NOT_GROUP_CONVERSATION`. All four return the
@@ -50,6 +52,15 @@ full updated conversation.
 The eight invite methods need an **optional storage capability** and throw
 `INVITES_UNSUPPORTED` when the configured adapter lacks it - both first-party
 adapters have it, a custom one may not. They are group-only too.
+
+The two channel methods need a **second** optional capability and throw
+`CHANNELS_UNSUPPORTED` without it - as does any attempt to _set_ a non-default
+`visibility` or `joinPolicy` through `createGroupConversation` /
+`updateConversation`. That last part is deliberate: dropping the field silently
+would create a channel no directory could ever find. Passing the defaults
+explicitly still works on an adapter without the capability. An `"approval"`
+channel routes its joiners into the invite queue, so it needs the `invites`
+capability too.
 
 ## Which API do I call?
 
@@ -78,6 +89,9 @@ from a browser or HTTP client:
 | Join via a link                 | `acceptInvite`                           | `POST /invites/:code/accept`                     |
 | Ask to join a group             | `requestToJoin`                          | `POST /conversations/:id/join-requests`          |
 | Work the approval queue         | `listJoinRequests`, `resolveJoinRequest` | `GET` / `PATCH /conversations/:id/join-requests` |
+| Publish a group as a channel    | `updateConversation`                     | `PATCH /conversations/:id`                       |
+| Browse public channels          | `listPublicConversations`                | `GET /channels`                                  |
+| Join a channel                  | `joinConversation`                       | `POST /conversations/:id/join`                   |
 | Get live updates in the browser | - (server-sent events)                   | `GET /stream` via `EventSource`                  |
 
 ## Usage
@@ -242,6 +256,47 @@ const { joinRequest, conversation } = await chat.api.resolveJoinRequest({
 Approving publishes the same `participant.added` event an admin-initiated
 `addParticipants` does, so existing subscribers need no new code. A denied user
 may ask again - denial records a decision, it is not a block.
+
+A **channel** is the third way in: a group with `visibility: "public"`, listed
+in a directory anyone signed in can browse. There is no third conversation type -
+the same `Conversation`, two extra fields.
+
+```ts
+// Publish an existing group, or pass the same two fields to
+// createGroupConversation. Admin-only (canManage, not canInvite) - loosening
+// who may invite must not also decide who may expose the group to everyone.
+const channel = await chat.api.updateConversation({
+  userId: "alice",
+  conversationId: group.id,
+  visibility: "public",
+  joinPolicy: "open", // omit and it stays "approval" - the recoverable default
+});
+
+// The directory. Thin previews, like an invite preview and for the same
+// reason: strangers read this, so it carries a participant COUNT, never ids.
+const { channels, nextCursor } = await chat.api.listPublicConversations({
+  userId: "grace",
+  limit: 20, // most-recently-active first, same keyset paging as listConversations
+});
+channels[0]?.alreadyParticipant; // render "Open" / "Pending" / "Join" from these
+channels[0]?.requestPending;
+
+// Joining. Same discriminated union as acceptInvite - branch on `status`.
+const result = await chat.api.joinConversation({
+  userId: "grace",
+  conversationId: channel.id,
+  message: "found you in the directory", // only used on an "approval" channel
+});
+if (result.status === "joined") result.conversation;
+else result.joinRequest; // lands in the same queue, with inviteCode: null
+```
+
+Public means **discoverable, not readable**: browsing grants no read access, so
+`getConversation` and `listMessages` still throw `FORBIDDEN_READ` for a
+non-member. The permission layer is untouched by this feature - to read a channel
+you join it. An invite still overrides the channel's policy, because the policy
+lives on whatever the joiner presents: a link minted without `requiresApproval`
+walks straight into an `"approval"` channel.
 
 First-party adapters use the same Unicode NFKC, case-insensitive,
 punctuation-separated token matching. All unique query terms must be present;

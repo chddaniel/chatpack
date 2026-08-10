@@ -28,6 +28,9 @@ Current releases include:
 - Reactions and quote-replies
 - Participant-scoped message search
 - A post-persistence message mutation hook for application side effects
+- Invite links and join requests for groups
+- Public channels: a browsable directory of public groups, with per-channel
+  open or approval-gated joining
 - `@chatpack/cli init` for project setup
 
 The API remains `0.x`. Minor breaking changes can occur before `1.0`.
@@ -47,8 +50,9 @@ Chatpack stays headless and provider-neutral.
   hooks.
 - Redis relays events between nodes. Presence connection state remains local
   to each process.
-- Public channels, invite links, join requests, moderation suites, and
-  multi-region infrastructure have not shipped.
+- Public channels are discoverable, not readable. Browsing the directory
+  returns a name and a participant count; reading messages requires joining.
+- Moderation suites and multi-region infrastructure have not shipped.
 
 These boundaries keep the core small. They are not release promises.
 

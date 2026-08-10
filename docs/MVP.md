@@ -86,7 +86,10 @@ WhatsApp-style extras feel related to 1:1 because consumer apps bundle them. Cha
   ADR 0019 as an **optional storage capability** (the `invites` namespace -
   adapters that omit it make the routes answer `501 INVITES_UNSUPPORTED`).
   Adding someone directly is still an admin action; invites and requests are
-  the two ways membership can start from the other side.
+  the two ways membership can start from the other side. Public channels
+  followed in ADR 0020 - `visibility` / `joinPolicy` on the group plus a
+  `channels` namespace for the directory - which is the third: browse and join,
+  no id and no link needed.
 - ~~React client + hooks~~ - shipped as `@chatpack/client` and
   `@chatpack/client/react` in the client milestone.
 

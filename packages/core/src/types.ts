@@ -37,6 +37,35 @@ export type MessageRole = "user" | "assistant" | "system";
 export type ConversationType = "direct" | "group";
 
 /**
+ * Whether a conversation can be found by people who are not in it
+ * (`docs/decisions/0020`).
+ *
+ * `"public"` is what makes a group a **channel**: it appears in
+ * `listPublicConversations` and can be self-joined. There is deliberately no
+ * `"channel"` {@link ConversationType} - a channel is a group with this field
+ * flipped, so every group feature (roles, invites, rename, membership) applies
+ * to it unchanged (ADR 0020 §1).
+ *
+ * Discovery only: `"public"` does **not** let non-members read messages.
+ * `canRead` stays a membership test, so joining is still the way in.
+ */
+export type ChannelVisibility = "private" | "public";
+
+/**
+ * How a non-member gets into a public channel once they have found it
+ * (`docs/decisions/0020` §3).
+ *
+ * `"open"` admits them immediately; `"approval"` creates a pending
+ * {@link JoinRequest} for an admin to resolve, reusing the ADR 0019 queue.
+ * Defaults to `"approval"` - between "a stranger is in the room" and "a
+ * stranger is in a queue", only one is recoverable.
+ *
+ * Inert while {@link ChannelVisibility} is `"private"`: strangers cannot
+ * discover the conversation, so setting this is arming, not opening.
+ */
+export type ChannelJoinPolicy = "open" | "approval";
+
+/**
  * A participant's authority within a **group** conversation
  * (`docs/decisions/0017`).
  *
@@ -79,6 +108,26 @@ export interface Conversation {
    * instead, the way Slack and iMessage both do.
    */
   name: string | null;
+  /**
+   * Whether people who are not in this conversation can find it
+   * (`docs/decisions/0020`). Always `"private"` for a direct conversation, and
+   * for any group that has not opted in.
+   *
+   * A group with `"public"` is what the docs call a **channel**. Setting it
+   * requires a storage adapter with the `channels` capability - core answers
+   * `CHANNELS_UNSUPPORTED` rather than accepting a value it cannot persist.
+   */
+  visibility: ChannelVisibility;
+  /**
+   * How a non-member joins, once they have discovered this conversation
+   * (`docs/decisions/0020` §3). Defaults to `"approval"`.
+   *
+   * Only consulted for a self-service join of a `"public"` conversation. A
+   * join that presents an **invite code** follows that invite's
+   * `requiresApproval` instead: the policy lives on whatever the joiner
+   * presents.
+   */
+  joinPolicy: ChannelJoinPolicy;
   /** Creation timestamp. */
   createdAt: Date;
   /** Developer-defined metadata (escape hatch). */
@@ -328,6 +377,39 @@ export interface JoinRequest {
   resolvedBy: string | null;
   /** Developer-defined metadata (escape hatch). */
   metadata: Metadata;
+}
+
+/**
+ * One row in the public channel directory (`docs/decisions/0020` §2).
+ *
+ * The same reasoning as {@link InvitePreview}, applied to a wider audience:
+ * the directory is readable by every authenticated user, so it must never
+ * name a member. A count answers "is this worth joining?"; ids would leak the
+ * membership of every public channel to everyone.
+ *
+ * Core narrows a full {@link Conversation} down to this - the adapter returns
+ * ordinary rows, and the field list here is what survives.
+ */
+export interface ChannelPreview {
+  /** The channel you would be joining. */
+  conversationId: string;
+  /** The channel's name, or `null` if it has none. */
+  name: string | null;
+  /** How many people are currently in it. No ids (see above). */
+  participantCount: number;
+  /** Whether joining admits you immediately or opens a {@link JoinRequest}. */
+  joinPolicy: ChannelJoinPolicy;
+  /** When the channel was created. */
+  createdAt: Date;
+  /** Developer-defined metadata (escape hatch) - the place for a description. */
+  metadata: Metadata;
+  /** `true` when the caller is already in, so joining would be a no-op. */
+  alreadyParticipant: boolean;
+  /**
+   * `true` when the caller already has a pending {@link JoinRequest} here, so
+   * the honest button label is "requested" rather than "join".
+   */
+  requestPending: boolean;
 }
 
 /**

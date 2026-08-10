@@ -27,8 +27,9 @@ Current releases include direct and group conversations, text messages,
 permissions, read state and unread counts, SSE with reconnect gap-fill, memory
 and Drizzle adapters, Redis event fan-out, typing/presence/receipts, reactions,
 quote-replies, participant-scoped search, `afterMessageMutation`, the browser
-client with React hooks and polling fallback, `@chatpack/cli init`, and
-Filepack-backed file attachments via `@chatpack/file`.
+client with React hooks and polling fallback, `@chatpack/cli init`,
+Filepack-backed file attachments via `@chatpack/file`, invite links with join
+requests, and public channels (a browsable directory of public groups).
 
 True message threads, push notification providers, reusable React UI
 components, and multi-node presence have not shipped.
@@ -61,8 +62,22 @@ const chat = chatpack({
 });
 ```
 
-Browser: `createChatFileClient` from `@chatpack/file/client` wraps
+Browser: `createChatpackFileClient` from `@chatpack/file/client` wraps
 `@filepack/client` for uploads, resume, and inline-vs-attachment delivery.
+
+```ts
+import { createChatpackFileClient } from "@chatpack/file/client";
+
+const files = createChatpackFileClient({
+  basePath: "/api/chat/files",
+  // REQUIRED workaround for @filepack/client <= 0.1.1 in the browser: it
+  // stores globalThis.fetch unbound and calls it as a method, which Chrome's
+  // brand check rejects ("Illegal invocation"). The error surfaces as a
+  // mislabeled CLIENT_NETWORK_ERROR with no HTTP request sent. Passing fetch
+  // as an argument fixes every upload.
+  controlFetch: (input, init) => fetch(input, init),
+});
+```
 
 Rules:
 
@@ -81,6 +96,11 @@ Rules:
 - Deleting a message never deletes its files; configure Filepack lifecycle
   cleanup separately. `DELETE` of a file through the chat mount is not
   forwarded.
+- **There are no attachment-only messages.** `body` must be a non-empty
+  string after trimming on both send and edit, or you get
+  `400 INVALID_INPUT` - attachments live in metadata and never substitute for
+  it. An image-only UI must synthesize a body (the file name, or a single
+  space is not enough since it is trimmed).
 - Mount `PUT` too:
   `export const { GET, POST, PATCH, DELETE, PUT } = chat.handler()`.
 
@@ -193,11 +213,12 @@ the UI so their absence degrades quietly.
 
 Also available: `realtime.pollNow()` for a manual "check for new messages".
 
-**The client does not yet wrap invites or join requests.** There is no
-`chatClient.invites.*` or `chatClient.joinRequests.*` - do not write one from
-memory. Call the eight HTTP routes directly with `fetch` (same `basePath`, same
-cookies) until a release adds them. Arrivals still flow through the normal
-`participant.added` event, so the cache stays correct.
+**The client does not yet wrap invites, join requests, or channels.** There is
+no `chatClient.invites.*`, `chatClient.joinRequests.*` or
+`chatClient.channels.*` - do not write one from memory. Call the ten HTTP routes
+directly with `fetch` (same `basePath`, same cookies) until a release adds them.
+Arrivals still flow through the normal `participant.added` event, so the cache
+stays correct.
 
 ## Hard rules (violating any of these is the #1 cause of broken integrations)
 
@@ -214,7 +235,8 @@ cookies) until a release adds them. Arrivals still flow through the normal
    `sendMessage`, `listMessages`, `editMessage`, `deleteMessage`,
    `searchMessages`, `addReaction`, `removeReaction`, `markRead`, `listMessagesAfter`,
    `createInvite`, `listInvites`, `revokeInvite`, `getInvitePreview`,
-   `acceptInvite`, `requestToJoin`, `listJoinRequests`, `resolveJoinRequest`.
+   `acceptInvite`, `requestToJoin`, `listJoinRequests`, `resolveJoinRequest`,
+   `listPublicConversations`, `joinConversation`.
    There is **no** `chat.api.getOrCreateDirectConversation`
    (that name is a low-level *storage adapter* method - never call the
    adapter directly). Do not invent methods; if a name is not in this list,
@@ -481,10 +503,10 @@ A complete plain-Node version lives in `examples/node-server` in the repo.
 | Method | Path                          | Request body / query                   | Response (200/201)                        |
 | ------ | ----------------------------- | -------------------------------------- | ----------------------------------------- |
 | POST   | `/conversations`              | `{ otherUserId, metadata? }`           | `{ conversation }` - DM, find-or-create   |
-| POST   | `/conversations/group`        | `{ name?, userIds?, metadata? }`       | `{ conversation }` (201) - always new     |
+| POST   | `/conversations/group`        | `{ name?, userIds?, metadata?, visibility?, joinPolicy? }` | `{ conversation }` (201) - always new |
 | GET    | `/conversations`              | `?limit=&cursor=`                      | `{ conversations, nextCursor }`           |
 | GET    | `/conversations/:id`          | -                                      | `{ conversation }`                        |
-| PATCH  | `/conversations/:id`          | `{ name }` (string or `null`) - admin  | `{ conversation }`                        |
+| PATCH  | `/conversations/:id`          | `{ name?, visibility?, joinPolicy? }` - admin | `{ conversation }`                 |
 | POST   | `/conversations/:id/participants`   | `{ userIds }` - admin            | `{ conversation }`                        |
 | DELETE | `/conversations/:id/participants`   | `{ userId }` - admin, or self to leave | `{ conversation }`                  |
 | PATCH  | `/conversations/:id/participants`   | `{ userId, role }` - admin       | `{ conversation }`                        |
@@ -496,6 +518,8 @@ A complete plain-Node version lives in `examples/node-server` in the repo.
 | POST   | `/conversations/:id/join-requests` | `{ message? }`                    | `{ joinRequest }` (201)                   |
 | GET    | `/conversations/:id/join-requests` | `?status=&limit=` - admin         | `{ joinRequests }`                        |
 | PATCH  | `/conversations/:id/join-requests` | `{ userId, decision }` - admin    | `{ joinRequest, conversation }`            |
+| GET    | `/channels`                   | `?limit=&cursor=`                      | `{ channels, nextCursor }` - previews      |
+| POST   | `/conversations/:id/join`     | `{ message? }`                         | `{ status, conversation, joinRequest }`    |
 | POST   | `/conversations/:id/messages` | `{ body, role?, replyToMessageId?, metadata? }` | `{ message }` (201)              |
 | GET    | `/conversations/:id/messages` | `?limit=&cursor=`                      | `{ messages, nextCursor }` - newest first |
 | GET    | `/search/messages`            | `?q=&limit=&cursor=`                   | `{ messages, nextCursor }` - ranked       |
@@ -533,9 +557,9 @@ Semantics that trip up generated clients:
   is 409 `LAST_ADMIN_REMAINING` - Chatpack refuses rather than silently
   promoting someone. Promote a successor first, then leave.
 - A group name is trimmed, 1..200 characters; `PATCH /conversations/:id` with
-  `{ "name": null }` clears it, and **omitting the field entirely is a 400**
-  (an accidental clear is worse than an error). A group holds at most **256**
-  participants (`MAX_GROUP_PARTICIPANTS`); exceeding it is 422
+  `{ "name": null }` clears it, and **omitting it while sending no other field
+  is a 400** (an accidental clear is worse than an error). A group holds at most
+  **256** participants (`MAX_GROUP_PARTICIPANTS`); exceeding it is 422
   `GROUP_LIMIT_EXCEEDED`.
 - `POST /conversations/group` takes no required fields: a bodyless POST creates
   an empty, unnamed group with just the creator (an admin). `userIds` may
@@ -582,6 +606,44 @@ Semantics that trip up generated clients:
   written for ADR 0017 groups already handles arrivals. Creating a join request
   publishes **nothing** (the requester is not a member yet, and no member's view
   is stale); poll the queue.
+- **A channel is a group with `visibility: "public"`** - there is no third
+  `ConversationType`. Every conversation carries `visibility: "private" |
+  "public"` (default `"private"`) and `joinPolicy: "open" | "approval"` (default
+  `"approval"`). Set them at `POST /conversations/group`, or flip later with
+  `PATCH /conversations/:id` - **admin only** (`canManage`, not `canInvite`), and
+  409 `NOT_GROUP_CONVERSATION` on a DM. The two fields are independent: omitting
+  one on a PATCH leaves it alone, it is not a reset.
+- Channels are an **optional storage capability** (`channels`), separate from
+  `invites`: without it, `GET /channels`, `POST /conversations/:id/join`, and any
+  attempt to *set* a non-default `visibility`/`joinPolicy` answer 501
+  `CHANNELS_UNSUPPORTED`. Explicitly sending the defaults still works, so
+  existing clients are unaffected. An `"approval"` channel additionally needs
+  `invites` (that is where the queue lives) or joining is 501
+  `INVITES_UNSUPPORTED`.
+- `GET /channels` returns **thin `ChannelPreview`s, not conversations**:
+  `{ conversationId, name, participantCount, joinPolicy, createdAt, metadata,
+  alreadyParticipant, requestPending }`, newest-active first with the same
+  `?limit=&cursor=` keyset paging as `GET /conversations`. Like an invite
+  preview it carries a participant *count* and **never the member ids**. Only
+  public groups appear - never a DM, never a private group.
+- **Public means discoverable, not readable.** Browsing the directory does not
+  grant read access: `GET /conversations/:id` and the message routes still 403
+  `FORBIDDEN_READ` for a non-member, and auth still runs before routing, so
+  `GET /channels` 401s without a session. To read a channel you join it.
+- `POST /conversations/:id/join` returns the **same discriminated union** as
+  accepting an invite - `status: "joined"` with `{ conversation, joinRequest:
+  null }` on an `"open"` channel, `status: "pending"` with `{ conversation:
+  null, joinRequest }` on an `"approval"` one - both **200**, so branch on
+  `status`. Re-asking while pending returns the same row; joining twice is 409
+  `ALREADY_PARTICIPANT`; a private group is **403** `NOT_PUBLIC_CONVERSATION`
+  (core knows the row exists, so it refuses rather than lying with a 404).
+- A join request from the directory has `inviteCode: null` - that is how an admin
+  tells "walked in off the directory" from "someone handed them a link". It
+  lands in the same queue `GET /conversations/:id/join-requests` already serves.
+- **An invite always overrides the channel's policy**: the policy lives on
+  whatever the joiner presents. A link minted without `requiresApproval` walks
+  straight into an `"approval"` channel (the admin who minted it vouched for the
+  holder); a link minted with it queues even in an `"open"` one.
 - Every conversation object (create, list, get) carries the **viewer's**
   `unreadCount`: messages with `seq` newer than their read-state, excluding
   the viewer's own messages. Soft-deleted messages count (they render as
@@ -592,7 +654,10 @@ Semantics that trip up generated clients:
   and searches only conversations where the requesting user is a participant.
   Core still applies `canRead`; dynamic access for non-participants is not
   supported by this initial implementation.
-- The message text field is **`body`** (not `text`/`content`).
+- The message text field is **`body`** (not `text`/`content`). It must be a
+  **non-empty string after trimming**, on send and on edit - whitespace-only is
+  400 `INVALID_INPUT`. There is no such thing as a body-less message, so an
+  attachment-only or sticker-only UI has to synthesize one.
 - Every message object carries `reactions` and reply fields:
   `reactions: [{ emoji, count, userIds }]` (grouped, `userIds` earliest-first,
   at most 2 entries per emoji in a DM, up to the participant count in a group)
@@ -629,14 +694,16 @@ Semantics that trip up generated clients:
   (the message says *why*: bad hook return shape vs. missing cookie vs.
   unparsed cookie), 400 `INVALID_INPUT`, 403 `FORBIDDEN_*`, 403
   `NOT_CONVERSATION_ADMIN` (a group management call by a non-admin),
+  403 `NOT_PUBLIC_CONVERSATION` (joining a group that is not a channel - a
+  refusal, not a pretend 404),
   404 `*_NOT_FOUND`, 409 `MESSAGE_DELETED`, 409 `NOT_GROUP_CONVERSATION`
   (a group-only call on a DM), 409 `LAST_ADMIN_REMAINING`,
   409 `ALREADY_PARTICIPANT` (asking to join a group you are in),
   410 `INVITE_EXPIRED` (the link existed and is spent - ask for a new one),
   422 `MESSAGE_REJECTED` (a `beforeMessageSend` hook refused the message),
   422 `GROUP_LIMIT_EXCEEDED`, 422 `INVITE_LIMIT_EXCEEDED`,
-  501 `SEARCH_UNSUPPORTED` / `INVITES_UNSUPPORTED` (storage has no such
-  capability), 500 `INTERNAL_ERROR` (opaque).
+  501 `SEARCH_UNSUPPORTED` / `INVITES_UNSUPPORTED` / `CHANNELS_UNSUPPORTED`
+  (storage has no such capability), 500 `INTERNAL_ERROR` (opaque).
 - **Auth runs before routing** - an unauthenticated request to a wrong path
   still 401s. Fix auth first; then a lingering 404 `NOT_FOUND` means your
   mount path/basePath is wrong.
@@ -766,7 +833,17 @@ curl -si -X POST localhost:3000/api/chat/conversations/GROUP_ID/participants \
   -H 'cookie: demo_user=alice' -H 'content-type: application/json' \
   -d '{"userIds":["carol"]}'
 
-# 6. live stream (expect ": connected", then events as messages are sent;
+# 6. publish it as an open channel, then browse and join as a stranger
+#    (expect 200 with visibility "public"; then a preview with
+#    participantCount and NO participants array; then status "joined")
+curl -si -X PATCH localhost:3000/api/chat/conversations/GROUP_ID \
+  -H 'cookie: demo_user=alice' -H 'content-type: application/json' \
+  -d '{"visibility":"public","joinPolicy":"open"}'
+curl -s 'localhost:3000/api/chat/channels?limit=10' -H 'cookie: demo_user=dave'
+curl -si -X POST localhost:3000/api/chat/conversations/GROUP_ID/join \
+  -H 'cookie: demo_user=dave'
+
+# 7. live stream (expect ": connected", then events as messages are sent;
 #    reaction.* and participant.*/conversation.updated frames arrive with no
 #    `id:` line - that is correct)
 curl -sN localhost:3000/api/chat/stream -H 'cookie: demo_user=bob'
@@ -862,7 +939,7 @@ methods:
 | `createGroupConversation`       | Always create a new group: `pairKey: null`, creator `admin`, rest `member` |
 | `getConversation`               | Fetch by id (with all participants), or `null`                            |
 | `listConversations`             | A user's conversations, most-recently-active first, cursor-paginated      |
-| `updateConversation`            | Patch the conversation `name` (string or `null`); throw if id unknown     |
+| `updateConversation`            | Patch `name` (string or `null`), `visibility`, `joinPolicy`; throw if id unknown |
 | `addParticipants`               | Insert-if-absent as `member`; never demote an existing participant        |
 | `removeParticipant`             | Delete that membership row; absent = silent no-op. Messages stay          |
 | `setParticipantRole`            | Set one participant's role; throw if they are not a participant           |
@@ -914,6 +991,31 @@ would typecheck and then fail at runtime (ADR 0019 §2). Contract highlights:
   stores it verbatim as the primary key. Never generate or re-derive it:
   unguessability is a security property, not a storage detail.
 
+Public channels (ADR 0020) follow the same shape as a **second** optional
+namespace, `channels?: ChannelStorage`, holding exactly one method:
+
+- `listPublicConversations({ limit, cursor })` → `{ conversations, nextCursor }`
+  - every `type: "group"` conversation with `visibility: "public"`, ordered and
+    paginated **exactly like `listConversations`** (most-recently-active first,
+    same opaque cursor contract). Filter on `type` as well as `visibility`, so a
+    hand-edited row can never surface a DM in a public directory. Core narrows
+    each row to a `ChannelPreview` itself - return full conversations.
+
+The `visibility` and `joinPolicy` columns, by contrast, ride the **required**
+contract: every adapter stores and returns them on `Conversation`, and
+`createGroupConversation`/`updateConversation` receive them always resolved by
+core (never `undefined`). Two rules follow:
+
+- **Coerce on read.** They are open text columns in SQL; narrow anything
+  unrecognized to `"private"` / `"approval"` rather than passing it through. A
+  stray value failing closed keeps a private group private.
+- Omitting the `channels` namespace does **not** let you skip the columns. Core
+  refuses to *set* a non-default value without the namespace (501
+  `CHANNELS_UNSUPPORTED`), which is what stops an adapter silently dropping
+  `visibility: "public"` and reporting a channel that no directory can find.
+- An `"approval"` channel routes its joiners into the ADR 0019 queue, so it
+  needs the `invites` namespace too. `"open"` channels need only `channels`.
+
 `searchMessages` is an optional storage capability. Memory and Drizzle provide
 it. Existing custom adapters may omit it; core then throws `SEARCH_UNSUPPORTED`
 and the HTTP handler returns `501`. Adapters that provide search must return
@@ -930,8 +1032,11 @@ contract; cursors remain opaque and adapter-defined.
 
 - **Conversation**: `id`, `type` (`"direct" | "group"`),
   `pairKey: string | null` (set for DMs, `null` for groups),
-  `name: string | null` (groups only), `createdAt: Date`, `metadata` (JSON
-  object), `participants` (exactly 2 for a DM, 1..256 for a group).
+  `name: string | null` (groups only), `visibility`
+  (`"private" | "public"`, default `"private"`), `joinPolicy`
+  (`"open" | "approval"`, default `"approval"`), `createdAt: Date`, `metadata`
+  (JSON object), `participants` (exactly 2 for a DM, 1..256 for a group). A
+  public group is a **channel** - there is no third `type`.
 - **Participant**: `conversationId`, `userId`, `role`
   (`"admin" | "member"`), `joinedAt: Date`,
   `lastReadMessageId: string | null`.
@@ -1091,6 +1196,15 @@ else is implementation detail.
     `(conversationId, userId)`, clearing `resolvedAt`/`resolvedBy`. Store the
     `code` core hands you verbatim - never generate or re-derive it.
 
+18. **`visibility`/`joinPolicy` round-trip, and coerce on read.** Both are
+    required fields on every conversation, always supplied by core on create and
+    update, and must read back as the exact value written. Narrow anything
+    outside the two unions to `"private"` / `"approval"` when reading - a text
+    column holds whatever a migration put there, and failing closed keeps a
+    private group private. The optional `channels` namespace adds only
+    `listPublicConversations`, which must return `type: "group"` **and**
+    `visibility: "public"` rows in `listConversations` order.
+
 ## Level 2 - reference realization (Postgres SQL)
 
 The official Postgres schema. If your store speaks SQL, use it as-is; if not,
@@ -1105,6 +1219,8 @@ CREATE TABLE IF NOT EXISTS "chatpack_conversations" (
   "type" text NOT NULL DEFAULT 'direct',
   "pair_key" text,                          -- NULL for groups
   "name" text,                              -- groups only
+  "visibility" text NOT NULL DEFAULT 'private',
+  "join_policy" text NOT NULL DEFAULT 'approval',
   "created_at" timestamptz NOT NULL,
   "metadata" jsonb NOT NULL DEFAULT '{}',
   "last_seq" integer NOT NULL DEFAULT 0,
@@ -1117,6 +1233,12 @@ ALTER TABLE "chatpack_conversations"
   ADD COLUMN IF NOT EXISTS "name" text;
 ALTER TABLE "chatpack_conversations"
   ALTER COLUMN "pair_key" DROP NOT NULL;
+-- Channels (ADR 0020). The defaults are what make this a safe upgrade: every
+-- row written before the migration reads back private and approval-gated.
+ALTER TABLE "chatpack_conversations"
+  ADD COLUMN IF NOT EXISTS "visibility" text NOT NULL DEFAULT 'private';
+ALTER TABLE "chatpack_conversations"
+  ADD COLUMN IF NOT EXISTS "join_policy" text NOT NULL DEFAULT 'approval';
 -- The pair-key index becomes PARTIAL so unlimited null-keyed groups coexist
 -- with one-per-pair DMs. A partial index cannot replace a total one under the
 -- same name (CREATE ... IF NOT EXISTS would silently keep the old one), hence
@@ -1126,6 +1248,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS "chatpack_conversations_pair_key_unique_idx"
   ON "chatpack_conversations" ("pair_key") WHERE "pair_key" IS NOT NULL;
 CREATE INDEX IF NOT EXISTS "chatpack_conversations_activity_idx"
   ON "chatpack_conversations" ("last_activity_at", "id");
+-- The channel directory sorts by the same keyset as listConversations, so it
+-- gets the same index shape - but PARTIAL, so browsing never pays to sort
+-- every DM in the table.
+CREATE INDEX IF NOT EXISTS "chatpack_conversations_public_idx"
+  ON "chatpack_conversations" ("last_activity_at", "id") WHERE "visibility" = 'public';
 
 CREATE TABLE IF NOT EXISTS "chatpack_conversation_participants" (
   "conversation_id" text NOT NULL REFERENCES "chatpack_conversations"("id") ON DELETE CASCADE,
@@ -1351,23 +1478,35 @@ export function myAdapter(client: MyDbClient): StorageAdapter {
       // 2. On conflict, fetch the existing conversation by pairKey.
       // return { conversation, created };
     },
-    async createGroupConversation({ creatorId, userIds, name, metadata }) {
+    async createGroupConversation({
+      creatorId,
+      userIds,
+      name,
+      metadata,
+      visibility,
+      joinPolicy,
+    }) {
       // ALWAYS a new conversation: generate the id, type "group",
       // pairKey null. One transaction: the conversation row + the creator as
       // "admin" + each of userIds as "member" (already de-duplicated and
       // creator-free). Never find-or-create.
+      // visibility/joinPolicy are always resolved by core - store them as
+      // given (invariant 18).
       // return conversation;
     },
     async getConversation(conversationId) {
-      // Fetch conversation + ALL participant rows, or return null.
+      // Fetch conversation + ALL participant rows, or return null. Narrow
+      // visibility/joinPolicy to their unions on the way out - fail closed to
+      // "private"/"approval" (invariant 18).
     },
     async listConversations({ userId, limit, cursor }) {
       // Conversations where userId is a participant, most-recently-active
       // first; keyset-paginate; you define the cursor encoding.
       // return { conversations, nextCursor }; // nextCursor: string | null
     },
-    async updateConversation({ conversationId, name }) {
-      // Set the name (a string or null); throw if the id is unknown.
+    async updateConversation({ conversationId, name, visibility, joinPolicy }) {
+      // Set the name (a string or null) plus both channel fields - core
+      // resolves all three, so write all three. Throw if the id is unknown.
       // return updatedConversation; // with participants
     },
     async addParticipants({ conversationId, userIds }) {
@@ -1477,6 +1616,18 @@ export function myAdapter(client: MyDbClient): StorageAdapter {
         // and adds the participant itself. Throw if the row is gone.
       },
     },
+    // Optional capability (ADR 0020). One method, and omitting the namespace
+    // also stops core from SETTING a non-default visibility/joinPolicy - so a
+    // channel can never be created that no directory can find.
+    channels: {
+      async listPublicConversations({ limit, cursor }) {
+        // type === "group" AND visibility === "public", in listConversations
+        // order with the same cursor contract. Filter on BOTH: a hand-edited
+        // row must not leak a DM into a public directory. Core narrows each
+        // row to a thin ChannelPreview itself.
+        // return { conversations, nextCursor };
+      },
+    },
   };
 }
 ```
@@ -1543,6 +1694,21 @@ export function myAdapter(client: MyDbClient): StorageAdapter {
   upsert has to reset `status` to `pending` and clear `resolvedAt`/`resolvedBy`.
 - Generating the invite code in the adapter, or hashing/normalizing the one core
   passed in - the code stored must be byte-identical to the one in the URL.
+- Accepting `visibility`/`joinPolicy` on create but forgetting them in
+  `updateConversation` (or vice versa), so a group can be published once and
+  never unpublished - or writing only the field that changed, when core resolves
+  and sends all three every time.
+- Passing an unrecognized `visibility` straight through from the column instead
+  of narrowing it. `"Public"`, `"publik"`, or a leftover value from a hand-run
+  migration must read back as `"private"`: fail closed, or a private group
+  quietly becomes browsable (invariant 18).
+- `listPublicConversations` filtering on `visibility` but not on `type`, which
+  puts a DM in the directory the moment one row is edited by hand.
+- Ordering the directory differently from `listConversations` (or reusing the
+  cursor from one in the other): both are keyset paginations over
+  `(lastActivityAt, id)`, and a client that mixes them will skip or repeat rows.
+- Leaving the public index **total** rather than partial - it works, but every
+  directory page then sorts every DM in the table.
 
 ## Verify your adapter
 
@@ -1625,6 +1791,18 @@ if any fails, the bug is in the adapter.
     unchanged. Deny a join request, then have the same user ask again - one row,
     `status: "pending"`, `resolvedBy` back to `null`. Omit the `invites`
     namespace entirely and every invite route must be a clean 501, not a crash.
+19. **Channels, if you implemented them.** Create a public `"open"` group, a
+    public `"approval"` group, a private group, and a DM: `GET /channels` shows
+    exactly the two public groups, newest-active first, and never a
+    `participants` array. Join the open one - instant membership and a
+    `participant.added` event; join the gated one - a pending request with
+    `inviteCode: null`. Fire 5 parallel joins as the same user - one membership
+    row. `UPDATE` the column to `'publik'` by hand: the conversation reads back
+    `"private"` and drops out of the directory. Walk `?limit=1&cursor=` to the
+    end - every public group exactly once. Omit the `channels` namespace and
+    `GET /channels`, the join route, *and* any attempt to set a non-default
+    `visibility` must all be a clean 501; explicitly sending the defaults must
+    still work.
 
 ## Real-time plugins and custom adapters
 

@@ -229,7 +229,7 @@ seams. See [Roadmap](/docs/project/roadmap).
 
 </Accordion>
 
-<Accordion title="Do group chats work? What about invite links and mentions?">
+<Accordion title="Do group chats work? What about invite links, channels, and mentions?">
 
 Groups ship: `createGroupConversation`, a first-class `name`, `admin`/`member`
 roles, admin-gated membership management, and 1-256 participants
@@ -244,9 +244,18 @@ redeems it, and an outsider who has no code can ask instead - a `pending`
 request an admin approves or denies. Adapters that skip the capability answer
 `501 INVITES_UNSUPPORTED`; both first-party adapters implement it.
 
-What isn't there: per-group permission grants, mentions, and
-public/discoverable channels. Chatpack owns membership, roles, and the two ways
-in; the social layer around them stays your app's.
+Public channels ship as a third way in, behind a second optional capability
+([Channel routes](/docs/reference/rest-api#channel-routes)). A channel is just a
+group with `visibility: "public"`: it appears in `GET /channels`, a browsable
+directory any signed-in user can read, and each channel's `joinPolicy` decides
+whether joining is instant or lands in the same approval queue invites use.
+Discoverable is not readable - browsing hands out a name and a participant
+_count_, never member ids or messages, so reading a channel still means joining
+it. Adapters that skip the capability answer `501 CHANNELS_UNSUPPORTED`.
+
+What isn't there: per-group permission grants, mentions, and roles beyond
+`admin`/`member`. Chatpack owns membership, roles, and the three ways in; the
+social layer around them stays your app's.
 
 </Accordion>
 

@@ -28,6 +28,8 @@ const conversation: ClientConversation = {
   type: "direct",
   pairKey: "alice:bob",
   name: null,
+  visibility: "private",
+  joinPolicy: "approval",
   metadata: {},
   createdAt: "2026-01-01T00:00:00.000Z",
   participants: [],
@@ -618,6 +620,8 @@ describe("conversation events (ADR 0017)", () => {
     type: "group" as const,
     pairKey: null,
     name,
+    visibility: "private" as const,
+    joinPolicy: "approval" as const,
     metadata: {},
     createdAt: "2026-01-01T00:00:00.000Z",
     participants: userIds.map(([userId, role]) => ({

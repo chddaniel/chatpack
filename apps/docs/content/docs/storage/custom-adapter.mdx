@@ -22,27 +22,27 @@ AI-builder clouds.
 Implement the `StorageAdapter` interface exported from `@chatpack/core` and
 pass it as `chatpack({ storage: yourAdapter() })`. Nineteen required async methods:
 
-| Method                          | Contract                                                                     |
-| ------------------------------- | ---------------------------------------------------------------------------- |
-| `getOrCreateDirectConversation` | Find or atomically create by `pairKey` - concurrent calls must converge      |
-| `createGroupConversation`       | Always create a new group: `pairKey: null`, creator `admin`, rest `member`   |
-| `getConversation`               | Fetch by id (with all participants), or `null`                               |
-| `listConversations`             | A user's conversations, most-recently-active first, cursor-paginated         |
-| `updateConversation`            | Patch the conversation `name` (string or `null`); throw if id unknown        |
-| `addParticipants`               | Insert-if-absent as `member`; never demote an existing participant           |
-| `removeParticipant`             | Delete that membership row; absent = silent no-op. Messages stay             |
-| `setParticipantRole`            | Set one participant's role; throw if they are not a participant              |
-| `addMessage`                    | Persist + assign the next strictly-increasing `seq` for that conversation    |
-| `getMessage`                    | Fetch by id, or `null`                                                       |
-| `getMessagesByIds`              | Batched fetch by id; unknown ids simply absent (quote-reply previews)        |
-| `listMessages`                  | Per-conversation history, newest-first (descending `seq`), cursor-paginated  |
-| `listMessagesAfterSeq`          | Messages with `seq > afterSeq`, **oldest first** (SSE/polling gap-fill)      |
-| `updateMessage`                 | Patch body / `editedAt` / `deletedAt` in place; throw if id unknown          |
-| `updateLastRead`                | Set a participant's `lastReadMessageId`                                      |
-| `countUnread`                   | Batched per-conversation unread counts for one viewer (invariant 10)         |
-| `addReaction`                   | Idempotent insert; return the message's **full** reaction set (invariant 12) |
-| `removeReaction`                | Idempotent delete; return the remaining set (invariant 12)                   |
-| `listReactionsByMessageIds`     | Batched reactions for a page, ascending `createdAt` (invariant 13)           |
+| Method                          | Contract                                                                         |
+| ------------------------------- | -------------------------------------------------------------------------------- |
+| `getOrCreateDirectConversation` | Find or atomically create by `pairKey` - concurrent calls must converge          |
+| `createGroupConversation`       | Always create a new group: `pairKey: null`, creator `admin`, rest `member`       |
+| `getConversation`               | Fetch by id (with all participants), or `null`                                   |
+| `listConversations`             | A user's conversations, most-recently-active first, cursor-paginated             |
+| `updateConversation`            | Patch `name` (string or `null`), `visibility`, `joinPolicy`; throw if id unknown |
+| `addParticipants`               | Insert-if-absent as `member`; never demote an existing participant               |
+| `removeParticipant`             | Delete that membership row; absent = silent no-op. Messages stay                 |
+| `setParticipantRole`            | Set one participant's role; throw if they are not a participant                  |
+| `addMessage`                    | Persist + assign the next strictly-increasing `seq` for that conversation        |
+| `getMessage`                    | Fetch by id, or `null`                                                           |
+| `getMessagesByIds`              | Batched fetch by id; unknown ids simply absent (quote-reply previews)            |
+| `listMessages`                  | Per-conversation history, newest-first (descending `seq`), cursor-paginated      |
+| `listMessagesAfterSeq`          | Messages with `seq > afterSeq`, **oldest first** (SSE/polling gap-fill)          |
+| `updateMessage`                 | Patch body / `editedAt` / `deletedAt` in place; throw if id unknown              |
+| `updateLastRead`                | Set a participant's `lastReadMessageId`                                          |
+| `countUnread`                   | Batched per-conversation unread counts for one viewer (invariant 10)             |
+| `addReaction`                   | Idempotent insert; return the message's **full** reaction set (invariant 12)     |
+| `removeReaction`                | Idempotent delete; return the remaining set (invariant 12)                       |
+| `listReactionsByMessageIds`     | Batched reactions for a page, ascending `createdAt` (invariant 13)               |
 
 Exact TypeScript signatures and per-method TSDoc ship in the package's
 `.d.ts` (`@chatpack/core`, `storage.ts` module).
@@ -55,8 +55,8 @@ deliberate, because silently missing membership writes look like data loss.
 
 ## Optional capabilities
 
-Two features sit outside the required contract, so an adapter can skip them and
-still be complete. Each reports `501` rather than degrading silently.
+Three features sit outside the required contract, so an adapter can skip them
+and still be complete. Each reports `501` rather than degrading silently.
 
 `searchMessages` is an optional storage capability. Memory and Drizzle provide
 it. Existing custom adapters may omit it; `chat.api.searchMessages` and
@@ -95,6 +95,40 @@ nineteen methods one release ago, and taking it to twenty-eight for a feature a
 1:1-only app will never call turns "write an adapter" from an afternoon into a
 project. Groups reuse the participants table every DM already writes; invites
 need two genuinely new tables.
+
+**Public channels are the third capability**, and they split across both sides of
+the line - which is the part worth understanding before you implement them.
+
+The `visibility` and `joinPolicy` fields on `Conversation` are **required**: every
+adapter stores and returns them, and core always passes both, fully resolved, to
+`createGroupConversation` and `updateConversation`. Two columns with defaults are
+not an afternoon's work, and making them optional would mean core could never
+trust that a conversation it just wrote reads back the way it wrote it.
+
+The **directory** is the optional part - a namespace with exactly one method:
+
+```ts
+channels?: {
+  listPublicConversations,  // { limit, cursor } -> { conversations, nextCursor }
+}
+```
+
+Return every `type: "group"` conversation with `visibility: "public"`, in the same
+order and with the same cursor contract as `listConversations`. Filter on **both**
+fields: a hand-edited row must not be able to put a DM in a public directory. Core
+narrows each row to a thin `ChannelPreview` itself, so return full conversations.
+
+Omitting the namespace does more than disable `GET /channels`: core also refuses
+to **set** a non-default `visibility` or `joinPolicy` (`501
+CHANNELS_UNSUPPORTED`). That gate is the point. Without it an adapter that stored
+the columns but had no directory would happily accept `visibility: "public"`,
+return a conversation that claims to be a channel, and leave the developer
+debugging an empty directory. Explicitly sending the defaults still works, so
+existing clients are unaffected.
+
+One dependency to know: an `"approval"` channel files its joiners into the ADR
+0019 queue, so it needs the `invites` namespace too. `"open"` channels need only
+`channels`.
 
 The entities you store are described in
 [Conversations & Messages](/docs/concepts/conversations-messages#the-data-model).
@@ -247,6 +281,15 @@ does atomicity. Everything else is implementation detail.
     `crypto.getRandomValues` because unguessability is a security property, not a
     storage detail - if adapters minted tokens one could reach for
     `Math.random()` and no test would fail.
+18. **`visibility` and `joinPolicy` round-trip, and you coerce on read.** Both
+    are required fields on every conversation, always supplied by core on create
+    and update, and must read back exactly as written - so write all three fields
+    in `updateConversation`, not just the one that looks like it changed. On the
+    way out, narrow anything outside the two unions to `"private"` /
+    `"approval"`: a text column holds whatever a hand-run migration put there,
+    and failing closed keeps a private group private. If you implement the
+    optional `channels` namespace, `listPublicConversations` must filter on
+    `type: "group"` **and** `visibility: "public"`, in `listConversations` order.
 
 ## Reference schema (Postgres)
 
@@ -264,6 +307,8 @@ CREATE TABLE IF NOT EXISTS "chatpack_conversations" (
   "type" text NOT NULL DEFAULT 'direct',
   "pair_key" text,                          -- NULL for groups
   "name" text,                              -- groups only
+  "visibility" text NOT NULL DEFAULT 'private',
+  "join_policy" text NOT NULL DEFAULT 'approval',
   "created_at" timestamptz NOT NULL,
   "metadata" jsonb NOT NULL DEFAULT '{}',
   "last_seq" integer NOT NULL DEFAULT 0,
@@ -276,6 +321,12 @@ ALTER TABLE "chatpack_conversations"
   ADD COLUMN IF NOT EXISTS "name" text;
 ALTER TABLE "chatpack_conversations"
   ALTER COLUMN "pair_key" DROP NOT NULL;
+-- Channels. The defaults are what make this a safe upgrade: every row written
+-- before the migration reads back private and approval-gated.
+ALTER TABLE "chatpack_conversations"
+  ADD COLUMN IF NOT EXISTS "visibility" text NOT NULL DEFAULT 'private';
+ALTER TABLE "chatpack_conversations"
+  ADD COLUMN IF NOT EXISTS "join_policy" text NOT NULL DEFAULT 'approval';
 -- The pair-key index becomes PARTIAL so unlimited null-keyed groups coexist
 -- with one-per-pair DMs. A partial index can't replace a total one under the
 -- same name (CREATE ... IF NOT EXISTS would silently keep the old one), hence
@@ -285,6 +336,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS "chatpack_conversations_pair_key_unique_idx"
   ON "chatpack_conversations" ("pair_key") WHERE "pair_key" IS NOT NULL;
 CREATE INDEX IF NOT EXISTS "chatpack_conversations_activity_idx"
   ON "chatpack_conversations" ("last_activity_at", "id");
+-- The channel directory sorts by the same keyset as listConversations, so it
+-- takes the same index shape - but PARTIAL, so browsing never pays to sort
+-- every DM in the table.
+CREATE INDEX IF NOT EXISTS "chatpack_conversations_public_idx"
+  ON "chatpack_conversations" ("last_activity_at", "id") WHERE "visibility" = 'public';
 
 CREATE TABLE IF NOT EXISTS "chatpack_conversation_participants" (
   "conversation_id" text NOT NULL REFERENCES "chatpack_conversations"("id") ON DELETE CASCADE,
@@ -518,23 +574,30 @@ export function myAdapter(client: MyDbClient): StorageAdapter {
       // 2. On conflict, fetch the existing conversation by pairKey.
       // return { conversation, created };
     },
-    async createGroupConversation({ creatorId, userIds, name, metadata }) {
+    async createGroupConversation({ creatorId, userIds, name, metadata, visibility, joinPolicy }) {
       // ALWAYS a new conversation: generate the id, type "group",
       // pairKey null. One transaction: the conversation row + the creator as
       // "admin" + each of userIds as "member" (already de-duplicated and
       // creator-free). Never find-or-create.
+      // visibility/joinPolicy arrive already defaulted ("private"/"approval") -
+      // store them as given; they are required columns, not part of a namespace.
       // return conversation;
     },
     async getConversation(conversationId) {
       // Fetch conversation + ALL participant rows, or return null.
+      // Coerce visibility/joinPolicy on the way out: anything outside the two
+      // unions (a legacy NULL, a hand-edited row) reads back as "private" /
+      // "approval" (invariant 18).
     },
     async listConversations({ userId, limit, cursor }) {
       // Conversations where userId is a participant, most-recently-active
       // first; keyset-paginate; you define the cursor encoding.
       // return { conversations, nextCursor }; // nextCursor: string | null
     },
-    async updateConversation({ conversationId, name }) {
-      // Set the name (a string or null); throw if the id is unknown.
+    async updateConversation({ conversationId, name, visibility, joinPolicy }) {
+      // Core sends all three fields, already merged with the current row - so
+      // write all three, don't try to guess which one "really" changed.
+      // name is a string or null; throw if the id is unknown.
       // return updatedConversation; // with participants
     },
     async addParticipants({ conversationId, userIds }) {
@@ -643,6 +706,18 @@ export function myAdapter(client: MyDbClient): StorageAdapter {
         // and adds the participant itself. Throw if the row is gone.
       },
     },
+    // Optional capability, and independent of `invites` - either can be present
+    // without the other. Omitting it also makes core refuse to SET
+    // visibility/joinPolicy to anything but the defaults (501).
+    channels: {
+      async listPublicConversations({ limit, cursor }) {
+        // Filter on type "group" AND visibility "public" - no userId, the
+        // directory is the same for everyone. Same order and cursor encoding as
+        // listConversations. Return FULL conversation rows; core narrows them
+        // to previews itself.
+        // return { conversations, nextCursor };
+      },
+    },
   };
 }
 ```
@@ -713,6 +788,26 @@ Each of these has bitten a real integration:
   upsert has to reset `status` and clear the resolution.
 - Generating the invite code in the adapter, or hashing/normalizing the one core
   passed in - the stored code must be byte-identical to the one in the URL.
+- Treating `visibility` / `joinPolicy` as part of the `channels` namespace and
+  skipping the columns. They ride the **required** contract; the namespace only
+  covers the directory query. Drop the columns and every channel reads back
+  private, which is the exact failure the 501 exists to prevent.
+- Writing only the field that looks changed in `updateConversation`. Core sends
+  all three already resolved against the current row, so a `visibility`-only
+  request arrives carrying the existing `name` - a `COALESCE`-style "skip the
+  ones I think are unchanged" write is both unnecessary and a way to lose a name.
+- `listPublicConversations` filtering on `visibility` but not `type`, so a
+  hand-edited DM row surfaces in the directory with both participants' ids
+  reachable to whoever joins.
+- Stripping fields down to a preview shape inside the adapter - core computes
+  `participantCount`, `alreadyParticipant`, and `requestPending` from the full
+  rows, and gets `alreadyParticipant` wrong if the participants are missing.
+- A **total** index on `visibility` where a partial one (`WHERE visibility =
+'public'`) is what the directory query needs - it indexes every private
+  conversation in the database to serve a query that never reads them.
+- Trusting the stored string on read. A legacy row (added the column with no
+  default) or a hand-edited one must narrow to `"private"` / `"approval"`, not
+  flow into core as an out-of-union value that then ships to clients.
 
 ## Verify your adapter
 
@@ -790,7 +885,9 @@ the adapter.
     direct read of `chatpack_messages`, `chatpack_message_reactions`,
     `chatpack_conversation_participants`, or `chatpack_conversation_invites`
     returns nothing/denied. The invites table matters as much as the rest: a
-    leaked table is a leaked set of live links.
+    leaked table is a leaked set of live links. `chatpack_conversations` too -
+    the channel directory is deliberately public through the API, but the table
+    also holds every private group's name.
 19. **Invites, if you implemented them.** Mint a `maxUses: 1` invite and fire 5
     parallel accepts - exactly one succeeds, `uses` is `1`, and the group gained
     exactly one member. Accept an already-spent link as the user it admitted:
@@ -800,6 +897,24 @@ the adapter.
     to `pending`, resolution cleared. Finally, run the same suite against an
     adapter with the `invites` property removed - every invite route answers
     `501 INVITES_UNSUPPORTED` and every other route keeps working.
+20. **Channels round trip.** Create a group with `visibility: "public"`,
+    `joinPolicy: "open"`, restart the process, `getConversation` - both fields
+    survived (this is the check that catches columns you forgot to add).
+    `listPublicConversations` returns it and **not** a private group or a DM.
+    Now `updateConversation` with only `visibility: "private"`: the name is
+    unchanged and the channel leaves the directory. Flip it back with only
+    `joinPolicy: "approval"`: still public, policy changed.
+21. **Channel joins.** Fire 8 parallel `joinConversation` calls at an `"open"`
+    channel as the same new user - exactly one participant row, role `member`,
+    and the rest come back `ALREADY_PARTICIPANT` or the same success. On an
+    `"approval"` channel, join twice: one `pending` join request with the first
+    message kept. As a non-member, `getConversation` and `listMessages` on a
+    public channel still throw `FORBIDDEN_READ` - discoverable is not readable.
+22. **The 501 gate.** Remove the `channels` property and rerun: `GET /channels`
+    and `POST /conversations/:id/join` answer `501 CHANNELS_UNSUPPORTED`, so does
+    creating a group with `visibility: "public"` - but passing the defaults
+    explicitly (`"private"` / `"approval"`) still succeeds, and every non-channel
+    route keeps working.
 
 ## Real-time plugins and custom adapters
 

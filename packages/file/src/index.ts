@@ -302,7 +302,8 @@ export function createFileAttachmentPlugin<TRouter extends FilepackRouter>(
         // The upload plan's route metadata binds the attempt to its intended
         // Chatpack operation. Filepack's actor ownership protects these
         // attempt controls; they do not have a conversationId contract.
-        return filepackHandler(options.filepack, nestedBasePath, actor).fetch(context.request);
+        const forwarded = await withoutEmptyBody(context.request, rest);
+        return filepackHandler(options.filepack, nestedBasePath, actor).fetch(forwarded);
       }
 
       // Message deletion does not delete the Filepack record. Keep this route
@@ -430,6 +431,34 @@ function isFilepackTransferRoute(
       isPositivePartNumber(rest[3]) &&
       rest[4] === "content")
   );
+}
+
+/**
+ * Filepack's `complete` and `abort` controls take no payload and enforce it
+ * strictly: they throw `INVALID_REQUEST` unless `request.body === null`. Some
+ * frameworks - Next.js App Router among them - hand route handlers a body that
+ * is present but empty, which fails that check for a request that is in fact
+ * payload-free.
+ *
+ * Rebuild those two requests without a body so the framework difference never
+ * reaches the host. A body carrying actual bytes is forwarded untouched and
+ * still rejected by Filepack: this normalizes an empty body, it does not
+ * discard a real one. `parts/prepare` and `parts/record` genuinely take JSON,
+ * so they are deliberately excluded.
+ */
+async function withoutEmptyBody(request: Request, segments: readonly string[]): Promise<Request> {
+  const isBodylessControl =
+    request.method === "POST" &&
+    segments.length === 3 &&
+    (segments[2] === "complete" || segments[2] === "abort");
+  if (!isBodylessControl || request.body === null) return request;
+
+  const raw = await request.clone().text();
+  if (raw.length > 0) return request;
+  return new Request(request.url, {
+    method: request.method,
+    headers: request.headers,
+  });
 }
 
 function isOwnerBoundUploadControlRoute(method: string, segments: readonly string[]): boolean {

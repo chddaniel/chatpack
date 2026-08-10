@@ -320,6 +320,8 @@ describe("redisTransport - Date fields survive the wire", () => {
         type: "group",
         pairKey: null,
         name: "Standup",
+        visibility: "private",
+        joinPolicy: "approval",
         createdAt,
         metadata: {},
         participants: [

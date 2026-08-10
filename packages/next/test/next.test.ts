@@ -13,6 +13,8 @@ const stubStorage = {
         type: "direct",
         pairKey: input.pairKey,
         name: null,
+        visibility: "private" as const,
+        joinPolicy: "approval" as const,
         createdAt: now,
         metadata: {},
         participants: input.userIds.map((userId) => ({

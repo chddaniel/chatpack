@@ -31,7 +31,21 @@
  * @module
  */
 
-import { and, asc, desc, eq, gt, inArray, isNotNull, isNull, lt, ne, or, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  gt,
+  inArray,
+  isNotNull,
+  isNull,
+  lt,
+  ne,
+  or,
+  sql,
+  type SQL,
+} from "drizzle-orm";
 import { alias, type PgDatabase, type PgQueryResultHKT } from "drizzle-orm/pg-core";
 
 import type {
@@ -55,6 +69,8 @@ import type {
   ListMessagesAfterSeqInput,
   ListMessagesInput,
   ListMessagesResult,
+  ListPublicConversationsInput,
+  ListPublicConversationsResult,
   Message,
   MessageRole,
   Metadata,
@@ -245,6 +261,10 @@ function toConversation(row: ConversationRow, participantRows: ParticipantRow[])
     type: row.type === "group" ? "group" : "direct",
     pairKey: row.pairKey,
     name: row.name,
+    // Same coercion, same reason (ADR 0020): both default to the closed value,
+    // so an unrecognized string reads as unlisted rather than as public.
+    visibility: row.visibility === "public" ? "public" : "private",
+    joinPolicy: row.joinPolicy === "open" ? "open" : "approval",
     createdAt: row.createdAt,
     metadata: (row.metadata ?? {}) as Metadata,
     participants: participantRows.map((p) => ({
@@ -329,6 +349,57 @@ export function drizzleAdapter(db: DrizzlePgDatabase): StorageAdapter {
     return conversation;
   }
 
+  /**
+   * Page conversations matching `filter`, most-recently-active first, with
+   * keyset pagination on `(last_activity_at, id)` - the cursor encodes both.
+   *
+   * Keyset rather than OFFSET so a conversation that receives a message between
+   * two page fetches cannot shift rows across the boundary and hide one.
+   *
+   * Shared by `listConversations` and the ADR 0020 channel directory: the two
+   * differ only in their filter, and a directory that ordered or paginated
+   * differently would be a second set of rules for clients to learn.
+   */
+  async function pageConversationsByActivity(
+    filter: SQL,
+    limit: number,
+    cursor: string | undefined,
+  ): Promise<ListConversationsResult> {
+    let cursorFilter = undefined;
+    if (cursor) {
+      const separator = cursor.indexOf(":");
+      const activityMs = Number(cursor.slice(0, separator));
+      const cursorId = cursor.slice(separator + 1);
+      if (Number.isFinite(activityMs) && cursorId) {
+        const cursorDate = new Date(activityMs);
+        cursorFilter = or(
+          lt(conversations.lastActivityAt, cursorDate),
+          and(eq(conversations.lastActivityAt, cursorDate), lt(conversations.id, cursorId)),
+        );
+      }
+    }
+
+    const rows = await db
+      .select()
+      .from(conversations)
+      .where(cursorFilter ? and(filter, cursorFilter) : filter)
+      .orderBy(desc(conversations.lastActivityAt), desc(conversations.id))
+      // One extra row is how we know whether to hand back a cursor, without a
+      // second COUNT query.
+      .limit(limit + 1);
+
+    const page = rows.slice(0, limit);
+    const hasMore = rows.length > limit;
+    const last = page[page.length - 1];
+    const nextCursor = hasMore && last ? `${last.lastActivityAt.getTime()}:${last.id}` : null;
+
+    const participants = await participantsFor(page.map((r) => r.id));
+    return {
+      conversations: page.map((row) => toConversation(row, participants.get(row.id) ?? [])),
+      nextCursor,
+    };
+  }
+
   return {
     async getOrCreateDirectConversation(
       input: GetOrCreateDirectConversationInput,
@@ -405,6 +476,9 @@ export function drizzleAdapter(db: DrizzlePgDatabase): StorageAdapter {
           type: "group",
           pairKey: null,
           name: input.name,
+          // Always resolved by core, never undefined (ADR 0020 §4).
+          visibility: input.visibility,
+          joinPolicy: input.joinPolicy,
           createdAt: now,
           metadata: input.metadata,
           lastSeq: 0,
@@ -485,7 +559,9 @@ export function drizzleAdapter(db: DrizzlePgDatabase): StorageAdapter {
     async updateConversation(input: UpdateConversationInput): Promise<Conversation> {
       await db
         .update(conversations)
-        .set({ name: input.name })
+        // Every field is the resolved new value, not a patch - core read the row
+        // and filled in whatever the caller omitted (ADR 0020 §5).
+        .set({ name: input.name, visibility: input.visibility, joinPolicy: input.joinPolicy })
         .where(eq(conversations.id, input.conversationId));
       return reloadConversation(input.conversationId);
     },
@@ -495,48 +571,16 @@ export function drizzleAdapter(db: DrizzlePgDatabase): StorageAdapter {
     },
 
     async listConversations(input: ListConversationsInput): Promise<ListConversationsResult> {
-      // Most-recently-active first, keyset pagination on
-      // (last_activity_at, id) - the cursor encodes both.
-      let cursorFilter = undefined;
-      if (input.cursor) {
-        const separator = input.cursor.indexOf(":");
-        const activityMs = Number(input.cursor.slice(0, separator));
-        const cursorId = input.cursor.slice(separator + 1);
-        if (Number.isFinite(activityMs) && cursorId) {
-          const cursorDate = new Date(activityMs);
-          cursorFilter = or(
-            lt(conversations.lastActivityAt, cursorDate),
-            and(eq(conversations.lastActivityAt, cursorDate), lt(conversations.id, cursorId)),
-          );
-        }
-      }
-
       const membership = db
         .select({ conversationId: conversationParticipants.conversationId })
         .from(conversationParticipants)
         .where(eq(conversationParticipants.userId, input.userId));
 
-      const rows = await db
-        .select()
-        .from(conversations)
-        .where(
-          cursorFilter
-            ? and(sql`${conversations.id} IN ${membership}`, cursorFilter)
-            : sql`${conversations.id} IN ${membership}`,
-        )
-        .orderBy(desc(conversations.lastActivityAt), desc(conversations.id))
-        .limit(input.limit + 1);
-
-      const page = rows.slice(0, input.limit);
-      const hasMore = rows.length > input.limit;
-      const last = page[page.length - 1];
-      const nextCursor = hasMore && last ? `${last.lastActivityAt.getTime()}:${last.id}` : null;
-
-      const participants = await participantsFor(page.map((r) => r.id));
-      return {
-        conversations: page.map((row) => toConversation(row, participants.get(row.id) ?? [])),
-        nextCursor,
-      };
+      return pageConversationsByActivity(
+        sql`${conversations.id} IN ${membership}`,
+        input.limit,
+        input.cursor,
+      );
     },
 
     async addMessage(input: AddMessageInput): Promise<Message> {
@@ -825,6 +869,28 @@ export function drizzleAdapter(db: DrizzlePgDatabase): StorageAdapter {
         // Earliest-first, which is the order core aggregates `userIds` in.
         .orderBy(asc(messageReactions.createdAt));
       return rows.map(toReaction);
+    },
+
+    /**
+     * The public channel directory (`docs/decisions/0020`) - the other optional
+     * capability. Its presence is also core's signal that this adapter persists
+     * `visibility` and `join_policy`, which it does.
+     */
+    channels: {
+      async listPublicConversations(
+        input: ListPublicConversationsInput,
+      ): Promise<ListPublicConversationsResult> {
+        // Groups only, and public only - the `visibility` predicate matches the
+        // partial index the migration creates, so this stays a keyset scan over
+        // channels rather than over every conversation in the database. Core
+        // already refuses to make a DM public; the `type` filter is here so a
+        // hand-edited row cannot leak one either.
+        return pageConversationsByActivity(
+          and(eq(conversations.visibility, "public"), eq(conversations.type, "group"))!,
+          input.limit,
+          input.cursor,
+        );
+      },
     },
 
     /**

@@ -82,7 +82,7 @@ lives at [`examples/messenger`](../../examples/messenger).
 | `api.createGroupConversation` | Create a group with the caller as its first admin - **always a new one**, never find-or-create                      |
 | `api.listConversations`       | List a user's conversations (DMs and groups), most recent first                                                     |
 | `api.getConversation`         | Fetch one conversation (read-permission checked)                                                                    |
-| `api.updateConversation`      | Rename a group, or clear its name with `null` (admin only)                                                          |
+| `api.updateConversation`      | Rename a group, or change its `visibility` / `joinPolicy` (admin only)                                              |
 | `api.addParticipants`         | Add members to a group as `member` (admin only); idempotent                                                         |
 | `api.removeParticipant`       | Remove a member, or leave by passing your own id (admin, or self); idempotent                                       |
 | `api.setParticipantRole`      | Promote to `admin` or demote to `member` (admin only)                                                               |
@@ -103,6 +103,8 @@ lives at [`examples/messenger`](../../examples/messenger).
 | `api.requestToJoin`           | Ask to join a group by id; no permission needed, but not if you're already in                                       |
 | `api.listJoinRequests`        | The moderation queue, `pending` by default (admin only)                                                             |
 | `api.resolveJoinRequest`      | Approve or deny one user's request (admin only)                                                                     |
+| `api.listPublicConversations` | Browse the public channel directory - thin previews, no permission needed                                           |
+| `api.joinConversation`        | Join a public channel: in immediately, or a join request when it's gated                                            |
 
 The four group-management methods work on `type: "group"` conversations only -
 calling one with a DM's id throws `NOT_GROUP_CONVERSATION` - and each returns the
@@ -113,6 +115,12 @@ promoting someone.
 The eight invite methods are group-only too, and need an **optional storage
 capability**: they throw `INVITES_UNSUPPORTED` (HTTP `501`) when the configured
 adapter has no `invites` namespace. Both first-party adapters have it.
+
+The two channel methods need a second, independent capability - `channels` -
+and throw `CHANNELS_UNSUPPORTED` (`501`) without it. That gate also covers
+_setting_ `visibility` or `joinPolicy` to a non-default value, so an adapter
+written before ADR 0020 can't silently drop a "public" flag and leave you with a
+channel nobody can find.
 
 Conversation-returning methods (`getOrCreateConversation`,
 `createGroupConversation`, `listConversations`, `getConversation`, and the four
@@ -139,6 +147,7 @@ from a browser/client:
 | Show the inbox / sidebar        | `listConversations`                      | `GET /conversations`                             |
 | Open one conversation           | `getConversation`                        | `GET /conversations/:id`                         |
 | Rename a group                  | `updateConversation`                     | `PATCH /conversations/:id`                       |
+| Publish a group as a channel    | `updateConversation`                     | `PATCH /conversations/:id`                       |
 | Add members                     | `addParticipants`                        | `POST /conversations/:id/participants`           |
 | Remove a member / leave         | `removeParticipant`                      | `DELETE /conversations/:id/participants`         |
 | Promote or demote               | `setParticipantRole`                     | `PATCH /conversations/:id/participants`          |
@@ -153,6 +162,8 @@ from a browser/client:
 | Join via a link                 | `acceptInvite`                           | `POST /invites/:code/accept`                     |
 | Ask to join a group             | `requestToJoin`                          | `POST /conversations/:id/join-requests`          |
 | Work the approval queue         | `listJoinRequests`, `resolveJoinRequest` | `GET` / `PATCH /conversations/:id/join-requests` |
+| Browse public channels          | `listPublicConversations`                | `GET /channels`                                  |
+| Join a public channel           | `joinConversation`                       | `POST /conversations/:id/join`                   |
 | Get live updates in the browser | - (server-sent events)                   | `GET /stream` via `EventSource`                  |
 
 > **Pagination vs gap-fill - don't mix them up.** Infinite scroll ("load
@@ -242,10 +253,10 @@ so don't reuse HTTP-response types for `chat.api.*` calls or vice versa:
 | Method | Path                               | Request body / query                                            | Response (200/201)                        |
 | ------ | ---------------------------------- | --------------------------------------------------------------- | ----------------------------------------- |
 | POST   | `/conversations`                   | `{ otherUserId, metadata? }`                                    | `{ conversation }` - DM, find-or-create   |
-| POST   | `/conversations/group`             | `{ name?, userIds?, metadata? }`                                | `{ conversation }` (201) - always new     |
+| POST   | `/conversations/group`             | `{ name?, userIds?, metadata?, visibility?, joinPolicy? }`      | `{ conversation }` (201) - always new     |
 | GET    | `/conversations`                   | `?limit=&cursor=`                                               | `{ conversations, nextCursor }`           |
 | GET    | `/conversations/:id`               | -                                                               | `{ conversation }`                        |
-| PATCH  | `/conversations/:id`               | `{ name }` (string or `null`) - admin                           | `{ conversation }`                        |
+| PATCH  | `/conversations/:id`               | `{ name?, visibility?, joinPolicy? }` - admin                   | `{ conversation }`                        |
 | POST   | `/conversations/:id/participants`  | `{ userIds }` - admin                                           | `{ conversation }`                        |
 | DELETE | `/conversations/:id/participants`  | `{ userId }` - admin, or self to leave                          | `{ conversation }`                        |
 | PATCH  | `/conversations/:id/participants`  | `{ userId, role }` - admin                                      | `{ conversation }`                        |
@@ -265,6 +276,8 @@ so don't reuse HTTP-response types for `chat.api.*` calls or vice versa:
 | POST   | `/conversations/:id/join-requests` | `{ message? }`                                                  | `{ joinRequest }` (201)                   |
 | GET    | `/conversations/:id/join-requests` | `?status=&limit=` (admin)                                       | `{ joinRequests }` - newest first         |
 | PATCH  | `/conversations/:id/join-requests` | `{ userId, decision }` (admin)                                  | `{ joinRequest, conversation }`           |
+| GET    | `/channels`                        | `?limit=&cursor=`                                               | `{ channels, nextCursor }` - previews     |
+| POST   | `/conversations/:id/join`          | - (bodyless)                                                    | `{ status, conversation, joinRequest }`   |
 | GET    | `/stream`                          | SSE; auto `Last-Event-ID` on reconnect                          | `text/event-stream`                       |
 
 Every conversation object in a response carries the **viewer's**
@@ -354,6 +367,31 @@ Opt-in plugins from `@chatpack/core/plugins` add routes of their own
   row, so a denial is a record, not a block.
 - **Joining publishes the existing `participant.added` event** - no new SSE
   types. Creating a join request publishes nothing; admins poll the queue.
+- **A channel is a group with `visibility: "public"`, not a third
+  `ConversationType`.** Both new fields default to the closed value (`"private"`,
+  `"approval"`) and are set at creation or through `PATCH /conversations/:id`,
+  which is a real patch: sending only `visibility` keeps the name, and a PATCH
+  with nothing in it is `400 INVALID_INPUT`. Flipping them is `canManage`, **not**
+  `canInvite` - publishing a room to everyone is a bigger act than handing one
+  person a link.
+- **The two channel routes need their own optional capability** and return `501
+CHANNELS_UNSUPPORTED` without a `channels` namespace - independent of `invites`,
+  and the same gate blocks _setting_ a non-default `visibility`/`joinPolicy`, so a
+  pre-ADR-0020 adapter fails loudly instead of dropping the flag.
+- **`GET /channels` returns thin `ChannelPreview`s, never conversations** -
+  `{ conversationId, name, participantCount, joinPolicy, lastActivityAt,
+alreadyParticipant, requestPending }`. Same reasoning as an `InvitePreview`: any
+  signed-in user may browse, so a participant list would leak every member's id.
+- **Discoverable is not readable.** Browsing grants nothing; `GET
+/conversations/:id` and the message routes still answer `403 FORBIDDEN_READ` for
+  a non-member. Reading a channel means joining it.
+- **`POST /conversations/:id/join` is the same discriminated union as accepting an
+  invite** - `"joined"` when the policy is `"open"`, `"pending"` when it's
+  `"approval"` (with `inviteCode: null`, the signal that the request came from the
+  directory rather than a link). A private group is `403
+NOT_PUBLIC_CONVERSATION`, a DM `409 NOT_GROUP_CONVERSATION`, and joining twice
+  `409 ALREADY_PARTICIPANT`. An invite still overrides the channel's policy in
+  both directions.
 
 Example - send a message (the text field is **`body`**):
 
@@ -384,17 +422,17 @@ The `auth` hook runs on every request. Errors are JSON -
 `{ "error": { "code", "message" } }` - with statuses mapped from the error
 code:
 
-| Status | Code(s)                                                                                                  | When                                                 |
-| ------ | -------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| 401    | `UNAUTHENTICATED`                                                                                        | `auth` returned `null` (or a non-`ChatpackUser`)     |
-| 400    | `INVALID_INPUT`                                                                                          | bad body/query params                                |
-| 403    | `FORBIDDEN_READ`, `FORBIDDEN_WRITE`, `NOT_MESSAGE_SENDER`, `NOT_CONVERSATION_ADMIN`                      | not allowed                                          |
-| 404    | `CONVERSATION_NOT_FOUND`, `MESSAGE_NOT_FOUND`, `INVITE_NOT_FOUND`, `JOIN_REQUEST_NOT_FOUND`, `NOT_FOUND` | missing resource/route                               |
-| 409    | `MESSAGE_DELETED`, `NOT_GROUP_CONVERSATION`, `LAST_ADMIN_REMAINING`, `ALREADY_PARTICIPANT`               | the resource is in the wrong state for the operation |
-| 410    | `INVITE_EXPIRED`                                                                                         | the invite is past its expiry, or out of uses        |
-| 422    | `MESSAGE_REJECTED`, `GROUP_LIMIT_EXCEEDED`, `INVITE_LIMIT_EXCEEDED`                                      | a hook refused the message / a cap was hit           |
-| 500    | `INTERNAL_ERROR`                                                                                         | unexpected server error (opaque)                     |
-| 501    | `SEARCH_UNSUPPORTED`, `INVITES_UNSUPPORTED`                                                              | the adapter lacks that optional capability           |
+| Status | Code(s)                                                                                                        | When                                                 |
+| ------ | -------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| 401    | `UNAUTHENTICATED`                                                                                              | `auth` returned `null` (or a non-`ChatpackUser`)     |
+| 400    | `INVALID_INPUT`                                                                                                | bad body/query params                                |
+| 403    | `FORBIDDEN_READ`, `FORBIDDEN_WRITE`, `NOT_MESSAGE_SENDER`, `NOT_CONVERSATION_ADMIN`, `NOT_PUBLIC_CONVERSATION` | not allowed                                          |
+| 404    | `CONVERSATION_NOT_FOUND`, `MESSAGE_NOT_FOUND`, `INVITE_NOT_FOUND`, `JOIN_REQUEST_NOT_FOUND`, `NOT_FOUND`       | missing resource/route                               |
+| 409    | `MESSAGE_DELETED`, `NOT_GROUP_CONVERSATION`, `LAST_ADMIN_REMAINING`, `ALREADY_PARTICIPANT`                     | the resource is in the wrong state for the operation |
+| 410    | `INVITE_EXPIRED`                                                                                               | the invite is past its expiry, or out of uses        |
+| 422    | `MESSAGE_REJECTED`, `GROUP_LIMIT_EXCEEDED`, `INVITE_LIMIT_EXCEEDED`                                            | a hook refused the message / a cap was hit           |
+| 500    | `INTERNAL_ERROR`                                                                                               | unexpected server error (opaque)                     |
+| 501    | `SEARCH_UNSUPPORTED`, `INVITES_UNSUPPORTED`, `CHANNELS_UNSUPPORTED`                                            | the adapter lacks that optional capability           |
 
 ## Message hooks
 
@@ -461,7 +499,9 @@ events.addEventListener("participant.removed", (e) => {
   // conversation; it's the last event you'll get for it. Otherwise replace
   // your cached copy with `conversation`.
 });
-// participant.added and conversation.updated carry the same shape.
+// participant.added and conversation.updated carry the same shape - a channel
+// self-join is a participant.added whose actorId is the joiner, and publishing a
+// group as a channel is a conversation.updated.
 
 events.onerror = () => {
   if (events.readyState === EventSource.CLOSED) {
@@ -715,6 +755,14 @@ Contract rules that the type signatures alone don't tell you:
   `ON CONFLICT DO UPDATE`: a re-ask has to replace a stale denial with a fresh
   `pending` row. Store the `code` core hands you verbatim - never generate, hash,
   or normalize it.
+- **Channels straddle both halves of the contract.** The `visibility` and
+  `joinPolicy` **columns are required** (add them `NOT NULL` with the closed
+  defaults; no backfill needed) and must round-trip, with anything outside the two
+  unions coerced back to `"private"` / `"approval"` on read. Only the directory
+  query lives in the optional `channels` namespace, and it must filter on `type:
+"group"` **and** `visibility: "public"` in `listConversations` order, returning
+  full conversation rows for core to narrow. `updateConversation` receives all
+  three fields already resolved against the current row - write all three.
 
 The [in-memory adapter](../adapter-memory) is the reference implementation,
 and the [Drizzle/Postgres adapter](../adapter-drizzle) shows the contract on
