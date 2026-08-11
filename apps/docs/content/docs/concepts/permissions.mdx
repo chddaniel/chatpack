@@ -1,14 +1,15 @@
 ---
 title: Permissions
-description: The default participants-only model and the canRead / canWrite / canManage / canInvite hooks.
+description: The default participants-only model, the canRead / canWrite / canManage / canInvite hooks, and the canModerate hook.
 ---
 
 By default, **only the participants** of a conversation can read or write it -
 enforced on every `chat.api.*` call and every HTTP route. Managing a group
 (membership, roles, the name) additionally requires the **`admin`** role. You
-can loosen or tighten all of that with four hooks.
+can loosen or tighten all of that with four hooks, and authorize
+platform-wide moderators with a fifth.
 
-## The hooks
+## The conversation hooks
 
 ```ts
 import { chatpack } from "@chatpack/core";
@@ -23,7 +24,7 @@ const chat = chatpack({
 
     // May `user` write to `conversation`? Default: participants only.
     canWrite: ({ user, conversation }) =>
-      conversation.participantIds.includes(user.id) && !isBanned(user.id),
+      conversation.participantIds.includes(user.id) && isVerified(user.id),
 
     // May `user` manage this group - add/remove members, change roles, rename,
     // publish it as a public channel? Default: participants whose role is "admin".
@@ -57,6 +58,57 @@ All four hooks receive a `PermissionContext`:
 Hooks may be sync or async and must return a boolean. Returning `false` maps
 to a `403` - `FORBIDDEN_READ`, `FORBIDDEN_WRITE` or `NOT_CONVERSATION_ADMIN` -
 both over HTTP and as a thrown `ChatpackError` from `chat.api.*`.
+
+## The moderation hook
+
+`canModerate` is the fifth hook, and it sits outside `permissions` because it is
+not about one conversation - it authorizes platform-wide moderator actions on the
+report queue and bans:
+
+```ts
+const chat = chatpack({
+  storage,
+  auth,
+  moderation: {
+    canModerate: async ({ user, action }) => {
+      if (!(await hasRole(user.id, "staff"))) return false;
+      // Optional: split reading the queue from wielding the ban hammer.
+      return action.startsWith("reports.") || (await hasRole(user.id, "admin"));
+    },
+  },
+});
+```
+
+Its context is a `ModerationPermissionContext`, not a `PermissionContext`:
+
+<TypeTable
+  type={{
+    user: {
+      description: "The user attempting the moderator action.",
+      type: "ChatpackUser",
+    },
+    action: {
+      description:
+        "Which moderator action is being attempted, so one hook can gate them separately.",
+      type: '"reports.read" | "reports.update" | "bans.read" | "bans.create" | "bans.revoke"',
+    },
+    targetUserId: {
+      description: "The user being banned, on bans.create.",
+      type: "string | undefined",
+    },
+    reportId: {
+      description: "The report being read or updated.",
+      type: "string | undefined",
+    },
+    banId: {
+      description: "The ban being revoked.",
+      type: "string | undefined",
+    },
+  }}
+/>
+
+Omit `canModerate` and every moderator route answers `403 NOT_MODERATOR`; blocks,
+mutes, and filing a report keep working, because those are self-service.
 
 ## What the hooks do and don't cover
 
@@ -92,6 +144,14 @@ both over HTTP and as a thrown `ChatpackError` from `chat.api.*`.
   participant count, and `canRead` still runs unchanged on the conversation and
   its messages. To restrict who may join, leave `visibility` private and use
   invite links instead.
+- **A ban is checked before any hook runs.** When the `moderation` option is
+  configured, an active ban short-circuits the request right after
+  authentication - `403 USER_BANNED` on every route including `/stream`, with no
+  `canRead`/`canWrite` call at all. Enforcement is on by default whenever
+  `canModerate` is set (`banUser` is the only way to mint a ban); set
+  `moderation: { enforceBans: true }` if ban rows are written outside Chatpack.
+  Blocks are narrower and separate: they only stop direct writes, and only
+  between the two users involved.
 - **Read permission gates live delivery too.** SSE events are only delivered
   for conversations the connected user may read - participation is re-checked
   server-side per event.
@@ -123,7 +183,9 @@ permissions: {
 },
 ```
 
-**Blocklists** - deny writing to someone who blocked the sender. Note the
+**Blocklists** - Chatpack has these built in now
+([moderation routes](/docs/reference/rest-api#moderation-routes)), so reach for
+`canWrite` only when your blocklist already lives somewhere else. Note the
 `type` guard: "the other participant" only means something in a DM, so the rule
 skips groups rather than picking an arbitrary member:
 

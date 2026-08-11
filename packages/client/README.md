@@ -106,6 +106,7 @@ The framework-agnostic client mirrors the server routes from `@chatpack/core`:
 | `invites`                | Invite creation, listing, preview, acceptance, and revocation |
 | `joinRequests`           | Join-request creation, moderation queue, and resolution       |
 | `channels`               | Public-channel directory and self-service joining             |
+| `moderation`             | Blocks, mutes, reports, and bans (`/moderation/*`)            |
 | `realtime`               | `GET /stream` with native reconnect and deduplication         |
 
 Every request returns `{ data, error }`. The client passes browser credentials
@@ -288,6 +289,40 @@ codes return `INVITE_NOT_FOUND` (404); expired or exhausted codes return
 `INVITE_EXPIRED` (410). Resolving an already-resolved request returns
 `JOIN_REQUEST_NOT_FOUND` (404). Adapters without the optional capabilities return
 `INVITES_UNSUPPORTED` or `CHANNELS_UNSUPPORTED` (501) as structured results.
+
+## Moderation
+
+`chatClient.moderation.*` wraps all thirteen `/moderation/*` routes. Six of them
+are self-service - any signed-in user may block, mute, and report:
+
+```ts
+await chatClient.moderation.blockUser({ targetUserId: "bob" });
+await chatClient.moderation.muteConversation({ conversationId });
+await chatClient.moderation.report({
+  targetType: "message", // "user" | "message" | "conversation"
+  targetId: messageId,
+  reason: "harassment",
+});
+```
+
+The other seven are for your moderators and return `NOT_MODERATOR` (403) unless
+the server's `moderation.canModerate` hook admits the caller:
+
+```ts
+const queue = await chatClient.moderation.listReports({ status: "open" });
+await chatClient.moderation.updateReport({ reportId, status: "triaged" });
+await chatClient.moderation.banUser({ targetUserId: "troll", reason: "spam" });
+await chatClient.moderation.unbanUser({ banId });
+```
+
+Blocks and mutes are idempotent, and a repeated report for the same target
+returns the existing one. A mute is a hint for your own UI: unread counts and
+SSE delivery are unchanged, so read `listMutedConversations` and suppress
+notifications yourself. Every route answers `USER_BANNED` (403) for a banned
+caller - including `/stream`, so a live subscription is closed at the next
+heartbeat rather than instantly - and `MODERATION_UNSUPPORTED` (501) on an
+adapter without the capability. None of these actions touch the query cache;
+refetch after a mutation that should change what the user sees.
 
 ## Source layout
 

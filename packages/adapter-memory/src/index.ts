@@ -170,6 +170,16 @@ export function memoryAdapter(): StorageAdapter {
   const muteKey = (userId: string, conversationId: string): string =>
     `${userId}\u0000${conversationId}`;
 
+  /**
+   * The user's newest unrevoked, unexpired ban, or `undefined`. Synchronous on
+   * purpose: `createBan` has to look and insert without an `await` in between.
+   */
+  const findActiveBan = (userId: string, now: Date): UserBan | undefined =>
+    [...bans.values()]
+      .filter((ban) => ban.userId === userId && ban.revokedAt === null)
+      .filter((ban) => ban.expiresAt === null || ban.expiresAt.getTime() > now.getTime())
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
+
   const moderation: ModerationStorage = {
     async isUserBanned(userId, now = new Date()) {
       return this.getActiveBan(userId, now);
@@ -326,10 +336,7 @@ export function memoryAdapter(): StorageAdapter {
     },
 
     async getActiveBan(userId, now = new Date()) {
-      const active = [...bans.values()]
-        .filter((ban) => ban.userId === userId && ban.revokedAt === null)
-        .filter((ban) => ban.expiresAt === null || ban.expiresAt.getTime() > now.getTime())
-        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
+      const active = findActiveBan(userId, now);
       return active ? { ...active } : null;
     },
 
@@ -339,8 +346,12 @@ export function memoryAdapter(): StorageAdapter {
     },
 
     async createBan(input) {
-      const existing = await this.getActiveBan(input.userId);
-      if (existing) return existing;
+      // Look and insert in the same tick - no `await` in between (ADR 0019 §5).
+      // Two concurrent bans for the same user would otherwise both see "none
+      // active" across the await and mint a row each, leaving one of them alive
+      // after a moderator revokes the other.
+      const existing = findActiveBan(input.userId, new Date());
+      if (existing) return { ...existing };
       const ban: UserBan = {
         id: nextId("ban"),
         userId: input.userId,

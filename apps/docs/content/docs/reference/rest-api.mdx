@@ -99,8 +99,8 @@ may not.
   know. Asking about a group you are already in is `409 ALREADY_PARTICIPANT` -
   there is no join request that honestly represents "you're already in". At most
   one request per user per group: re-asking replaces the row, so a **denial is
-  not a block**. Hard-blocking a user is a moderation feature you build above
-  Chatpack.
+  not a block**. To stop someone re-asking, ban them through the
+  [moderation routes](#moderation-routes) - a user block only covers DMs.
 - **Requests are resolved by user id, not request id.** `PATCH` takes
   `{ userId, decision }` because `(conversation, user)` is already unique and an
   admin working a queue has the user in hand. `GET` defaults to
@@ -223,6 +223,16 @@ and `conversation` targets, with statuses `open`, `triaged`, `resolved`, and
 
 Active bans return `403 USER_BANNED`. Missing moderation persistence returns
 `501 MODERATION_UNSUPPORTED`.
+
+Ban enforcement follows your config, not your adapter. Bans are checked before
+routing on every request and on every SSE heartbeat, but only when the
+`moderation` option is configured - by default whenever `canModerate` is set,
+since `banUser` is the only way to mint a ban. An app that never configures
+`moderation` pays no ban lookups even on an adapter that supports them. Pass
+`moderation: { enforceBans: true }` when ban rows are written outside Chatpack,
+or `false` to keep the moderator tools without per-request enforcement. Blocks,
+mutes, and reports are unaffected: they work off `StorageAdapter.moderation`
+alone.
 
 ## Semantics
 

@@ -11,6 +11,19 @@ function createChat() {
   });
 }
 
+/** A memory adapter that counts how often the ban lookup is consulted. */
+function countingStorage() {
+  const storage = memoryAdapter();
+  const moderation = storage.moderation!;
+  const real = moderation.isUserBanned.bind(moderation);
+  let count = 0;
+  moderation.isUserBanned = async (userId, now) => {
+    count += 1;
+    return real(userId, now);
+  };
+  return { storage, lookups: () => count };
+}
+
 describe("moderation", () => {
   it("blocks new direct interaction but keeps existing history readable", async () => {
     const chat = createChat();
@@ -110,5 +123,59 @@ describe("moderation", () => {
     const unbanned = await chat.api.moderation.unbanUser({ userId: "staff", banId: ban.id });
     expect(unbanned.revokedByUserId).toBe("staff");
     await expect(chat.api.listConversations({ userId: "bob" })).resolves.toBeDefined();
+  });
+
+  it("costs nothing when the host configures no moderation", async () => {
+    const { storage, lookups } = countingStorage();
+    const chat = chatpack({ storage, telemetry: false, auth: () => ({ id: "alice" }) });
+    // A ban row written outside Chatpack: without `enforceBans` it is inert,
+    // because `banUser` needs `canModerate` and so cannot have produced it.
+    await storage.moderation!.createBan({
+      userId: "alice",
+      createdByUserId: "staff",
+      reason: null,
+      expiresAt: null,
+    });
+
+    const response = await chat.handler().fetch(new Request("http://chat.test/api/chat/conversations"));
+    expect(response.status).toBe(200);
+    expect(lookups()).toBe(0);
+  });
+
+  it("enforces bans written outside Chatpack when asked to", async () => {
+    const { storage, lookups } = countingStorage();
+    const chat = chatpack({
+      storage,
+      telemetry: false,
+      auth: () => ({ id: "alice" }),
+      moderation: { enforceBans: true },
+    });
+    await storage.moderation!.createBan({
+      userId: "alice",
+      createdByUserId: "staff",
+      reason: null,
+      expiresAt: null,
+    });
+
+    const response = await chat.handler().fetch(new Request("http://chat.test/api/chat/conversations"));
+    expect(response.status).toBe(403);
+    expect(await response.json()).toMatchObject({ error: { code: "USER_BANNED" } });
+    expect(lookups()).toBeGreaterThan(0);
+  });
+
+  it("keeps one active ban when two moderators ban the same user at once", async () => {
+    const chat = createChat();
+    const [first, second] = await Promise.all([
+      chat.api.moderation.banUser({ userId: "staff", targetUserId: "troll", reason: "spam" }),
+      chat.api.moderation.banUser({ userId: "staff", targetUserId: "troll", reason: "spam" }),
+    ]);
+
+    expect(second.id).toBe(first.id);
+    const active = await chat.api.moderation.listBans({ userId: "staff", activeOnly: true });
+    expect(active.bans).toHaveLength(1);
+
+    // Revoking the one ban a moderator can see must actually lift the ban.
+    await chat.api.moderation.unbanUser({ userId: "staff", banId: first.id });
+    await expect(chat.api.listConversations({ userId: "troll" })).resolves.toBeDefined();
   });
 });

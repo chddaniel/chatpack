@@ -360,7 +360,9 @@ the first-party adapters implement both.
 - **`@chatpack/client` does not wrap this yet**, the same deliberate lag
   groups and invites both had. Hosts call `fetch` against the two routes. The
   unwrapped-surface list is now search (wrapped in PR #9), the eight invite
-  routes, and these two.
+  routes, and these two. _(Closed in client 0.7.0: `chatClient.channels.list`
+  and `chatClient.channels.join`, alongside the invite wrappers. The unwrapped
+  list is empty.)_
 - **Channel ids are guessable by design, and that is now load-bearing rather
   than merely tolerated.** The directory hands out ids to every authenticated
   user. `canRead` still gates the contents, so an id buys discovery and

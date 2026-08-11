@@ -243,6 +243,14 @@ export interface ChatpackOptions {
   moderation?: {
     /** Authorizes moderator report and ban actions. */
     canModerate?: CanModerateHook;
+    /**
+     * Whether active bans are enforced on every API call and SSE connection.
+     * Defaults to whether `canModerate` is configured, because `banUser` is the
+     * only way to mint a ban - so an app without it can never have one, and
+     * should not pay for the lookup. Set it to `true` when ban rows are written
+     * outside Chatpack, or `false` to keep moderator tools without enforcement.
+     */
+    enforceBans?: boolean;
   };
   /**
    * Message lifecycle hooks (`docs/decisions/0011` and `0014`): block or

@@ -141,6 +141,13 @@ export interface ModerationStorage {
   updateReport(input: UpdateReportInput): Promise<ModerationReport>;
   getActiveBan(userId: string, now?: Date): Promise<UserBan | null>;
   getBan(banId: string): Promise<UserBan | null>;
+  /**
+   * Ban a user, or return their existing active ban unchanged. Decide which in
+   * **one statement** rather than reading first and inserting after: two
+   * moderators banning the same user at the same moment must end up with one
+   * active ban, or revoking the ban a moderator can see would leave the other
+   * one enforcing (ADR 0019 §5, ADR 0021).
+   */
   createBan(input: CreateBanInput): Promise<UserBan>;
   listBans(input: ListBansInput): Promise<ModerationPage<UserBan>>;
   revokeBan(input: RevokeBanInput): Promise<UserBan>;

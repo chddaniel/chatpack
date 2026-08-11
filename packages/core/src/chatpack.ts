@@ -730,6 +730,16 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
 
   const storage: StorageAdapter = options.storage;
   const moderationStorage: ModerationStorage | undefined = storage.moderation;
+  // Enforcing bans costs a lookup on every call and on every SSE heartbeat, so
+  // it follows the *host's* config, not the adapter's capability: `banUser` is
+  // the only way to mint a ban and it needs `canModerate`, so an adapter that
+  // merely can store bans has none to find. `enforceBans` opts in explicitly
+  // for hosts that write ban rows outside Chatpack.
+  const banEnforcement: ModerationStorage | null =
+    moderationStorage &&
+    (options.moderation?.enforceBans ?? options.moderation?.canModerate !== undefined)
+      ? moderationStorage
+      : null;
   const transport: Transport = options.transport ?? inProcessTransport();
   const telemetry = new TelemetryCounters(resolveTelemetryEnabled(options.telemetry));
   // Fire-and-forget aggregate flush (MVP §12). No-op when disabled; the timer
@@ -764,7 +774,7 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
   }
 
   async function requireActiveUser(userId: string): Promise<void> {
-    const activeStorage = moderationStorage;
+    const activeStorage = banEnforcement;
     if (!activeStorage) return;
     const ban = await activeStorage.isUserBanned(userId);
     if (ban) {
@@ -1765,8 +1775,9 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
         }
       }
       const moderation = requireModerationStorage();
-      const active = await moderation.getActiveBan(input.targetUserId);
-      if (active) return active;
+      // No read-then-write here: `createBan` returns the user's existing active
+      // ban rather than minting a second one, and decides that in a single
+      // statement so two moderators cannot both win (ADR 0019 §5).
       return moderation.createBan({
         userId: input.targetUserId,
         createdByUserId: input.userId,
@@ -2719,8 +2730,17 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
   return {
     api,
     handler: (handlerOptions?: HandlerOptions) =>
-      createHandler(api, options.auth, handlerOptions, transport, pluginRuntime, async (userId) =>
-        Boolean(moderationStorage && (await moderationStorage.isUserBanned(userId))),
+      createHandler(
+        api,
+        options.auth,
+        handlerOptions,
+        transport,
+        pluginRuntime,
+        // Left undefined when bans are not enforced, so neither the pre-routing
+        // check nor the SSE heartbeat re-check runs at all.
+        banEnforcement === null
+          ? undefined
+          : async (userId) => Boolean(await banEnforcement.isUserBanned(userId)),
       ),
     transport,
     telemetry,

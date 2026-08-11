@@ -137,6 +137,16 @@ and must remain immutable. Expired and revoked bans stay in storage for audit
 history. Adapters without this namespace remain valid and return
 `MODERATION_UNSUPPORTED` when moderation actions are requested.
 
+`createBan` has the same concurrency rule as `consumeInvite`: decide **in one
+statement** whether the user already has an active ban and return that ban
+instead of inserting a second. In Postgres that is an
+`INSERT ... SELECT ... WHERE NOT EXISTS (an active ban for this user)`. A
+read-then-insert lets two moderators acting at the same moment leave two active
+rows - and revoking the one they can see leaves the other still enforcing, which
+looks like a ban that can't be lifted. "Active" means `revokedAt IS NULL` and
+(`expiresAt IS NULL` or `expiresAt > now`). `revokeBan` should keep the original
+revoker when it is called twice.
+
 The entities you store are described in
 [Conversations & Messages](/docs/concepts/conversations-messages#the-data-model).
 Users are opaque string ids - do not add foreign keys into your users table

@@ -1,6 +1,6 @@
 ---
 name: chatpack
-description: Integrate Chatpack (@chatpack/core) - an open-source TypeScript chat backend (1:1 and group conversations) with REST + real-time SSE - into any app. Use when adding chat, messaging, DMs, group chats, invite links, join requests, public channels, or an AI-assistant conversation to an app; when working with any @chatpack/* package, chatpack(), chat.handler(), or toNextRouteHandlers; or when debugging Chatpack integrations (401 UNAUTHENTICATED, 404 on /api/chat/*, EventSource /stream not receiving events, cookies dropped in preview iframes, 501 INVITES_UNSUPPORTED, 501 CHANNELS_UNSUPPORTED).
+description: Integrate Chatpack (@chatpack/core) - an open-source TypeScript chat backend (1:1 and group conversations) with REST + real-time SSE - into any app. Use when adding chat, messaging, DMs, group chats, invite links, join requests, public channels, blocking/muting/reporting/banning, or an AI-assistant conversation to an app; when working with any @chatpack/* package, chatpack(), chat.handler(), or toNextRouteHandlers; or when debugging Chatpack integrations (401 UNAUTHENTICATED, 404 on /api/chat/*, EventSource /stream not receiving events, cookies dropped in preview iframes, 403 USER_BANNED, 501 INVITES_UNSUPPORTED, 501 CHANNELS_UNSUPPORTED, 501 MODERATION_UNSUPPORTED).
 ---
 
 # Integrating Chatpack
@@ -30,7 +30,11 @@ installed `llms.txt` wins (it matches the installed version).
    `searchMessages`, `editMessage`, `deleteMessage`, `addReaction`, `removeReaction`, `markRead`,
    `listMessagesAfter`, `createInvite`, `listInvites`, `revokeInvite`,
    `getInvitePreview`, `acceptInvite`, `requestToJoin`, `listJoinRequests`,
-   `resolveJoinRequest`, `listPublicConversations`, `joinConversation`.
+   `resolveJoinRequest`, `listPublicConversations`, `joinConversation` - plus the
+   `chat.api.moderation.*` namespace (`blockUser`, `unblockUser`,
+   `listBlockedUsers`, `muteConversation`, `unmuteConversation`,
+   `listMutedConversations`, `report`, `listReports`, `getReport`,
+   `updateReport`, `listBans`, `banUser`, `unbanUser`).
    `getOrCreateDirectConversation` is a storage-adapter method - never call the
    adapter directly. If a method name is not in this list, **it does not exist -
    do not invent it.**
@@ -123,6 +127,13 @@ export or drizzle-kit - see that package's README).
 Optional `permissions: { canRead, canWrite }` hooks receive
 `{ user, conversation }` (with `conversation.participantIds`); default is
 participants-only, which is usually right.
+
+Optional `moderation: { canModerate, enforceBans }` turns on the report queue and
+bans. `canModerate` receives `{ user, action, targetUserId?, reportId?, banId? }`
+where `action` is one of `"reports.read"`, `"reports.update"`, `"bans.read"`,
+`"bans.create"`, `"bans.revoke"` - return `true` for your staff. Omit the whole
+option and Chatpack runs zero ban lookups per request; see the moderation part of
+Step 4 for `enforceBans`.
 
 Optional `hooks: { beforeMessageSend, afterMessageMutation }` for content rules
 and side-effects. `beforeMessageSend` can throw to reject (sender gets 422
@@ -258,52 +269,49 @@ dropped; your own `participant.removed` is the only signal you get). These
 events carry no `id:` line, so they are not gap-filled after a reconnect.
 
 **Invite links and join requests** are the way in when you don't have someone's
-user id. Eight routes, **no client wrappers yet** - use `fetch`. They need an
-optional storage capability: both first-party adapters have it, a custom adapter
-may not, and all eight then answer `501 INVITES_UNSUPPORTED` (check once at
-startup, not per call).
+user id. Eight routes, wrapped since `@chatpack/client` 0.7.0 - use the client
+methods (hand-rolled `fetch` is only for integrations without the client). They
+need an optional storage capability: both first-party adapters have it, a custom
+adapter may not, and all eight then answer `501 INVITES_UNSUPPORTED` (check once
+at startup, not per call).
 
 ```ts
 // mint a link (admin by default; `canInvite` can loosen it to any member).
-// Every field optional - a bodyless POST means "no expiry, unlimited uses".
-const { invite } = await fetch(`/api/chat/conversations/${groupId}/invites`, {
-  method: "POST",
-  headers: { "content-type": "application/json" },
-  body: JSON.stringify({ expiresInSeconds: 86400, maxUses: 5 }),
-}).then((r) => r.json());
+// Every field optional - no expiry and unlimited uses when you pass none.
+const { data: invite } = await chatClient.invites.create({
+  conversationId: groupId,
+  expiresInSeconds: 86400,
+  maxUses: 5,
+});
 // invite.code is 43 URL-safe chars - build your own /join/:code page from it
 
 // the landing page. An InvitePreview, NOT a conversation: a participant COUNT and
 // no user ids, because a non-member may call this.
-const preview = await fetch(`/api/chat/invites/${code}`).then((r) => r.json());
+const preview = await chatClient.invites.preview({ code });
 // { conversationId, name, participantCount, requiresApproval, invitedBy, alreadyParticipant }
 
 // redeem. Branch on `status`, never on which field came back null.
-const result = await fetch(`/api/chat/invites/${code}/accept`, { method: "POST" }).then((r) =>
-  r.json(),
-);
-if (result.status === "joined")
-  result.conversation; // in - members get participant.added
-else result.joinRequest; // requiresApproval: true - an admin must resolve it
+const result = await chatClient.invites.accept({ code });
+if (result.data?.status === "joined")
+  result.data.conversation; // in - members get participant.added
+else result.data?.joinRequest; // requiresApproval: true - an admin must resolve it
 
 // the other direction: ask to join a group you know the id of. No permission
 // needed. 409 ALREADY_PARTICIPANT if you're already in.
-await fetch(`/api/chat/conversations/${groupId}/join-requests`, {
-  method: "POST",
-  headers: { "content-type": "application/json" },
-  body: JSON.stringify({ message: "I'm on the design team" }),
+await chatClient.joinRequests.create({
+  conversationId: groupId,
+  message: "I'm on the design team",
 });
 
 // the admin queue. NO event fires when a request arrives - poll this.
-const { joinRequests } = await fetch(`/api/chat/conversations/${groupId}/join-requests`).then((r) =>
-  r.json(),
-); // defaults to ?status=pending
+const queue = await chatClient.joinRequests.list({ conversationId: groupId });
+// defaults to status: "pending"
 
 // resolve by USER id, not request id
-await fetch(`/api/chat/conversations/${groupId}/join-requests`, {
-  method: "PATCH",
-  headers: { "content-type": "application/json" },
-  body: JSON.stringify({ userId: "erin", decision: "approve" }), // or "deny"
+await chatClient.joinRequests.resolve({
+  conversationId: groupId,
+  userId: "erin",
+  decision: "approve", // or "deny"
 });
 ```
 
@@ -322,38 +330,37 @@ Invite rules core enforces (don't re-implement):
 - **Joining publishes the existing `participant.added` event** - no new SSE types
   to subscribe to. Creating a join request publishes nothing.
 - **One request per user per group**, resolved by user id. Re-asking replaces the
-  row, so **denial is not a block** - hard-blocking is yours to build. Resolving
-  twice is 404 `JOIN_REQUEST_NOT_FOUND`.
+  row, so **denial is not a block** - a ban (moderation, below) is what stops
+  someone re-asking; a user block only covers DMs. Resolving twice is 404
+  `JOIN_REQUEST_NOT_FOUND`.
 
 **Public channels** are for the other shape of "let people in": a directory
 anyone signed in can browse, no link and no user ids needed. A channel is **not a
-new conversation type** - it's a group with `visibility: "public"`. Two routes, no
-client wrappers yet, and a second optional capability (`501
+new conversation type** - it's a group with `visibility: "public"`. Two routes,
+wrapped since client 0.7.0, and a second optional capability (`501
 CHANNELS_UNSUPPORTED`, independent of invites).
 
 ```ts
 // publish an existing group, or set the fields at creation. Admin-only
 // (canManage, NOT canInvite). Defaults are "private" + "approval".
-await fetch(`/api/chat/conversations/${groupId}`, {
-  method: "PATCH",
-  headers: { "content-type": "application/json" },
-  body: JSON.stringify({ visibility: "public", joinPolicy: "open" }),
+await chatClient.conversations.update({
+  conversationId: groupId,
+  visibility: "public",
+  joinPolicy: "open",
 });
 // PATCH is a real patch: sending only `visibility` keeps the name. An empty
-// PATCH is 400 - it's a mistake, not a no-op.
+// update is 400 - it's a mistake, not a no-op.
 
 // browse. No permission needed. Thin previews, cursor-paginated.
-const { channels, nextCursor } = await fetch("/api/chat/channels?limit=20").then((r) => r.json());
+const directory = await chatClient.channels.list({ limit: 20 });
 // each: { conversationId, name, participantCount, joinPolicy, lastActivityAt,
 //         alreadyParticipant, requestPending } - a COUNT, never member ids
 
-// join. Bodyless POST. Same discriminated union as accepting an invite.
-const result = await fetch(`/api/chat/conversations/${id}/join`, { method: "POST" }).then((r) =>
-  r.json(),
-);
-if (result.status === "joined")
-  result.conversation; // "open" - in immediately
-else result.joinRequest; // "approval" - an admin resolves it, inviteCode is null
+// join. Same discriminated union as accepting an invite.
+const result = await chatClient.channels.join({ conversationId: id });
+if (result.data?.status === "joined")
+  result.data.conversation; // "open" - in immediately
+else result.data?.joinRequest; // "approval" - an admin resolves it, inviteCode is null
 ```
 
 Channel rules core enforces:
@@ -370,6 +377,79 @@ Channel rules core enforces:
   still a valid link. The admin who minted it already decided.
 - **No new SSE events.** Joining publishes `participant.added` with the joiner as
   their own `actorId`; flipping the fields publishes `conversation.updated`.
+
+**Moderation** is the other half of letting strangers in: blocks and mutes any
+user can set for themselves, plus a report queue and bans that only your
+moderators can touch. Thirteen routes under `/moderation/*`, all wrapped as
+`chatClient.moderation.*`, behind a third optional storage capability (`501
+MODERATION_UNSUPPORTED`, independent of invites and channels).
+
+```ts
+// self-service, no permission needed. Both creates are idempotent.
+await chatClient.moderation.blockUser({ targetUserId: "bob" });
+await chatClient.moderation.unblockUser({ targetUserId: "bob" });
+await chatClient.moderation.listBlockedUsers({ limit: 20 }); // { blocks, nextCursor }
+await chatClient.moderation.muteConversation({ conversationId });
+await chatClient.moderation.unmuteConversation({ conversationId });
+await chatClient.moderation.listMutedConversations();
+
+// anyone can report a "user" | "message" | "conversation"
+await chatClient.moderation.report({
+  targetType: "message",
+  targetId: messageId,
+  reason: "harassment",
+});
+
+// moderators only - 403 NOT_MODERATOR for everyone else
+const queue = await chatClient.moderation.listReports({ status: "open" });
+await chatClient.moderation.getReport({ reportId });
+await chatClient.moderation.updateReport({
+  reportId,
+  status: "triaged", // "open" | "triaged" | "resolved" | "dismissed"
+  moderatorNote: "watching this one",
+});
+await chatClient.moderation.banUser({
+  targetUserId: "troll",
+  reason: "spam",
+  expiresAt: null, // ISO string for a timed ban, null/omitted for permanent
+});
+await chatClient.moderation.listBans({ activeOnly: true });
+await chatClient.moderation.unbanUser({ banId });
+```
+
+Moderation rules core enforces:
+
+- **Who is a moderator is your call**, through a fifth hook:
+  `chatpack({ moderation: { canModerate: ({ user }) => user.role === "staff" } })`.
+  Without it the report queue and every ban route are 403 `NOT_MODERATOR` -
+  blocks, mutes and filing a report still work.
+- **Ban enforcement follows your config, not your adapter.** Bans are checked
+  before routing on every request and on every SSE heartbeat, but only when
+  `moderation` is configured - by default whenever `canModerate` is set, since
+  `banUser` is the only way to mint a ban. An app with no `moderation` option
+  pays no ban lookups at all. Pass `moderation: { enforceBans: true }` when ban
+  rows are written outside Chatpack (an admin dashboard writing straight to the
+  table), or `false` to keep the moderator tools without per-request
+  enforcement.
+- **A banned user is 403 `USER_BANNED` on everything**, including `/stream`. The
+  client surfaces it as an error result, not an exception; a live EventSource is
+  cut at the next heartbeat rather than instantly. Sign them out or show a
+  blocked screen on that code - retrying is pointless until the ban is revoked.
+- **A block is not a ban.** It stops *new* direct conversations and direct
+  message mutations both ways (403 `DIRECT_INTERACTION_BLOCKED`), but existing
+  direct history stays readable, and it does nothing inside a shared group. Don't
+  reach for `blockUser` to kick someone out of a channel - that's `removeParticipant`.
+- **A mute is a hint for your UI.** It changes nothing server-side: unread counts
+  still climb and SSE still delivers. Read the mute list and suppress your own
+  notifications.
+- **Reports dedupe per reporter + target** while one is still open or triaged, so
+  a double-tapped report button returns the same report. Each carries immutable
+  `evidence` (the message body and sender at filing time) so a later edit or
+  delete can't launder it - render the report from `evidence`, not by re-fetching
+  the message.
+- **Revoked and expired bans stay in history.** `listBans({ activeOnly: false })`
+  is the audit trail; two moderators banning the same person at the same moment
+  leave exactly one active row.
 
 Client semantics that trip up generated code:
 
@@ -478,6 +558,24 @@ curl -si -X POST localhost:3000/api/chat/conversations/conv_2/join -H 'cookie: d
 # and the check that proves the boundary: GET a public channel as a user who has
 # only browsed it - still 403 FORBIDDEN_READ, because discoverable isn't readable.
 curl -si localhost:3000/api/chat/conversations/conv_2 -H 'cookie: demo_user=erin'
+
+# 9. moderation, if the app has block/report/ban UI (expect 201, then 403s).
+#    A 501 MODERATION_UNSUPPORTED means the adapter lacks the capability.
+curl -si -X POST localhost:3000/api/chat/moderation/blocks \
+  -H 'cookie: demo_user=alice' -H 'content-type: application/json' \
+  -d '{"targetUserId":"bob"}'
+# bob may still READ the old DM, but any write is 403 DIRECT_INTERACTION_BLOCKED
+curl -si -X POST localhost:3000/api/chat/conversations/conv_1/messages \
+  -H 'cookie: demo_user=bob' -H 'content-type: application/json' -d '{"body":"hi"}'
+# the queue is staff-only (expect 403 NOT_MODERATOR without canModerate)
+curl -si 'localhost:3000/api/chat/moderation/reports?status=open' -H 'cookie: demo_user=alice'
+# ban, then prove enforcement: EVERY route, including /stream, is 403 USER_BANNED
+curl -si -X POST localhost:3000/api/chat/moderation/bans \
+  -H 'cookie: demo_user=staff' -H 'content-type: application/json' \
+  -d '{"targetUserId":"troll","reason":"spam"}'
+curl -si localhost:3000/api/chat/conversations -H 'cookie: demo_user=troll'
+# 200 here instead means `moderation` isn't configured on the instance, so bans
+# aren't enforced - add moderation.canModerate, or enforceBans: true.
 ```
 
 Browser check: after "sign in", `document.cookie` must contain the demo cookie
@@ -509,23 +607,29 @@ AND the Network tab must show it on `/api/chat/*` requests.
 | A channel was published but the directory is empty                               | Custom adapter stored `visibility` nowhere (the columns are part of the **required** contract, not the `channels` namespace), or its query filters on `visibility` without `type`.     |
 | Renaming happened by accident when flipping visibility                           | Custom adapter tried to write only the field it thought changed. Core sends all three already resolved against the current row - write all three.                                      |
 | A user can browse a channel but gets 403 reading it                              | Working as designed: discoverable is not readable. Call the join route first; there is no read-without-membership mode.                                                                |
+| 501 `MODERATION_UNSUPPORTED`                                                     | The storage adapter has no `moderation` capability. Both first-party adapters do; a custom one needs the whole namespace (blocks, mutes, reports, bans - all or nothing).               |
+| 403 `NOT_MODERATOR` for your admin                                               | `moderation.canModerate` is missing or returned false. It's your hook, not a Chatpack role - check `ctx.action` (`bans.create` etc.) if you're gating per action.                        |
+| A ban was created but the user keeps chatting                                    | Bans are only enforced when `moderation` is configured. If the row was written outside Chatpack (an admin dashboard), pass `moderation: { enforceBans: true }`.                          |
+| 403 `USER_BANNED` on a user you already unbanned                                 | A timed ban that hasn't expired, or a duplicate active row from a custom adapter whose `createBan` reads-then-inserts. Check `listBans({ activeOnly: true })`.                           |
+| 403 `DIRECT_INTERACTION_BLOCKED`                                                 | Either side blocked the other - it's symmetric. Existing DM history still reads fine, and groups are unaffected; this only stops direct writes and new DMs.                             |
 | 400 `INVALID_INPUT` sending an image with no caption                             | `body` is required and non-empty after trimming; attachments never substitute for it. Synthesize a body (a space won't do - it's trimmed).                                             |
 | Chrome uploads fail as `CLIENT_NETWORK_ERROR` with no request in the Network tab | `@filepack/client` ≤ 0.1.1 calls an unbound `globalThis.fetch` ("Illegal invocation"). Pass `controlFetch: (input, init) => fetch(input, init)` to `createChatpackFileClient`.         |
 
 ## Custom storage adapter (Supabase JS / Convex / Firestore / other)
 
 Do NOT improvise: read **Part 2 of `llms.txt`** and follow it exactly - it
-contains the 19-required-method `StorageAdapter` contract plus three optional
-capabilities (search, the nine-method `invites` namespace, and the one-method
-`channels` namespace),
+contains the 19-required-method `StorageAdapter` contract plus four optional
+capabilities (search, the nine-method `invites` namespace, the one-method
+`channels` namespace, and the `moderation` namespace),
 the invariants (atomic
 `pairKey` creation, atomic per-conversation `seq`, `Date` instances not ISO
 strings, soft-delete as tombstone, newest-first vs oldest-first ordering,
 batched exact unread counts, participant-scoped ranked search when supported,
 idempotent reaction writes that never touch `lastSeq`/activity, single-statement
-invite consumption, `visibility`/`joinPolicy` round-tripping with coercion on
+invite consumption, single-statement `createBan`,
+`visibility`/`joinPolicy` round-tripping with coercion on
 read), the reference
-Postgres schema, a skeleton, and a 19-point verification checklist.
+Postgres schema, a skeleton, and a 20-point verification checklist.
 The adapter must run server-side with privileged credentials; `chatpack_*`
 tables must never be readable by browser/anon clients.
 
@@ -546,3 +650,13 @@ right: the `visibility` and `join_policy` **columns are required** (add them wit
 directory query lives in the optional `channels` namespace. Omitting the namespace
 makes core refuse to set a non-default value, so a pre-channels adapter reports a
 clean 501 instead of quietly storing a "public" channel nobody can find.
+
+Moderation is entirely optional and entirely self-contained: four tables (blocks,
+mutes, reports with immutable evidence JSON, bans with expiry + revocation) and no
+change to any existing one. Make block and mute creates idempotent, reuse an open
+or triaged report for the same reporter and target, and keep revoked or expired
+bans in history rather than deleting them. The one concurrency trap is `createBan`:
+decide **in one statement** whether the user already has an active ban and return
+that ban instead of inserting a second - otherwise two moderators acting at the
+same moment leave two active rows, and revoking the one they can see leaves the
+other still enforcing.

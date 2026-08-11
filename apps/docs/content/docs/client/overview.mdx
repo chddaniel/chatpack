@@ -133,6 +133,43 @@ requests return the existing request. The client preserves `INVITE_NOT_FOUND`
 `INVITES_UNSUPPORTED` (501), and `CHANNELS_UNSUPPORTED` (501) as structured
 errors.
 
+## Moderation
+
+`chatClient.moderation.*` wraps all thirteen
+[moderation routes](/docs/reference/rest-api#moderation-routes). Blocking,
+muting, and reporting are self-service; the report queue and bans need the
+server's `moderation.canModerate` hook and otherwise return `NOT_MODERATOR`
+(403).
+
+```ts
+await chatClient.moderation.blockUser({ targetUserId: "bob" });
+await chatClient.moderation.muteConversation({ conversationId });
+await chatClient.moderation.report({
+  targetType: "message", // "user" | "message" | "conversation"
+  targetId: messageId,
+  reason: "harassment",
+});
+
+// moderators only
+const queue = await chatClient.moderation.listReports({ status: "open" });
+await chatClient.moderation.updateReport({ reportId, status: "triaged" });
+await chatClient.moderation.banUser({ targetUserId: "troll", reason: "spam" });
+```
+
+Blocks and mutes are idempotent, and a repeated report for the same target
+returns the existing one. A mute is a hint for your own UI - unread counts and
+SSE delivery are unchanged, so read `listMutedConversations` and suppress
+notifications yourself. A banned caller gets `USER_BANNED` (403) from every
+route including `/stream`, which means a live subscription is closed at the next
+heartbeat rather than instantly; treat that code as "stop retrying and show a
+blocked screen". Adapters without the capability return
+`MODERATION_UNSUPPORTED` (501) as a structured error.
+
+<Callout type="warn">
+  None of the moderation actions update the query cache. Refetch conversations or messages yourself
+  after a mutation that should change what the user sees.
+</Callout>
+
 ## Message search
 
 Search all conversations visible to the signed-in participant with the

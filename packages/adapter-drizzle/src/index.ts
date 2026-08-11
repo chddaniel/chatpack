@@ -681,15 +681,30 @@ export function drizzleAdapter(db: DrizzlePgDatabase): StorageAdapter {
     },
 
     async createBan(input) {
-      const existing = await this.getActiveBan(input.userId);
-      if (existing) return existing;
       const id = generateId("ban");
-      await db
-        .insert(userBans)
-        .values({ id, ...input, revokedAt: null, revokedByUserId: null, createdAt: new Date() });
-      const [row] = await db.select().from(userBans).where(eq(userBans.id, id)).limit(1);
-      if (!row) throw new Error("drizzleAdapter: ban insert returned no row.");
-      return toBan(row);
+      const now = new Date();
+      // One statement, not read-then-write (ADR 0019 §5). "Active" spans
+      // `revoked_at is null` *and* an unexpired `expires_at`, which no unique
+      // index can express, so the guard rides along in the INSERT itself: two
+      // moderators banning the same user at the same moment cannot both land a
+      // row. The loser reads the winner's ban back below.
+      await db.execute(sql`
+        insert into "chatpack_user_bans"
+          ("id", "user_id", "created_by_user_id", "reason", "created_at",
+           "expires_at", "revoked_at", "revoked_by_user_id")
+        select ${id}::text, ${input.userId}::text, ${input.createdByUserId}::text,
+               ${input.reason}::text, ${now}::timestamptz, ${input.expiresAt}::timestamptz,
+               null::timestamptz, null::text
+        where not exists (
+          select 1 from "chatpack_user_bans"
+          where "user_id" = ${input.userId}::text
+            and "revoked_at" is null
+            and ("expires_at" is null or "expires_at" > ${now}::timestamptz)
+        )`);
+
+      const active = await this.getActiveBan(input.userId, now);
+      if (!active) throw new Error("drizzleAdapter: ban insert returned no row.");
+      return active;
     },
 
     async listBans(input): Promise<ModerationPage<UserBan>> {

@@ -45,6 +45,24 @@ enforces the same permissions.
 | `api.listPublicConversations` | Browse the public-channel directory as `ChannelPreview`s, most recently active first                                                      |
 | `api.joinConversation`        | Join a public channel by id: admitted instantly, or filed as a request                                                                    |
 
+Moderation lives in its own namespace, `chat.api.moderation.*`:
+
+| Method                                    | What it does                                                                                     |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `moderation.blockUser`                    | Block another user; idempotent, self-service                                                      |
+| `moderation.unblockUser`                  | Lift your own block; idempotent                                                                   |
+| `moderation.listBlockedUsers`             | Who you've blocked, cursor-paginated                                                              |
+| `moderation.muteConversation`             | Mute a conversation for yourself - a UI hint, not a server-side filter                            |
+| `moderation.unmuteConversation`           | Unmute; idempotent                                                                                |
+| `moderation.listMutedConversations`       | Your mutes, cursor-paginated                                                                      |
+| `moderation.report`                       | Report a `user`, `message`, or `conversation`; reuses an open/triaged report for the same target   |
+| `moderation.listReports`                  | The report queue, filterable by status and target type (`canModerate`)                             |
+| `moderation.getReport`                    | One report with its immutable evidence (`canModerate`)                                             |
+| `moderation.updateReport`                 | Move a report to `triaged` / `resolved` / `dismissed`, with a note (`canModerate`)                  |
+| `moderation.listBans`                     | Bans, active-only or the whole audit history (`canModerate`)                                       |
+| `moderation.banUser`                      | Ban a user, permanently or until `expiresAt`; returns the existing active ban if there is one (`canModerate`) |
+| `moderation.unbanUser`                    | Revoke a ban, keeping the row for audit (`canModerate`)                                             |
+
 The four group-management methods work on `type: "group"` conversations only;
 calling one with a DM's id throws `NOT_GROUP_CONVERSATION`. All four return the
 full updated conversation.
@@ -61,6 +79,14 @@ would create a channel no directory could ever find. Passing the defaults
 explicitly still works on an adapter without the capability. An `"approval"`
 channel routes its joiners into the invite queue, so it needs the `invites`
 capability too.
+
+The thirteen moderation methods need a **third** optional capability and throw
+`MODERATION_UNSUPPORTED` without it. The seven moderator-only ones additionally
+need `chatpack({ moderation: { canModerate } })` and throw `NOT_MODERATOR`
+otherwise. Configuring `moderation` at all is also what switches on ban
+enforcement - an active ban then throws `USER_BANNED` from every `chat.api.*`
+call and 403s every route; see
+[Permissions](/docs/concepts/permissions#the-moderation-hook).
 
 ## Which API do I call?
 
@@ -92,6 +118,11 @@ from a browser or HTTP client:
 | Publish a group as a channel    | `updateConversation`                     | `PATCH /conversations/:id`                       |
 | Browse public channels          | `listPublicConversations`                | `GET /channels`                                  |
 | Join a channel                  | `joinConversation`                       | `POST /conversations/:id/join`                   |
+| Block / unblock a user          | `moderation.blockUser`, `unblockUser`    | `POST` / `DELETE /moderation/blocks`             |
+| Mute / unmute a conversation    | `moderation.muteConversation`, `unmuteConversation` | `POST` / `DELETE /moderation/mutes`   |
+| Report abuse                    | `moderation.report`                      | `POST /moderation/reports`                       |
+| Work the report queue           | `moderation.listReports`, `updateReport` | `GET /moderation/reports`, `PATCH /moderation/reports/:id` |
+| Ban / unban a user              | `moderation.banUser`, `unbanUser`        | `POST /moderation/bans`, `DELETE /moderation/bans/:id` |
 | Get live updates in the browser | - (server-sent events)                   | `GET /stream` via `EventSource`                  |
 
 ## Usage

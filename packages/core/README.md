@@ -106,6 +106,12 @@ lives at [`examples/messenger`](../../examples/messenger).
 | `api.listPublicConversations` | Browse the public channel directory - thin previews, no permission needed                                           |
 | `api.joinConversation`        | Join a public channel: in immediately, or a join request when it's gated                                            |
 
+Moderation lives in its own namespace, `chat.api.moderation.*`: `blockUser`,
+`unblockUser`, `listBlockedUsers`, `muteConversation`, `unmuteConversation`,
+`listMutedConversations`, `report` (self-service, any signed-in user) and
+`listReports`, `getReport`, `updateReport`, `listBans`, `banUser`, `unbanUser`
+(moderators only).
+
 The four group-management methods work on `type: "group"` conversations only -
 calling one with a DM's id throws `NOT_GROUP_CONVERSATION` - and each returns the
 full updated conversation. A group always keeps at least one admin: removing or
@@ -121,6 +127,16 @@ and throw `CHANNELS_UNSUPPORTED` (`501`) without it. That gate also covers
 _setting_ `visibility` or `joinPolicy` to a non-default value, so an adapter
 written before ADR 0020 can't silently drop a "public" flag and leave you with a
 channel nobody can find.
+
+The thirteen moderation methods need a third capability - `moderation` - and
+throw `MODERATION_UNSUPPORTED` (`501`) without it. The seven moderator-only ones
+also need `chatpack({ moderation: { canModerate } })`, and throw `NOT_MODERATOR`
+without it. Configuring `moderation` is what switches ban enforcement on: an
+active ban then throws `USER_BANNED` from every call and 403s every route,
+including `/stream`. Add `enforceBans: true` if ban rows are written outside
+Chatpack, or `false` for moderator tooling without per-request enforcement. A
+block is narrower - it stops new DMs and direct writes between two users, leaves
+their history readable, and does nothing inside a shared group.
 
 Conversation-returning methods (`getOrCreateConversation`,
 `createGroupConversation`, `listConversations`, `getConversation`, and the four
@@ -164,6 +180,11 @@ from a browser/client:
 | Work the approval queue         | `listJoinRequests`, `resolveJoinRequest` | `GET` / `PATCH /conversations/:id/join-requests` |
 | Browse public channels          | `listPublicConversations`                | `GET /channels`                                  |
 | Join a public channel           | `joinConversation`                       | `POST /conversations/:id/join`                   |
+| Block / unblock a user          | `moderation.blockUser`, `unblockUser`    | `POST` / `DELETE /moderation/blocks`             |
+| Mute / unmute a conversation    | `moderation.muteConversation`, `unmuteConversation` | `POST` / `DELETE /moderation/mutes`   |
+| Report abuse                    | `moderation.report`                      | `POST /moderation/reports`                       |
+| Work the report queue           | `moderation.listReports`, `updateReport` | `GET /moderation/reports`, `PATCH /moderation/reports/:id` |
+| Ban / unban a user              | `moderation.banUser`, `unbanUser`        | `POST /moderation/bans`, `DELETE /moderation/bans/:id` |
 | Get live updates in the browser | - (server-sent events)                   | `GET /stream` via `EventSource`                  |
 
 > **Pagination vs gap-fill - don't mix them up.** Infinite scroll ("load

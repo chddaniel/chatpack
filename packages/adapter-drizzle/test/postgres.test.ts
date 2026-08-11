@@ -1662,6 +1662,36 @@ describe("moderation on Postgres", () => {
     await staffChat.api.moderation.unbanUser({ userId: "staff", banId: ban.id });
     await expect(staffChat.api.listConversations({ userId: "bob" })).resolves.toBeDefined();
   });
+
+  it("keeps one active ban when two moderators ban the same user at once", async () => {
+    const staffChat = chatpack({
+      storage: drizzleAdapter(db),
+      telemetry: false,
+      moderation: { canModerate: () => true },
+    });
+
+    const [first, second] = await Promise.all([
+      staffChat.api.moderation.banUser({ userId: "staff", targetUserId: "troll", reason: "spam" }),
+      staffChat.api.moderation.banUser({ userId: "other", targetUserId: "troll", reason: "spam" }),
+    ]);
+    expect(second.id).toBe(first.id);
+
+    const listed = await staffChat.api.moderation.listBans({ userId: "staff", activeOnly: false });
+    expect(listed.bans).toHaveLength(1);
+
+    // Revoking the only ban a moderator can see must actually lift it - with a
+    // duplicate row the second ban would keep enforcing invisibly.
+    await staffChat.api.moderation.unbanUser({ userId: "staff", banId: first.id });
+    await expect(staffChat.api.listConversations({ userId: "troll" })).resolves.toBeDefined();
+
+    // A fresh ban after the first is revoked still works: the guard keys on
+    // "active", not on "has ever been banned".
+    const again = await staffChat.api.moderation.banUser({
+      userId: "staff",
+      targetUserId: "troll",
+    });
+    expect(again.id).not.toBe(first.id);
+  });
 });
 
 describe("upgrading a pre-ADR-0013 database", () => {
