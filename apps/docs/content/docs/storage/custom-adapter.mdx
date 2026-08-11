@@ -55,7 +55,7 @@ deliberate, because silently missing membership writes look like data loss.
 
 ## Optional capabilities
 
-Three features sit outside the required contract, so an adapter can skip them
+Four features sit outside the required contract, so an adapter can skip them
 and still be complete. Each reports `501` rather than degrading silently.
 
 `searchMessages` is an optional storage capability. Memory and Drizzle provide
@@ -129,6 +129,13 @@ existing clients are unaffected.
 One dependency to know: an `"approval"` channel files its joiners into the ADR
 0019 queue, so it needs the `invites` namespace too. `"open"` channels need only
 `channels`.
+
+**Moderation is the fourth optional capability.** Add `StorageAdapter.moderation`
+when the adapter supports durable blocks, conversation mutes, reports, and bans.
+Block and mute writes must be idempotent. Report evidence is captured by core
+and must remain immutable. Expired and revoked bans stay in storage for audit
+history. Adapters without this namespace remain valid and return
+`MODERATION_UNSUPPORTED` when moderation actions are requested.
 
 The entities you store are described in
 [Conversations & Messages](/docs/concepts/conversations-messages#the-data-model).

@@ -712,31 +712,32 @@ Want to write your own plugin? The seam is public - see `ChatpackPlugin` in
 
 ## What's in v0
 
-| Feature                                 | Status            |
-| --------------------------------------- | ----------------- |
-| 1:1 conversations (find-or-create)      | ✅ Done (M1)      |
-| Text messages: send, list, edit, delete | ✅ Done (M1)      |
-| Participant-only permissions + hooks    | ✅ Done (M1)      |
-| Durable read-state (`last_read`)        | ✅ Done (M1)      |
-| In-memory storage adapter               | ✅ Done (M1)      |
-| HTTP handler (Next.js App Router)       | ✅ Done (M2)      |
-| Real-time delivery (SSE)                | ✅ Done (M3)      |
-| SSE reconnect gap-fill                  | ✅ Done (M3)      |
-| Drizzle/Postgres adapter                | ✅ Done (M4)      |
-| Launch polish + npm release             | ✅ Done (M5)      |
-| Typing / presence / read-tick plugins   | ✅ Done (v0.next) |
-| Unread counts (`unreadCount`)           | ✅ Done (v0.next) |
-| Redis transport (multi-node SSE)        | ✅ Done (v0.next) |
-| Browser client + React hooks            | ✅ Done (v0.next) |
-| Client polling fallback                 | ✅ Done (v0.next) |
-| Reactions + quote-replies               | ✅ Done (v0.next) |
-| Participant-scoped message search       | ✅ Done (v0.next) |
-| Post-persistence message mutation hook  | ✅ Done (v0.next) |
-| `@chatpack/cli init`                    | ✅ Done (v0.next) |
-| Group chats: membership, roles, admin   | ✅ Done (v0.next) |
-| File attachments (`@chatpack/file`)     | ✅ Done (v0.next) |
-| Invite links + join requests            | ✅ Done (v0.next) |
-| Public channels (browsable directory)   | ✅ Done (v0.next) |
+| Feature                                  | Status            |
+| ---------------------------------------- | ----------------- |
+| 1:1 conversations (find-or-create)       | ✅ Done (M1)      |
+| Text messages: send, list, edit, delete  | ✅ Done (M1)      |
+| Participant-only permissions + hooks     | ✅ Done (M1)      |
+| Durable read-state (`last_read`)         | ✅ Done (M1)      |
+| In-memory storage adapter                | ✅ Done (M1)      |
+| HTTP handler (Next.js App Router)        | ✅ Done (M2)      |
+| Real-time delivery (SSE)                 | ✅ Done (M3)      |
+| SSE reconnect gap-fill                   | ✅ Done (M3)      |
+| Drizzle/Postgres adapter                 | ✅ Done (M4)      |
+| Launch polish + npm release              | ✅ Done (M5)      |
+| Typing / presence / read-tick plugins    | ✅ Done (v0.next) |
+| Unread counts (`unreadCount`)            | ✅ Done (v0.next) |
+| Redis transport (multi-node SSE)         | ✅ Done (v0.next) |
+| Browser client + React hooks             | ✅ Done (v0.next) |
+| Client polling fallback                  | ✅ Done (v0.next) |
+| Reactions + quote-replies                | ✅ Done (v0.next) |
+| Participant-scoped message search        | ✅ Done (v0.next) |
+| Post-persistence message mutation hook   | ✅ Done (v0.next) |
+| `@chatpack/cli init`                     | ✅ Done (v0.next) |
+| Group chats: membership, roles, admin    | ✅ Done (v0.next) |
+| File attachments (`@chatpack/file`)      | ✅ Done (v0.next) |
+| Invite links + join requests             | ✅ Done (v0.next) |
+| Public channels (browsable directory)    | ✅ Done (v0.next) |
+| Moderation: blocks, mutes, reports, bans | ✅ Done (v1.next) |
 
 Push notification providers, reusable UI components, true message threads,
 and multi-node presence have not shipped. Replies are flat pointers, not

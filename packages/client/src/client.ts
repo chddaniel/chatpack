@@ -1,5 +1,11 @@
 /** Composes the framework-agnostic Chatpack client and its resource actions. */
-import type { Metadata, MessageRole, ParticipantRole } from "@chatpack/core";
+import type {
+  Metadata,
+  MessageRole,
+  ParticipantRole,
+  ReportStatus,
+  ReportTargetType,
+} from "@chatpack/core";
 import type { ChatClientOptions } from "./config";
 import type { ChatClientResult } from "./errors";
 import {
@@ -21,8 +27,12 @@ import type { ReadonlyStore } from "./store";
 import type {
   ClientConversation,
   ClientConversationPage,
+  ClientConversationMute,
   ClientMessage,
   ClientMessagePage,
+  ClientModerationReport,
+  ClientUserBan,
+  ClientUserBlock,
 } from "./wire";
 
 /** Input for creating a conversation with another user. */
@@ -139,6 +149,100 @@ export interface MessageDeleteInput {
   messageId: string;
 }
 
+/** Cursor pagination for moderation client actions. */
+export interface ModerationListInput {
+  limit?: number;
+  cursor?: string;
+}
+
+/** Report submission input for the REST client. */
+export interface ModerationReportInput {
+  targetType: ReportTargetType;
+  targetId: string;
+  reason: string;
+}
+
+/** Moderator report queue filters for the REST client. */
+export interface ModerationReportListInput extends ModerationListInput {
+  status?: ReportStatus;
+  targetType?: ReportTargetType;
+}
+
+/** Moderator report lifecycle update for the REST client. */
+export interface ModerationReportUpdateInput {
+  reportId: string;
+  status: ReportStatus;
+  moderatorNote?: string | null;
+}
+
+/** Permanent or timed ban input for the REST client. */
+export interface ModerationBanInput {
+  targetUserId: string;
+  reason?: string | null;
+  expiresAt?: string | null;
+}
+
+/** Ban list filters for the REST client. */
+export interface ModerationBanListInput extends ModerationListInput {
+  activeOnly?: boolean;
+}
+
+/** Typed user and moderator moderation actions. */
+export interface ModerationActions {
+  blockUser(
+    input: { targetUserId: string },
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<ClientUserBlock>>;
+  unblockUser(
+    input: { targetUserId: string },
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<{ ok: true }>>;
+  listBlockedUsers(
+    input?: ModerationListInput,
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<{ blocks: ClientUserBlock[]; nextCursor: string | null }>>;
+  muteConversation(
+    input: { conversationId: string },
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<ClientConversationMute>>;
+  unmuteConversation(
+    input: { conversationId: string },
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<{ ok: true }>>;
+  listMutedConversations(
+    input?: ModerationListInput,
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<{ mutes: ClientConversationMute[]; nextCursor: string | null }>>;
+  report(
+    input: ModerationReportInput,
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<ClientModerationReport>>;
+  listReports(
+    input?: ModerationReportListInput,
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<{ reports: ClientModerationReport[]; nextCursor: string | null }>>;
+  getReport(
+    input: { reportId: string },
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<ClientModerationReport>>;
+  updateReport(
+    input: ModerationReportUpdateInput,
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<ClientModerationReport>>;
+  listBans(
+    input?: ModerationBanListInput,
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<{ bans: ClientUserBan[]; nextCursor: string | null }>>;
+  banUser(
+    input: ModerationBanInput,
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<ClientUserBan>>;
+  unbanUser(
+    input: { banId: string },
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<ClientUserBan>>;
+}
+
 /** Per-request headers and cancellation options. */
 export interface ChatClientRequestOptions {
   headers?: HeadersInit;
@@ -229,6 +333,7 @@ export interface MessageActions {
 export interface ChatClient {
   conversations: ConversationActions;
   messages: MessageActions;
+  moderation: ModerationActions;
   realtime: ChatRealtime;
   $store: ChatpackCache;
   $getPluginState(id: string): ReadonlyStore<unknown> | null;
@@ -703,9 +808,127 @@ export function createChatClient<
     },
   };
 
+  const moderationActions: ModerationActions = {
+    async blockUser(input, optionsForRequest) {
+      const result = await requester.request<unknown>("/moderation/blocks", {
+        method: "POST",
+        body: input,
+        ...requestOptions(optionsForRequest),
+      });
+      return unwrapResult<ClientUserBlock>(result, "block");
+    },
+    async unblockUser(input, optionsForRequest) {
+      return requester.request<{ ok: true }>("/moderation/blocks", {
+        method: "DELETE",
+        body: input,
+        ...requestOptions(optionsForRequest),
+      });
+    },
+    async listBlockedUsers(input = {}, optionsForRequest) {
+      return requester.request<{ blocks: ClientUserBlock[]; nextCursor: string | null }>(
+        "/moderation/blocks",
+        {
+          query: { limit: input.limit, cursor: input.cursor },
+          ...requestOptions(optionsForRequest),
+        },
+      );
+    },
+    async muteConversation(input, optionsForRequest) {
+      const result = await requester.request<unknown>("/moderation/mutes", {
+        method: "POST",
+        body: input,
+        ...requestOptions(optionsForRequest),
+      });
+      return unwrapResult<ClientConversationMute>(result, "mute");
+    },
+    async unmuteConversation(input, optionsForRequest) {
+      return requester.request<{ ok: true }>("/moderation/mutes", {
+        method: "DELETE",
+        body: input,
+        ...requestOptions(optionsForRequest),
+      });
+    },
+    async listMutedConversations(input = {}, optionsForRequest) {
+      return requester.request<{ mutes: ClientConversationMute[]; nextCursor: string | null }>(
+        "/moderation/mutes",
+        {
+          query: { limit: input.limit, cursor: input.cursor },
+          ...requestOptions(optionsForRequest),
+        },
+      );
+    },
+    async report(input, optionsForRequest) {
+      const result = await requester.request<unknown>("/moderation/reports", {
+        method: "POST",
+        body: input,
+        ...requestOptions(optionsForRequest),
+      });
+      return unwrapResult<ClientModerationReport>(result, "report");
+    },
+    async listReports(input = {}, optionsForRequest) {
+      return requester.request<{ reports: ClientModerationReport[]; nextCursor: string | null }>(
+        "/moderation/reports",
+        {
+          query: {
+            limit: input.limit,
+            cursor: input.cursor,
+            status: input.status,
+            targetType: input.targetType,
+          },
+          ...requestOptions(optionsForRequest),
+        },
+      );
+    },
+    async getReport(input, optionsForRequest) {
+      const result = await requester.request<unknown>(
+        "/moderation/reports/" + encodeURIComponent(input.reportId),
+        requestOptions(optionsForRequest),
+      );
+      return unwrapResult<ClientModerationReport>(result, "report");
+    },
+    async updateReport(input, optionsForRequest) {
+      const { reportId, ...body } = input;
+      const result = await requester.request<unknown>(
+        "/moderation/reports/" + encodeURIComponent(reportId),
+        { method: "PATCH", body, ...requestOptions(optionsForRequest) },
+      );
+      return unwrapResult<ClientModerationReport>(result, "report");
+    },
+    async listBans(input = {}, optionsForRequest) {
+      return requester.request<{ bans: ClientUserBan[]; nextCursor: string | null }>(
+        "/moderation/bans",
+        {
+          query: {
+            limit: input.limit,
+            cursor: input.cursor,
+            activeOnly:
+              input.activeOnly === undefined ? undefined : input.activeOnly ? "true" : "false",
+          },
+          ...requestOptions(optionsForRequest),
+        },
+      );
+    },
+    async banUser(input, optionsForRequest) {
+      const result = await requester.request<unknown>("/moderation/bans", {
+        method: "POST",
+        body: input,
+        ...requestOptions(optionsForRequest),
+      });
+      return unwrapResult<ClientUserBan>(result, "ban");
+    },
+    async unbanUser(input, optionsForRequest) {
+      const result = await requester.request<unknown>(
+        "/moderation/bans/" + encodeURIComponent(input.banId),
+        { method: "DELETE", ...requestOptions(optionsForRequest) },
+      );
+      return unwrapResult<ClientUserBan>(result, "ban");
+    },
+  };
+
   const client: ChatClient = {
     conversations: conversationActions,
     messages: messageActions,
+    moderation: moderationActions,
     realtime,
     $store: cache,
     $getPluginState(id) {

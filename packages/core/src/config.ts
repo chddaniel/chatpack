@@ -5,6 +5,7 @@
  */
 
 import type { Conversation, Message, MessageRole, Metadata } from "./types";
+import type { ModerationAction } from "./moderation";
 import type { ChatpackPlugin } from "./plugin";
 import type { StorageAdapter } from "./storage";
 import type { Transport } from "./transport";
@@ -87,6 +88,18 @@ export interface PermissionHooks {
    */
   canInvite?: (ctx: PermissionContext) => Promise<boolean> | boolean;
 }
+
+/** Context passed to the host's moderator authorization hook. */
+export interface ModerationPermissionContext {
+  user: ChatpackUser;
+  action: ModerationAction;
+  targetUserId?: string;
+  reportId?: string;
+  banId?: string;
+}
+
+/** Host-owned authorization for moderation admin operations. */
+export type CanModerateHook = (ctx: ModerationPermissionContext) => Promise<boolean> | boolean;
 
 /**
  * Context passed to {@link MessageHooks.beforeMessageSend}. `body` is the
@@ -226,6 +239,11 @@ export interface ChatpackOptions {
   auth?: AuthHook;
   /** Permission overrides. Default: only the two participants can read/write. */
   permissions?: PermissionHooks;
+  /** Optional moderation configuration. Admin access is denied when omitted. */
+  moderation?: {
+    /** Authorizes moderator report and ban actions. */
+    canModerate?: CanModerateHook;
+  };
   /**
    * Message lifecycle hooks (`docs/decisions/0011` and `0014`): block or
    * rewrite messages before they persist, react after they do. Default: none.

@@ -6,6 +6,10 @@ import type {
   MessageReference,
   MessageWithDetails,
   Metadata,
+  ConversationMute,
+  ModerationReport,
+  UserBan,
+  UserBlock,
   Participant,
   ReactionSummary,
 } from "@chatpack/core";
@@ -41,6 +45,14 @@ export type ClientReactionSummary = Jsonify<ReactionSummary>;
 export type ClientParticipant = Jsonify<Participant>;
 /** Metadata shape returned over HTTP. */
 export type ClientMetadata = Jsonify<Metadata>;
+/** User block returned over HTTP. */
+export type ClientUserBlock = Jsonify<UserBlock>;
+/** Conversation mute returned over HTTP. */
+export type ClientConversationMute = Jsonify<ConversationMute>;
+/** Moderation report returned over HTTP. */
+export type ClientModerationReport = Jsonify<ModerationReport>;
+/** User ban returned over HTTP. */
+export type ClientUserBan = Jsonify<UserBan>;
 
 /** Paginated conversation response. */
 export interface ClientConversationPage {
@@ -51,6 +63,12 @@ export interface ClientConversationPage {
 /** Paginated message response, newest message first. */
 export interface ClientMessagePage {
   messages: ClientMessage[];
+  nextCursor: string | null;
+}
+
+/** Generic cursor-paginated moderation response. */
+export interface ClientModerationPage<T> {
+  items: T[];
   nextCursor: string | null;
 }
 
