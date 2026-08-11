@@ -46,6 +46,10 @@ description: What shipped in v0, what's deliberately out of scope, and where Cha
   message, not a thread tree: no thread ids, no per-thread reply counts, no
   nested pagination. See
   [Conversations & messages](/docs/concepts/conversations-messages).
+- **Message formatting** - `body` remains opaque text. Applications choose
+  plain text, Markdown, or another syntax and own safe parsing and rendering;
+  Chatpack does not parse Markdown or return rendered HTML. See
+  [ADR 0021](/docs/concepts/architecture).
 - **Push notification providers** - applications can start their own delivery
   work from `afterMessageMutation`, but Chatpack does not ship providers.
 - **React UI components** - Chatpack is headless; bring your own frontend.
