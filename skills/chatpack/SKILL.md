@@ -435,7 +435,7 @@ Moderation rules core enforces:
   client surfaces it as an error result, not an exception; a live EventSource is
   cut at the next heartbeat rather than instantly. Sign them out or show a
   blocked screen on that code - retrying is pointless until the ban is revoked.
-- **A block is not a ban.** It stops *new* direct conversations and direct
+- **A block is not a ban.** It stops _new_ direct conversations and direct
   message mutations both ways (403 `DIRECT_INTERACTION_BLOCKED`), but existing
   direct history stays readable, and it does nothing inside a shared group. Don't
   reach for `blockUser` to kick someone out of a channel - that's `removeParticipant`.
@@ -607,11 +607,11 @@ AND the Network tab must show it on `/api/chat/*` requests.
 | A channel was published but the directory is empty                               | Custom adapter stored `visibility` nowhere (the columns are part of the **required** contract, not the `channels` namespace), or its query filters on `visibility` without `type`.     |
 | Renaming happened by accident when flipping visibility                           | Custom adapter tried to write only the field it thought changed. Core sends all three already resolved against the current row - write all three.                                      |
 | A user can browse a channel but gets 403 reading it                              | Working as designed: discoverable is not readable. Call the join route first; there is no read-without-membership mode.                                                                |
-| 501 `MODERATION_UNSUPPORTED`                                                     | The storage adapter has no `moderation` capability. Both first-party adapters do; a custom one needs the whole namespace (blocks, mutes, reports, bans - all or nothing).               |
-| 403 `NOT_MODERATOR` for your admin                                               | `moderation.canModerate` is missing or returned false. It's your hook, not a Chatpack role - check `ctx.action` (`bans.create` etc.) if you're gating per action.                        |
-| A ban was created but the user keeps chatting                                    | Bans are only enforced when `moderation` is configured. If the row was written outside Chatpack (an admin dashboard), pass `moderation: { enforceBans: true }`.                          |
-| 403 `USER_BANNED` on a user you already unbanned                                 | A timed ban that hasn't expired, or a duplicate active row from a custom adapter whose `createBan` reads-then-inserts. Check `listBans({ activeOnly: true })`.                           |
-| 403 `DIRECT_INTERACTION_BLOCKED`                                                 | Either side blocked the other - it's symmetric. Existing DM history still reads fine, and groups are unaffected; this only stops direct writes and new DMs.                             |
+| 501 `MODERATION_UNSUPPORTED`                                                     | The storage adapter has no `moderation` capability. Both first-party adapters do; a custom one needs the whole namespace (blocks, mutes, reports, bans - all or nothing).              |
+| 403 `NOT_MODERATOR` for your admin                                               | `moderation.canModerate` is missing or returned false. It's your hook, not a Chatpack role - check `ctx.action` (`bans.create` etc.) if you're gating per action.                      |
+| A ban was created but the user keeps chatting                                    | Bans are only enforced when `moderation` is configured. If the row was written outside Chatpack (an admin dashboard), pass `moderation: { enforceBans: true }`.                        |
+| 403 `USER_BANNED` on a user you already unbanned                                 | A timed ban that hasn't expired, or a duplicate active row from a custom adapter whose `createBan` reads-then-inserts. Check `listBans({ activeOnly: true })`.                         |
+| 403 `DIRECT_INTERACTION_BLOCKED`                                                 | Either side blocked the other - it's symmetric. Existing DM history still reads fine, and groups are unaffected; this only stops direct writes and new DMs.                            |
 | 400 `INVALID_INPUT` sending an image with no caption                             | `body` is required and non-empty after trimming; attachments never substitute for it. Synthesize a body (a space won't do - it's trimmed).                                             |
 | Chrome uploads fail as `CLIENT_NETWORK_ERROR` with no request in the Network tab | `@filepack/client` ≤ 0.1.1 calls an unbound `globalThis.fetch` ("Illegal invocation"). Pass `controlFetch: (input, init) => fetch(input, init)` to `createChatpackFileClient`.         |
 

@@ -156,36 +156,36 @@ edited parent's excerpt is never stale.
 The same task, from both sides - `chat.api.*` in server code, the REST route
 from a browser/client:
 
-| I want to...                    | Server (`chat.api.*`)                    | HTTP                                             |
-| ------------------------------- | ---------------------------------------- | ------------------------------------------------ |
-| Start a chat with someone       | `getOrCreateConversation`                | `POST /conversations`                            |
-| Start a group                   | `createGroupConversation`                | `POST /conversations/group`                      |
-| Show the inbox / sidebar        | `listConversations`                      | `GET /conversations`                             |
-| Open one conversation           | `getConversation`                        | `GET /conversations/:id`                         |
-| Rename a group                  | `updateConversation`                     | `PATCH /conversations/:id`                       |
-| Publish a group as a channel    | `updateConversation`                     | `PATCH /conversations/:id`                       |
-| Add members                     | `addParticipants`                        | `POST /conversations/:id/participants`           |
-| Remove a member / leave         | `removeParticipant`                      | `DELETE /conversations/:id/participants`         |
-| Promote or demote               | `setParticipantRole`                     | `PATCH /conversations/:id/participants`          |
-| Load history / scroll back      | `listMessages`                           | `GET /conversations/:id/messages`                |
-| Send a message                  | `sendMessage`                            | `POST /conversations/:id/messages`               |
-| Edit / delete my message        | `editMessage`, `deleteMessage`           | `PATCH` / `DELETE /messages/:id`                 |
-| React / un-react                | `addReaction`, `removeReaction`          | `POST` / `DELETE /messages/:id/reactions`        |
-| Mark a conversation read        | `markRead`                               | `POST /conversations/:id/read`                   |
-| Mint an invite link             | `createInvite`                           | `POST /conversations/:id/invites`                |
-| List / revoke invites           | `listInvites`, `revokeInvite`            | `GET` / `DELETE /conversations/:id/invites`      |
-| Show a link's landing page      | `getInvitePreview`                       | `GET /invites/:code`                             |
-| Join via a link                 | `acceptInvite`                           | `POST /invites/:code/accept`                     |
-| Ask to join a group             | `requestToJoin`                          | `POST /conversations/:id/join-requests`          |
-| Work the approval queue         | `listJoinRequests`, `resolveJoinRequest` | `GET` / `PATCH /conversations/:id/join-requests` |
-| Browse public channels          | `listPublicConversations`                | `GET /channels`                                  |
-| Join a public channel           | `joinConversation`                       | `POST /conversations/:id/join`                   |
-| Block / unblock a user          | `moderation.blockUser`, `unblockUser`    | `POST` / `DELETE /moderation/blocks`             |
-| Mute / unmute a conversation    | `moderation.muteConversation`, `unmuteConversation` | `POST` / `DELETE /moderation/mutes`   |
-| Report abuse                    | `moderation.report`                      | `POST /moderation/reports`                       |
-| Work the report queue           | `moderation.listReports`, `updateReport` | `GET /moderation/reports`, `PATCH /moderation/reports/:id` |
-| Ban / unban a user              | `moderation.banUser`, `unbanUser`        | `POST /moderation/bans`, `DELETE /moderation/bans/:id` |
-| Get live updates in the browser | - (server-sent events)                   | `GET /stream` via `EventSource`                  |
+| I want to...                    | Server (`chat.api.*`)                               | HTTP                                                       |
+| ------------------------------- | --------------------------------------------------- | ---------------------------------------------------------- |
+| Start a chat with someone       | `getOrCreateConversation`                           | `POST /conversations`                                      |
+| Start a group                   | `createGroupConversation`                           | `POST /conversations/group`                                |
+| Show the inbox / sidebar        | `listConversations`                                 | `GET /conversations`                                       |
+| Open one conversation           | `getConversation`                                   | `GET /conversations/:id`                                   |
+| Rename a group                  | `updateConversation`                                | `PATCH /conversations/:id`                                 |
+| Publish a group as a channel    | `updateConversation`                                | `PATCH /conversations/:id`                                 |
+| Add members                     | `addParticipants`                                   | `POST /conversations/:id/participants`                     |
+| Remove a member / leave         | `removeParticipant`                                 | `DELETE /conversations/:id/participants`                   |
+| Promote or demote               | `setParticipantRole`                                | `PATCH /conversations/:id/participants`                    |
+| Load history / scroll back      | `listMessages`                                      | `GET /conversations/:id/messages`                          |
+| Send a message                  | `sendMessage`                                       | `POST /conversations/:id/messages`                         |
+| Edit / delete my message        | `editMessage`, `deleteMessage`                      | `PATCH` / `DELETE /messages/:id`                           |
+| React / un-react                | `addReaction`, `removeReaction`                     | `POST` / `DELETE /messages/:id/reactions`                  |
+| Mark a conversation read        | `markRead`                                          | `POST /conversations/:id/read`                             |
+| Mint an invite link             | `createInvite`                                      | `POST /conversations/:id/invites`                          |
+| List / revoke invites           | `listInvites`, `revokeInvite`                       | `GET` / `DELETE /conversations/:id/invites`                |
+| Show a link's landing page      | `getInvitePreview`                                  | `GET /invites/:code`                                       |
+| Join via a link                 | `acceptInvite`                                      | `POST /invites/:code/accept`                               |
+| Ask to join a group             | `requestToJoin`                                     | `POST /conversations/:id/join-requests`                    |
+| Work the approval queue         | `listJoinRequests`, `resolveJoinRequest`            | `GET` / `PATCH /conversations/:id/join-requests`           |
+| Browse public channels          | `listPublicConversations`                           | `GET /channels`                                            |
+| Join a public channel           | `joinConversation`                                  | `POST /conversations/:id/join`                             |
+| Block / unblock a user          | `moderation.blockUser`, `unblockUser`               | `POST` / `DELETE /moderation/blocks`                       |
+| Mute / unmute a conversation    | `moderation.muteConversation`, `unmuteConversation` | `POST` / `DELETE /moderation/mutes`                        |
+| Report abuse                    | `moderation.report`                                 | `POST /moderation/reports`                                 |
+| Work the report queue           | `moderation.listReports`, `updateReport`            | `GET /moderation/reports`, `PATCH /moderation/reports/:id` |
+| Ban / unban a user              | `moderation.banUser`, `unbanUser`                   | `POST /moderation/bans`, `DELETE /moderation/bans/:id`     |
+| Get live updates in the browser | - (server-sent events)                              | `GET /stream` via `EventSource`                            |
 
 > **Pagination vs gap-fill - don't mix them up.** Infinite scroll ("load
 > older messages") is `listMessages` with the `nextCursor` from the previous

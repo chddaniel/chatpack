@@ -16,20 +16,20 @@ Errors are JSON with the shape:
 
 Statuses are mapped from the code:
 
-| Status | Code(s)                                                                                                                    | When                                                                           |
-| ------ | -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
-| 401    | `UNAUTHENTICATED`                                                                                                          | `auth` returned `null` (or a non-`ChatpackUser`)                               |
-| 400    | `INVALID_INPUT`                                                                                                            | bad body/query params                                                          |
-| 403    | `FORBIDDEN_READ`, `FORBIDDEN_WRITE`, `NOT_MESSAGE_SENDER`, `NOT_CONVERSATION_ADMIN`                                        | not allowed                                                                    |
-| 403    | `NOT_PUBLIC_CONVERSATION`                                                                                                  | joining a group whose `visibility` is still `private`                          |
-| 403    | `USER_BANNED`, `NOT_MODERATOR`, `DIRECT_INTERACTION_BLOCKED`                                                               | [moderation](/docs/reference/rest-api#moderation-routes) said no               |
-| 404    | `CONVERSATION_NOT_FOUND`, `MESSAGE_NOT_FOUND`, `INVITE_NOT_FOUND`, `JOIN_REQUEST_NOT_FOUND`, `REPORT_NOT_FOUND`, `BAN_NOT_FOUND`, `NOT_FOUND` | missing resource/route                                     |
-| 409    | `MESSAGE_DELETED`, `NOT_GROUP_CONVERSATION`, `LAST_ADMIN_REMAINING`, `ALREADY_PARTICIPANT`                                  | the resource is in the wrong state for the operation                           |
-| 410    | `INVITE_EXPIRED`                                                                                                           | the link existed but is past `expiresAt` or out of uses - ask for a new one     |
-| 422    | `MESSAGE_REJECTED`                                                                                                         | a [`beforeMessageSend` hook](/docs/concepts/message-hooks) refused the message |
-| 422    | `GROUP_LIMIT_EXCEEDED`, `INVITE_LIMIT_EXCEEDED`                                                                             | the group would exceed 256 participants / the group already has 50 invites      |
-| 500    | `INTERNAL_ERROR`                                                                                                           | unexpected server error (opaque)                                               |
-| 501    | `SEARCH_UNSUPPORTED`, `INVITES_UNSUPPORTED`, `CHANNELS_UNSUPPORTED`, `MODERATION_UNSUPPORTED`                                | the configured storage adapter lacks that optional capability                   |
+| Status | Code(s)                                                                                                                                       | When                                                                           |
+| ------ | --------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------ |
+| 401    | `UNAUTHENTICATED`                                                                                                                             | `auth` returned `null` (or a non-`ChatpackUser`)                               |
+| 400    | `INVALID_INPUT`                                                                                                                               | bad body/query params                                                          |
+| 403    | `FORBIDDEN_READ`, `FORBIDDEN_WRITE`, `NOT_MESSAGE_SENDER`, `NOT_CONVERSATION_ADMIN`                                                           | not allowed                                                                    |
+| 403    | `NOT_PUBLIC_CONVERSATION`                                                                                                                     | joining a group whose `visibility` is still `private`                          |
+| 403    | `USER_BANNED`, `NOT_MODERATOR`, `DIRECT_INTERACTION_BLOCKED`                                                                                  | [moderation](/docs/reference/rest-api#moderation-routes) said no               |
+| 404    | `CONVERSATION_NOT_FOUND`, `MESSAGE_NOT_FOUND`, `INVITE_NOT_FOUND`, `JOIN_REQUEST_NOT_FOUND`, `REPORT_NOT_FOUND`, `BAN_NOT_FOUND`, `NOT_FOUND` | missing resource/route                                                         |
+| 409    | `MESSAGE_DELETED`, `NOT_GROUP_CONVERSATION`, `LAST_ADMIN_REMAINING`, `ALREADY_PARTICIPANT`                                                    | the resource is in the wrong state for the operation                           |
+| 410    | `INVITE_EXPIRED`                                                                                                                              | the link existed but is past `expiresAt` or out of uses - ask for a new one    |
+| 422    | `MESSAGE_REJECTED`                                                                                                                            | a [`beforeMessageSend` hook](/docs/concepts/message-hooks) refused the message |
+| 422    | `GROUP_LIMIT_EXCEEDED`, `INVITE_LIMIT_EXCEEDED`                                                                                               | the group would exceed 256 participants / the group already has 50 invites     |
+| 500    | `INTERNAL_ERROR`                                                                                                                              | unexpected server error (opaque)                                               |
+| 501    | `SEARCH_UNSUPPORTED`, `INVITES_UNSUPPORTED`, `CHANNELS_UNSUPPORTED`, `MODERATION_UNSUPPORTED`                                                 | the configured storage adapter lacks that optional capability                  |
 
 The three group-specific codes are worth knowing before you hit them:
 `NOT_CONVERSATION_ADMIN` means `canManage` said no (default: you're not an

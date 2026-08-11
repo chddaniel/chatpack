@@ -137,7 +137,9 @@ describe("moderation", () => {
       expiresAt: null,
     });
 
-    const response = await chat.handler().fetch(new Request("http://chat.test/api/chat/conversations"));
+    const response = await chat
+      .handler()
+      .fetch(new Request("http://chat.test/api/chat/conversations"));
     expect(response.status).toBe(200);
     expect(lookups()).toBe(0);
   });
@@ -157,7 +159,9 @@ describe("moderation", () => {
       expiresAt: null,
     });
 
-    const response = await chat.handler().fetch(new Request("http://chat.test/api/chat/conversations"));
+    const response = await chat
+      .handler()
+      .fetch(new Request("http://chat.test/api/chat/conversations"));
     expect(response.status).toBe(403);
     expect(await response.json()).toMatchObject({ error: { code: "USER_BANNED" } });
     expect(lookups()).toBeGreaterThan(0);

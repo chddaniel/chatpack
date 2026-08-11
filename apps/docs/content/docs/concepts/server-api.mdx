@@ -47,21 +47,21 @@ enforces the same permissions.
 
 Moderation lives in its own namespace, `chat.api.moderation.*`:
 
-| Method                                    | What it does                                                                                     |
-| ----------------------------------------- | ------------------------------------------------------------------------------------------------ |
-| `moderation.blockUser`                    | Block another user; idempotent, self-service                                                      |
-| `moderation.unblockUser`                  | Lift your own block; idempotent                                                                   |
-| `moderation.listBlockedUsers`             | Who you've blocked, cursor-paginated                                                              |
-| `moderation.muteConversation`             | Mute a conversation for yourself - a UI hint, not a server-side filter                            |
-| `moderation.unmuteConversation`           | Unmute; idempotent                                                                                |
-| `moderation.listMutedConversations`       | Your mutes, cursor-paginated                                                                      |
-| `moderation.report`                       | Report a `user`, `message`, or `conversation`; reuses an open/triaged report for the same target   |
-| `moderation.listReports`                  | The report queue, filterable by status and target type (`canModerate`)                             |
-| `moderation.getReport`                    | One report with its immutable evidence (`canModerate`)                                             |
-| `moderation.updateReport`                 | Move a report to `triaged` / `resolved` / `dismissed`, with a note (`canModerate`)                  |
-| `moderation.listBans`                     | Bans, active-only or the whole audit history (`canModerate`)                                       |
-| `moderation.banUser`                      | Ban a user, permanently or until `expiresAt`; returns the existing active ban if there is one (`canModerate`) |
-| `moderation.unbanUser`                    | Revoke a ban, keeping the row for audit (`canModerate`)                                             |
+| Method                              | What it does                                                                                                  |
+| ----------------------------------- | ------------------------------------------------------------------------------------------------------------- |
+| `moderation.blockUser`              | Block another user; idempotent, self-service                                                                  |
+| `moderation.unblockUser`            | Lift your own block; idempotent                                                                               |
+| `moderation.listBlockedUsers`       | Who you've blocked, cursor-paginated                                                                          |
+| `moderation.muteConversation`       | Mute a conversation for yourself - a UI hint, not a server-side filter                                        |
+| `moderation.unmuteConversation`     | Unmute; idempotent                                                                                            |
+| `moderation.listMutedConversations` | Your mutes, cursor-paginated                                                                                  |
+| `moderation.report`                 | Report a `user`, `message`, or `conversation`; reuses an open/triaged report for the same target              |
+| `moderation.listReports`            | The report queue, filterable by status and target type (`canModerate`)                                        |
+| `moderation.getReport`              | One report with its immutable evidence (`canModerate`)                                                        |
+| `moderation.updateReport`           | Move a report to `triaged` / `resolved` / `dismissed`, with a note (`canModerate`)                            |
+| `moderation.listBans`               | Bans, active-only or the whole audit history (`canModerate`)                                                  |
+| `moderation.banUser`                | Ban a user, permanently or until `expiresAt`; returns the existing active ban if there is one (`canModerate`) |
+| `moderation.unbanUser`              | Revoke a ban, keeping the row for audit (`canModerate`)                                                       |
 
 The four group-management methods work on `type: "group"` conversations only;
 calling one with a DM's id throws `NOT_GROUP_CONVERSATION`. All four return the
@@ -93,37 +93,37 @@ call and 403s every route; see
 The same task, from both sides - `chat.api.*` in server code, the REST route
 from a browser or HTTP client:
 
-| I want to...                    | Server (`chat.api.*`)                    | HTTP                                             |
-| ------------------------------- | ---------------------------------------- | ------------------------------------------------ |
-| Start a chat with someone       | `getOrCreateConversation`                | `POST /conversations`                            |
-| Start a group                   | `createGroupConversation`                | `POST /conversations/group`                      |
-| Show the inbox / sidebar        | `listConversations`                      | `GET /conversations`                             |
-| Open one conversation           | `getConversation`                        | `GET /conversations/:id`                         |
-| Rename a group                  | `updateConversation`                     | `PATCH /conversations/:id`                       |
-| Add members                     | `addParticipants`                        | `POST /conversations/:id/participants`           |
-| Remove a member / leave         | `removeParticipant`                      | `DELETE /conversations/:id/participants`         |
-| Promote or demote               | `setParticipantRole`                     | `PATCH /conversations/:id/participants`          |
-| Load history / scroll back      | `listMessages`                           | `GET /conversations/:id/messages`                |
-| Search messages                 | `searchMessages`                         | `GET /search/messages?q=...`                     |
-| Send a message                  | `sendMessage`                            | `POST /conversations/:id/messages`               |
-| Edit / delete my message        | `editMessage`, `deleteMessage`           | `PATCH` / `DELETE /messages/:id`                 |
-| React / un-react                | `addReaction`, `removeReaction`          | `POST` / `DELETE /messages/:id/reactions`        |
-| Mark a conversation read        | `markRead`                               | `POST /conversations/:id/read`                   |
-| Mint an invite link             | `createInvite`                           | `POST /conversations/:id/invites`                |
-| List / revoke invites           | `listInvites`, `revokeInvite`            | `GET` / `DELETE /conversations/:id/invites`      |
-| Show a link's landing page      | `getInvitePreview`                       | `GET /invites/:code`                             |
-| Join via a link                 | `acceptInvite`                           | `POST /invites/:code/accept`                     |
-| Ask to join a group             | `requestToJoin`                          | `POST /conversations/:id/join-requests`          |
-| Work the approval queue         | `listJoinRequests`, `resolveJoinRequest` | `GET` / `PATCH /conversations/:id/join-requests` |
-| Publish a group as a channel    | `updateConversation`                     | `PATCH /conversations/:id`                       |
-| Browse public channels          | `listPublicConversations`                | `GET /channels`                                  |
-| Join a channel                  | `joinConversation`                       | `POST /conversations/:id/join`                   |
-| Block / unblock a user          | `moderation.blockUser`, `unblockUser`    | `POST` / `DELETE /moderation/blocks`             |
-| Mute / unmute a conversation    | `moderation.muteConversation`, `unmuteConversation` | `POST` / `DELETE /moderation/mutes`   |
-| Report abuse                    | `moderation.report`                      | `POST /moderation/reports`                       |
-| Work the report queue           | `moderation.listReports`, `updateReport` | `GET /moderation/reports`, `PATCH /moderation/reports/:id` |
-| Ban / unban a user              | `moderation.banUser`, `unbanUser`        | `POST /moderation/bans`, `DELETE /moderation/bans/:id` |
-| Get live updates in the browser | - (server-sent events)                   | `GET /stream` via `EventSource`                  |
+| I want to...                    | Server (`chat.api.*`)                               | HTTP                                                       |
+| ------------------------------- | --------------------------------------------------- | ---------------------------------------------------------- |
+| Start a chat with someone       | `getOrCreateConversation`                           | `POST /conversations`                                      |
+| Start a group                   | `createGroupConversation`                           | `POST /conversations/group`                                |
+| Show the inbox / sidebar        | `listConversations`                                 | `GET /conversations`                                       |
+| Open one conversation           | `getConversation`                                   | `GET /conversations/:id`                                   |
+| Rename a group                  | `updateConversation`                                | `PATCH /conversations/:id`                                 |
+| Add members                     | `addParticipants`                                   | `POST /conversations/:id/participants`                     |
+| Remove a member / leave         | `removeParticipant`                                 | `DELETE /conversations/:id/participants`                   |
+| Promote or demote               | `setParticipantRole`                                | `PATCH /conversations/:id/participants`                    |
+| Load history / scroll back      | `listMessages`                                      | `GET /conversations/:id/messages`                          |
+| Search messages                 | `searchMessages`                                    | `GET /search/messages?q=...`                               |
+| Send a message                  | `sendMessage`                                       | `POST /conversations/:id/messages`                         |
+| Edit / delete my message        | `editMessage`, `deleteMessage`                      | `PATCH` / `DELETE /messages/:id`                           |
+| React / un-react                | `addReaction`, `removeReaction`                     | `POST` / `DELETE /messages/:id/reactions`                  |
+| Mark a conversation read        | `markRead`                                          | `POST /conversations/:id/read`                             |
+| Mint an invite link             | `createInvite`                                      | `POST /conversations/:id/invites`                          |
+| List / revoke invites           | `listInvites`, `revokeInvite`                       | `GET` / `DELETE /conversations/:id/invites`                |
+| Show a link's landing page      | `getInvitePreview`                                  | `GET /invites/:code`                                       |
+| Join via a link                 | `acceptInvite`                                      | `POST /invites/:code/accept`                               |
+| Ask to join a group             | `requestToJoin`                                     | `POST /conversations/:id/join-requests`                    |
+| Work the approval queue         | `listJoinRequests`, `resolveJoinRequest`            | `GET` / `PATCH /conversations/:id/join-requests`           |
+| Publish a group as a channel    | `updateConversation`                                | `PATCH /conversations/:id`                                 |
+| Browse public channels          | `listPublicConversations`                           | `GET /channels`                                            |
+| Join a channel                  | `joinConversation`                                  | `POST /conversations/:id/join`                             |
+| Block / unblock a user          | `moderation.blockUser`, `unblockUser`               | `POST` / `DELETE /moderation/blocks`                       |
+| Mute / unmute a conversation    | `moderation.muteConversation`, `unmuteConversation` | `POST` / `DELETE /moderation/mutes`                        |
+| Report abuse                    | `moderation.report`                                 | `POST /moderation/reports`                                 |
+| Work the report queue           | `moderation.listReports`, `updateReport`            | `GET /moderation/reports`, `PATCH /moderation/reports/:id` |
+| Ban / unban a user              | `moderation.banUser`, `unbanUser`                   | `POST /moderation/bans`, `DELETE /moderation/bans/:id`     |
+| Get live updates in the browser | - (server-sent events)                              | `GET /stream` via `EventSource`                            |
 
 ## Usage
 
