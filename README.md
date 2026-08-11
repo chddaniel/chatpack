@@ -460,8 +460,10 @@ Group management is wrapped too (client 0.5.0+): `conversations.createGroup`,
 `addParticipants`, `removeParticipant` (your own id = leave),
 `setParticipantRole`, and `update` for renames - and membership events keep
 the cache in sync, including dropping a conversation you were removed from.
-Invites, join requests, and channels are **not** wrapped yet; call those ten
-routes with `fetch` and refetch afterwards.
+Invites, join requests, and channels are wrapped by `chatClient.invites`,
+`chatClient.joinRequests`, and `chatClient.channels`. Invite and channel joins
+return either a joined conversation or a pending request; expected HTTP failures
+remain structured client results.
 
 See [`@chatpack/client`](./packages/client) for the framework-agnostic API,
 React hooks, the polling fallback, and client plugin usage.
