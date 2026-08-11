@@ -63,20 +63,18 @@ const result = await chatClient.conversations.list();
 
 `@chatpack/client/react` adds `useConversations`, `useConversation`,
 `useMessages`, `useMessageSearch`, `useRealtimeStatus`, and first-party plugin hooks. It uses
-`useSyncExternalStore` and has no state-library dependency.
-
-The invite, join-request, and channel routes have no client wrappers yet - call
-them with `fetch` against the REST contract
-([invites](/docs/reference/rest-api#invite--join-request-routes),
-[channels](/docs/reference/rest-api#channel-routes)). Redeeming an invite or
-joining a channel publishes the same `participant.added` event the group
-mutations do, so the conversation list updates itself.
+`useSyncExternalStore` and has no state-library dependency. Invite, join-request,
+and channel actions are imperative client methods; they do not add new React
+cache queries.
 
 | Export                           | What it is                                                                                                          |
 | -------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
 | `createChatClient(options?)`     | One per-application client instance                                                                                 |
 | `conversations` / `messages`     | Typed REST namespaces with `{ data, error }` results                                                                |
 | `conversations.createGroup` etc. | The five group mutations (create, add/remove participant, set role, rename) - membership events update the cache    |
+| `invites`                        | Create, list, revoke, preview, and accept invite links                                                              |
+| `joinRequests`                   | Create, list, approve, and deny join requests                                                                       |
+| `channels`                       | List public-channel previews and join channels                                                                      |
 | `messages.react` / `unreact`     | Idempotent reaction writes; return the message's complete reaction set                                              |
 | `messages.search`                | Participant-scoped, whole-token, relevance-ranked message search                                                    |
 | `realtime`                       | One lazy EventSource with durable deduplication                                                                     |

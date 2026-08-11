@@ -1616,6 +1616,84 @@ describe("public channels on Postgres (ADR 0020)", () => {
   });
 });
 
+describe("moderation on Postgres", () => {
+  it("persists blocks, reports, workflow updates, and ban revocation", async () => {
+    const staffChat = chatpack({
+      storage: drizzleAdapter(db),
+      telemetry: false,
+      moderation: { canModerate: ({ user }) => user.id === "staff" },
+    });
+    const direct = await staffChat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "bob",
+    });
+    const message = await staffChat.api.sendMessage({
+      userId: "bob",
+      conversationId: direct.id,
+      body: "abuse",
+    });
+
+    await staffChat.api.moderation.blockUser({ userId: "alice", targetUserId: "bob" });
+    expect(
+      (await staffChat.api.moderation.listBlockedUsers({ userId: "alice" })).blocks,
+    ).toHaveLength(1);
+
+    const report = await staffChat.api.moderation.report({
+      userId: "alice",
+      targetType: "message",
+      targetId: message.id,
+      reason: "abuse",
+    });
+    expect(report.evidence).toMatchObject({ body: "abuse", senderId: "bob" });
+    await staffChat.api.moderation.updateReport({
+      userId: "staff",
+      reportId: report.id,
+      status: "resolved",
+    });
+
+    const ban = await staffChat.api.moderation.banUser({
+      userId: "staff",
+      targetUserId: "bob",
+      reason: "abuse",
+    });
+    await expect(staffChat.api.listConversations({ userId: "bob" })).rejects.toMatchObject({
+      code: "USER_BANNED",
+    });
+    await staffChat.api.moderation.unbanUser({ userId: "staff", banId: ban.id });
+    await expect(staffChat.api.listConversations({ userId: "bob" })).resolves.toBeDefined();
+  });
+
+  it("keeps one active ban when two moderators ban the same user at once", async () => {
+    const staffChat = chatpack({
+      storage: drizzleAdapter(db),
+      telemetry: false,
+      moderation: { canModerate: () => true },
+    });
+
+    const [first, second] = await Promise.all([
+      staffChat.api.moderation.banUser({ userId: "staff", targetUserId: "troll", reason: "spam" }),
+      staffChat.api.moderation.banUser({ userId: "other", targetUserId: "troll", reason: "spam" }),
+    ]);
+    expect(second.id).toBe(first.id);
+
+    const listed = await staffChat.api.moderation.listBans({ userId: "staff", activeOnly: false });
+    expect(listed.bans).toHaveLength(1);
+
+    // Revoking the only ban a moderator can see must actually lift it - with a
+    // duplicate row the second ban would keep enforcing invisibly.
+    await staffChat.api.moderation.unbanUser({ userId: "staff", banId: first.id });
+    await expect(staffChat.api.listConversations({ userId: "troll" })).resolves.toBeDefined();
+
+    // A fresh ban after the first is revoked still works: the guard keys on
+    // "active", not on "has ever been banned".
+    const again = await staffChat.api.moderation.banUser({
+      userId: "staff",
+      targetUserId: "troll",
+    });
+    expect(again.id).not.toBe(first.id);
+  });
+});
+
 describe("upgrading a pre-ADR-0013 database", () => {
   it("adds reply_to_message_id and the reactions table to an existing schema", async () => {
     const legacy = new PGlite();

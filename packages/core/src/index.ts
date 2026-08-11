@@ -69,6 +69,8 @@ export type {
   AfterMessageMutationContext,
   AfterMessageSendContext,
   MessageMutationAction,
+  ModerationPermissionContext,
+  CanModerateHook,
 } from "./config";
 
 // Domain types
@@ -94,6 +96,13 @@ export type {
   ChannelJoinPolicy,
   ChannelPreview,
   ChannelVisibility,
+  UserBlock,
+  ConversationMute,
+  ReportTargetType,
+  ReportStatus,
+  ReportEvidence,
+  ModerationReport,
+  UserBan,
 } from "./types";
 
 // Storage adapter contract (for adapter authors)
@@ -131,7 +140,34 @@ export type {
   ChannelStorage,
   ListPublicConversationsInput,
   ListPublicConversationsResult,
+  ModerationStorage,
+  ModerationPage,
+  BlockUserInput as StorageBlockUserInput,
+  ListBlocksInput,
+  MuteConversationInput as StorageMuteConversationInput,
+  ListMutesInput,
+  CreateReportInput,
+  ListReportsInput as StorageListReportsInput,
+  UpdateReportInput as StorageUpdateReportInput,
+  CreateBanInput,
+  ListBansInput as StorageListBansInput,
+  RevokeBanInput,
 } from "./storage";
+
+// Moderation API contracts
+export type {
+  ModerationAction,
+  ModerationApi,
+  BlockUserInput,
+  ListModerationInput,
+  MuteConversationInput,
+  ReportInput,
+  ListReportsInput,
+  UpdateReportInput,
+  BanUserInput,
+  ListBansInput,
+  UnbanUserInput,
+} from "./moderation";
 
 // Canonical message-search semantics for first-party adapters.
 export { countSearchTokens, getSearchTerms, scoreSearchTerms, tokenizeSearch } from "./search";

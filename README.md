@@ -305,6 +305,36 @@ stranger in a queue is recoverable and a stranger in the room isn't).
 **Discoverable is not readable**: browsing grants nothing, so reading the
 transcript still means joining first.
 
+Letting strangers in needs the other half too, so `/moderation/*` covers blocks,
+mutes, reports, and bans. Blocking, muting, and filing a report are
+self-service:
+
+```sh
+curl -X POST /api/chat/moderation/blocks \
+  -H 'content-type: application/json' \
+  -d '{"targetUserId": "bob"}'
+```
+
+A block stops new DMs and direct writes **both ways** while leaving the existing
+history readable, and does nothing inside a shared group. A mute is a hint for
+your own UI - unread counts and SSE delivery don't change. The report queue and
+the ban routes are for your moderators, so they need a hook:
+
+```ts
+chatpack({
+  storage,
+  auth,
+  moderation: { canModerate: ({ user }) => user.role === "staff" },
+});
+```
+
+Without it, `GET /moderation/reports` and every ban route answer `403
+NOT_MODERATOR`. With it, an active ban is checked **before routing** - a banned
+user gets `403 USER_BANNED` on every route including `/stream`. Configuring
+`moderation` at all is what switches that enforcement on, so an app that doesn't
+use bans pays no per-request lookup; add `enforceBans: true` if ban rows are
+written outside Chatpack.
+
 Send a message - note the field is **`body`**:
 
 ```sh
@@ -460,8 +490,12 @@ Group management is wrapped too (client 0.5.0+): `conversations.createGroup`,
 `addParticipants`, `removeParticipant` (your own id = leave),
 `setParticipantRole`, and `update` for renames - and membership events keep
 the cache in sync, including dropping a conversation you were removed from.
-Invites, join requests, and channels are **not** wrapped yet; call those ten
-routes with `fetch` and refetch afterwards.
+Invites, join requests, and channels are wrapped by `chatClient.invites`,
+`chatClient.joinRequests`, and `chatClient.channels`. Invite and channel joins
+return either a joined conversation or a pending request; expected HTTP failures
+remain structured client results. `chatClient.moderation` wraps all thirteen
+moderation calls the same way - note that none of them touch the query cache, so
+refetch the lists you show after a block or a mute.
 
 See [`@chatpack/client`](./packages/client) for the framework-agnostic API,
 React hooks, the polling fallback, and client plugin usage.
@@ -591,7 +625,9 @@ That's it. Only participants can read or write - enforced by default,
 customizable via the `permissions` hooks (`canRead`, `canWrite`, `canManage` for
 the group-management methods including publishing a channel, and `canInvite` for
 minting links - the last two default to admins only, and browsing or joining a
-public channel is gated by neither). Need content
+public channel is gated by neither). Platform-wide moderators are a separate
+hook, `moderation: { canModerate }`, because being an admin of one conversation
+shouldn't open the report queue for all of them. Need content
 rules (length caps, profanity filters) or post-send side-effects? Add
 `hooks: { beforeMessageSend, afterMessageMutation }` - block or rewrite a
 message before it persists, react after send/edit/delete persistence (see [`@chatpack/core`'s
@@ -712,31 +748,32 @@ Want to write your own plugin? The seam is public - see `ChatpackPlugin` in
 
 ## What's in v0
 
-| Feature                                 | Status            |
-| --------------------------------------- | ----------------- |
-| 1:1 conversations (find-or-create)      | ✅ Done (M1)      |
-| Text messages: send, list, edit, delete | ✅ Done (M1)      |
-| Participant-only permissions + hooks    | ✅ Done (M1)      |
-| Durable read-state (`last_read`)        | ✅ Done (M1)      |
-| In-memory storage adapter               | ✅ Done (M1)      |
-| HTTP handler (Next.js App Router)       | ✅ Done (M2)      |
-| Real-time delivery (SSE)                | ✅ Done (M3)      |
-| SSE reconnect gap-fill                  | ✅ Done (M3)      |
-| Drizzle/Postgres adapter                | ✅ Done (M4)      |
-| Launch polish + npm release             | ✅ Done (M5)      |
-| Typing / presence / read-tick plugins   | ✅ Done (v0.next) |
-| Unread counts (`unreadCount`)           | ✅ Done (v0.next) |
-| Redis transport (multi-node SSE)        | ✅ Done (v0.next) |
-| Browser client + React hooks            | ✅ Done (v0.next) |
-| Client polling fallback                 | ✅ Done (v0.next) |
-| Reactions + quote-replies               | ✅ Done (v0.next) |
-| Participant-scoped message search       | ✅ Done (v0.next) |
-| Post-persistence message mutation hook  | ✅ Done (v0.next) |
-| `@chatpack/cli init`                    | ✅ Done (v0.next) |
-| Group chats: membership, roles, admin   | ✅ Done (v0.next) |
-| File attachments (`@chatpack/file`)     | ✅ Done (v0.next) |
-| Invite links + join requests            | ✅ Done (v0.next) |
-| Public channels (browsable directory)   | ✅ Done (v0.next) |
+| Feature                                  | Status            |
+| ---------------------------------------- | ----------------- |
+| 1:1 conversations (find-or-create)       | ✅ Done (M1)      |
+| Text messages: send, list, edit, delete  | ✅ Done (M1)      |
+| Participant-only permissions + hooks     | ✅ Done (M1)      |
+| Durable read-state (`last_read`)         | ✅ Done (M1)      |
+| In-memory storage adapter                | ✅ Done (M1)      |
+| HTTP handler (Next.js App Router)        | ✅ Done (M2)      |
+| Real-time delivery (SSE)                 | ✅ Done (M3)      |
+| SSE reconnect gap-fill                   | ✅ Done (M3)      |
+| Drizzle/Postgres adapter                 | ✅ Done (M4)      |
+| Launch polish + npm release              | ✅ Done (M5)      |
+| Typing / presence / read-tick plugins    | ✅ Done (v0.next) |
+| Unread counts (`unreadCount`)            | ✅ Done (v0.next) |
+| Redis transport (multi-node SSE)         | ✅ Done (v0.next) |
+| Browser client + React hooks             | ✅ Done (v0.next) |
+| Client polling fallback                  | ✅ Done (v0.next) |
+| Reactions + quote-replies                | ✅ Done (v0.next) |
+| Participant-scoped message search        | ✅ Done (v0.next) |
+| Post-persistence message mutation hook   | ✅ Done (v0.next) |
+| `@chatpack/cli init`                     | ✅ Done (v0.next) |
+| Group chats: membership, roles, admin    | ✅ Done (v0.next) |
+| File attachments (`@chatpack/file`)      | ✅ Done (v0.next) |
+| Invite links + join requests             | ✅ Done (v0.next) |
+| Public channels (browsable directory)    | ✅ Done (v0.next) |
+| Moderation: blocks, mutes, reports, bans | ✅ Done (v1.next) |
 
 Push notification providers, reusable UI components, true message threads,
 and multi-node presence have not shipped. Replies are flat pointers, not

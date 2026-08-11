@@ -92,6 +92,10 @@ WhatsApp-style extras feel related to 1:1 because consumer apps bundle them. Cha
   no id and no link needed.
 - ~~React client + hooks~~ - shipped as `@chatpack/client` and
   `@chatpack/client/react` in the client milestone.
+- ~~Moderation~~ - shipped as an optional core capability in ADR 0021. It
+  includes blocks, mutes, reports, moderator report tools, and bans. Hosts
+  still own authentication, user records, notifications, and session
+  revocation.
 
 > **Packaging note (ADR 0008):** the original sketch named these
 > `@chatpack/plugin-typing` etc. as separate npm packages. They shipped instead
@@ -107,7 +111,7 @@ WhatsApp-style extras feel related to 1:1 because consumer apps bundle them. Cha
 - **Push / email notification delivery** - the post-persistence hook is only
   an integration seam; applications own providers, tokens, retries, and delivery
 - **AI features** - leave `metadata` / `role` escape hatches only; do not design for AI
-- **Threads, moderation, multi-tenant admin** - message search, reactions, and
+- **Threads, multi-tenant admin** - message search, reactions, and
   quote-replies shipped post-MVP because they fit the existing seams: search is
   participant-scoped, reactions are a separate table with no `seq` and no
   effect on ordering, and a reply is one nullable pointer column plus a

@@ -14,8 +14,9 @@ import type {
 } from "./config";
 import { ChatpackError } from "./errors";
 import { createHandler, type ChatpackHandler, type HandlerOptions } from "./handler";
+import type { ModerationAction, ModerationApi } from "./moderation";
 import { createPluginRuntime, type PluginRuntime } from "./plugin";
-import type { StorageAdapter } from "./storage";
+import type { ModerationStorage, StorageAdapter } from "./storage";
 import {
   inProcessTransport,
   type ChatEvent,
@@ -41,6 +42,9 @@ import type {
   ParticipantRole,
   Reaction,
   ReactionSummary,
+  ModerationReport,
+  ReportStatus,
+  ReportTargetType,
 } from "./types";
 
 /** Default page size for list endpoints. */
@@ -51,6 +55,8 @@ const MAX_LIMIT = 200;
 const MAX_EMOJI_LENGTH = 32;
 /** How much of a quoted parent body a reply preview carries (ADR 0013 §1). */
 const EXCERPT_LENGTH = 140;
+const MAX_MODERATION_REASON_LENGTH = 1000;
+const MAX_MODERATOR_NOTE_LENGTH = 2000;
 /**
  * Max participants in one group (ADR 0017 §3). Enforced in core so every
  * adapter agrees rather than each imposing its own ceiling.
@@ -473,6 +479,8 @@ export type JoinConversationResult =
  * and enforces permissions at the core boundary around storage access.
  */
 export interface ChatpackApi {
+  /** Durable user and moderator controls. */
+  moderation: ModerationApi;
   /**
    * Find or create the direct conversation between `userId` and
    * `otherUserId`. Idempotent per user pair.
@@ -721,6 +729,17 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
   }
 
   const storage: StorageAdapter = options.storage;
+  const moderationStorage: ModerationStorage | undefined = storage.moderation;
+  // Enforcing bans costs a lookup on every call and on every SSE heartbeat, so
+  // it follows the *host's* config, not the adapter's capability: `banUser` is
+  // the only way to mint a ban and it needs `canModerate`, so an adapter that
+  // merely can store bans has none to find. `enforceBans` opts in explicitly
+  // for hosts that write ban rows outside Chatpack.
+  const banEnforcement: ModerationStorage | null =
+    moderationStorage &&
+    (options.moderation?.enforceBans ?? options.moderation?.canModerate !== undefined)
+      ? moderationStorage
+      : null;
   const transport: Transport = options.transport ?? inProcessTransport();
   const telemetry = new TelemetryCounters(resolveTelemetryEnabled(options.telemetry));
   // Fire-and-forget aggregate flush (MVP §12). No-op when disabled; the timer
@@ -743,6 +762,95 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
   // §8) - it falls back to `canManage` rather than the admin literal so that
   // configuring only `canManage` keeps invites consistent with it.
   const canInvite = options.permissions?.canInvite ?? canManage;
+
+  function requireModerationStorage(): ModerationStorage {
+    if (!moderationStorage) {
+      throw new ChatpackError(
+        "MODERATION_UNSUPPORTED",
+        "This storage adapter does not provide moderation persistence.",
+      );
+    }
+    return moderationStorage;
+  }
+
+  async function requireActiveUser(userId: string): Promise<void> {
+    const activeStorage = banEnforcement;
+    if (!activeStorage) return;
+    const ban = await activeStorage.isUserBanned(userId);
+    if (ban) {
+      throw new ChatpackError("USER_BANNED", `User "${userId}" has an active Chatpack ban.`);
+    }
+  }
+
+  async function requireModerator(
+    userId: string,
+    action: ModerationAction,
+    extra: { targetUserId?: string; reportId?: string; banId?: string } = {},
+  ): Promise<void> {
+    await requireActiveUser(userId);
+    const allowed = await options.moderation?.canModerate?.({
+      user: { id: userId },
+      action,
+      ...extra,
+    });
+    if (!allowed) {
+      throw new ChatpackError("NOT_MODERATOR", "This action requires moderator access.");
+    }
+  }
+
+  function normalizeModerationReason(value: string): string {
+    if (typeof value !== "string" || value.trim() === "") {
+      throw new ChatpackError("INVALID_INPUT", `"reason" must be a non-empty string.`);
+    }
+    const reason = value.trim();
+    if (reason.length > MAX_MODERATION_REASON_LENGTH) {
+      throw new ChatpackError(
+        "INVALID_INPUT",
+        `"reason" must be at most ${MAX_MODERATION_REASON_LENGTH} characters.`,
+      );
+    }
+    return reason;
+  }
+
+  function normalizeOptionalModerationReason(value: string | null | undefined): string | null {
+    if (value === undefined || value === null) return null;
+    return normalizeModerationReason(value);
+  }
+
+  function normalizeModeratorNote(value: string | null | undefined): string | null {
+    if (value === undefined || value === null) return null;
+    if (typeof value !== "string") {
+      throw new ChatpackError("INVALID_INPUT", `"moderatorNote" must be a string or null.`);
+    }
+    const note = value.trim();
+    if (note.length > MAX_MODERATOR_NOTE_LENGTH) {
+      throw new ChatpackError(
+        "INVALID_INPUT",
+        `"moderatorNote" must be at most ${MAX_MODERATOR_NOTE_LENGTH} characters.`,
+      );
+    }
+    return note === "" ? null : note;
+  }
+
+  function normalizeReportStatus(value: ReportStatus): ReportStatus {
+    if (value !== "open" && value !== "triaged" && value !== "resolved" && value !== "dismissed") {
+      throw new ChatpackError(
+        "INVALID_INPUT",
+        `"status" must be "open", "triaged", "resolved", or "dismissed".`,
+      );
+    }
+    return value;
+  }
+
+  function normalizeReportTargetType(value: ReportTargetType): ReportTargetType {
+    if (value !== "user" && value !== "message" && value !== "conversation") {
+      throw new ChatpackError(
+        "INVALID_INPUT",
+        `"targetType" must be "user", "message", or "conversation".`,
+      );
+    }
+    return value;
+  }
 
   function toPermissionContext(userId: string, conversation: Conversation): PermissionContext {
     const user: ChatpackUser = { id: userId };
@@ -1093,6 +1201,20 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
     return conversation;
   }
 
+  async function requireDirectInteractionAllowed(
+    userId: string,
+    conversation: Conversation,
+  ): Promise<void> {
+    if (conversation.type !== "direct" || !moderationStorage) return;
+    const otherUserId = conversation.participants.find((p) => p.userId !== userId)?.userId;
+    if (otherUserId && (await moderationStorage.isBlocked(userId, otherUserId))) {
+      throw new ChatpackError(
+        "DIRECT_INTERACTION_BLOCKED",
+        "Direct interaction is blocked by one of the participants.",
+      );
+    }
+  }
+
   async function requireRead(userId: string, conversation: Conversation): Promise<void> {
     const allowed = await canReadConversation(userId, conversation);
     if (!allowed) {
@@ -1320,6 +1442,7 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
     eventType: "reaction.added" | "reaction.removed",
   ): Promise<MessageWithDetails> {
     requireNonEmptyId(input.userId, "userId");
+    await requireActiveUser(input.userId);
     requireNonEmptyId(input.messageId, "messageId");
     const emoji = normalizeEmoji(input.emoji);
 
@@ -1332,6 +1455,7 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
     // Write permission, like edit/delete: a reaction is a mutation the other
     // participant sees, not a read.
     await requireWrite(input.userId, conversation);
+    await requireDirectInteractionAllowed(input.userId, conversation);
 
     const reactions = await apply(emoji);
     // Reuse the batched decorator for `replyTo`, then override `reactions`
@@ -1453,14 +1577,247 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
   // hooks only run inside api calls, which can't happen before chatpack()
   // returns.
 
+  const moderationApi: ModerationApi = {
+    async blockUser(input) {
+      requireNonEmptyId(input.userId, "userId");
+      requireNonEmptyId(input.targetUserId, "targetUserId");
+      await requireActiveUser(input.userId);
+      if (input.userId === input.targetUserId) {
+        throw new ChatpackError("INVALID_INPUT", "A user cannot block themselves.");
+      }
+      return requireModerationStorage().createBlock({
+        blockerUserId: input.userId,
+        blockedUserId: input.targetUserId,
+      });
+    },
+
+    async unblockUser(input) {
+      requireNonEmptyId(input.userId, "userId");
+      requireNonEmptyId(input.targetUserId, "targetUserId");
+      await requireActiveUser(input.userId);
+      if (input.userId === input.targetUserId) {
+        throw new ChatpackError("INVALID_INPUT", "A user cannot unblock themselves.");
+      }
+      await requireModerationStorage().removeBlock({
+        blockerUserId: input.userId,
+        blockedUserId: input.targetUserId,
+      });
+    },
+
+    async listBlockedUsers(input) {
+      requireNonEmptyId(input.userId, "userId");
+      await requireActiveUser(input.userId);
+      const page = await requireModerationStorage().listBlocks({
+        blockerUserId: input.userId,
+        limit: normalizeLimit(input.limit),
+        ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
+      });
+      return { blocks: page.items, nextCursor: page.nextCursor };
+    },
+
+    async muteConversation(input) {
+      requireNonEmptyId(input.userId, "userId");
+      requireNonEmptyId(input.conversationId, "conversationId");
+      await requireActiveUser(input.userId);
+      const conversation = await requireConversation(input.conversationId);
+      await requireRead(input.userId, conversation);
+      return requireModerationStorage().createMute({
+        userId: input.userId,
+        conversationId: input.conversationId,
+      });
+    },
+
+    async unmuteConversation(input) {
+      requireNonEmptyId(input.userId, "userId");
+      requireNonEmptyId(input.conversationId, "conversationId");
+      await requireActiveUser(input.userId);
+      const conversation = await requireConversation(input.conversationId);
+      await requireRead(input.userId, conversation);
+      await requireModerationStorage().removeMute({
+        userId: input.userId,
+        conversationId: input.conversationId,
+      });
+    },
+
+    async listMutedConversations(input) {
+      requireNonEmptyId(input.userId, "userId");
+      await requireActiveUser(input.userId);
+      const page = await requireModerationStorage().listMutes({
+        userId: input.userId,
+        limit: normalizeLimit(input.limit),
+        ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
+      });
+      return { mutes: page.items, nextCursor: page.nextCursor };
+    },
+
+    async report(input) {
+      requireNonEmptyId(input.userId, "userId");
+      requireNonEmptyId(input.targetId, "targetId");
+      await requireActiveUser(input.userId);
+      const targetType = normalizeReportTargetType(input.targetType);
+      const reason = normalizeModerationReason(input.reason);
+      if (targetType === "user" && input.targetId === input.userId) {
+        throw new ChatpackError("INVALID_INPUT", "A user cannot report themselves.");
+      }
+
+      let evidence: ModerationReport["evidence"];
+      if (targetType === "user") {
+        evidence = { targetType: "user" };
+      } else if (targetType === "message") {
+        const message = await storage.getMessage(input.targetId);
+        if (!message) {
+          throw new ChatpackError(
+            "MESSAGE_NOT_FOUND",
+            `Message "${input.targetId}" was not found.`,
+          );
+        }
+        const conversation = await requireConversation(message.conversationId);
+        await requireRead(input.userId, conversation);
+        evidence = {
+          targetType: "message",
+          messageId: message.id,
+          conversationId: message.conversationId,
+          senderId: message.senderId,
+          body: message.body,
+          deletedAt: message.deletedAt,
+          createdAt: message.createdAt,
+        };
+      } else {
+        const conversation = await requireConversation(input.targetId);
+        await requireRead(input.userId, conversation);
+        evidence = {
+          targetType: "conversation",
+          conversationId: conversation.id,
+          type: conversation.type,
+          name: conversation.name,
+          participantIds: conversation.participants.map((p) => p.userId),
+        };
+      }
+
+      const moderation = requireModerationStorage();
+      const existing = await moderation.findOpenReport(input.userId, targetType, input.targetId);
+      if (existing) return existing;
+      return moderation.createReport({
+        reporterUserId: input.userId,
+        targetType,
+        targetId: input.targetId,
+        reason,
+        evidence,
+      });
+    },
+
+    async listReports(input) {
+      requireNonEmptyId(input.userId, "userId");
+      const targetType =
+        input.targetType === undefined ? undefined : normalizeReportTargetType(input.targetType);
+      const status = input.status === undefined ? undefined : normalizeReportStatus(input.status);
+      await requireModerator(input.userId, "reports.read");
+      const page = await requireModerationStorage().listReports({
+        ...(status === undefined ? {} : { status }),
+        ...(targetType === undefined ? {} : { targetType }),
+        limit: normalizeLimit(input.limit),
+        ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
+      });
+      return { reports: page.items, nextCursor: page.nextCursor };
+    },
+
+    async getReport(input) {
+      requireNonEmptyId(input.userId, "userId");
+      requireNonEmptyId(input.reportId, "reportId");
+      await requireModerator(input.userId, "reports.read", { reportId: input.reportId });
+      const report = await requireModerationStorage().getReport(input.reportId);
+      if (!report) {
+        throw new ChatpackError("REPORT_NOT_FOUND", `Report "${input.reportId}" was not found.`);
+      }
+      return report;
+    },
+
+    async updateReport(input) {
+      requireNonEmptyId(input.userId, "userId");
+      requireNonEmptyId(input.reportId, "reportId");
+      const status = normalizeReportStatus(input.status);
+      const moderatorNote = normalizeModeratorNote(input.moderatorNote);
+      await requireModerator(input.userId, "reports.update", { reportId: input.reportId });
+      const moderation = requireModerationStorage();
+      if (!(await moderation.getReport(input.reportId))) {
+        throw new ChatpackError("REPORT_NOT_FOUND", `Report "${input.reportId}" was not found.`);
+      }
+      return moderation.updateReport({
+        reportId: input.reportId,
+        status,
+        moderatorNote,
+      });
+    },
+
+    async listBans(input) {
+      requireNonEmptyId(input.userId, "userId");
+      await requireModerator(input.userId, "bans.read");
+      const page = await requireModerationStorage().listBans({
+        activeOnly: input.activeOnly ?? true,
+        limit: normalizeLimit(input.limit),
+        ...(input.cursor === undefined ? {} : { cursor: input.cursor }),
+      });
+      return { bans: page.items, nextCursor: page.nextCursor };
+    },
+
+    async banUser(input) {
+      requireNonEmptyId(input.userId, "userId");
+      requireNonEmptyId(input.targetUserId, "targetUserId");
+      await requireModerator(input.userId, "bans.create", {
+        targetUserId: input.targetUserId,
+      });
+      if (input.userId === input.targetUserId) {
+        throw new ChatpackError("INVALID_INPUT", "A moderator cannot ban themselves.");
+      }
+      if (input.expiresAt !== undefined && input.expiresAt !== null) {
+        if (!(input.expiresAt instanceof Date) || input.expiresAt.getTime() <= Date.now()) {
+          throw new ChatpackError("INVALID_INPUT", `"expiresAt" must be a future date or null.`);
+        }
+      }
+      const moderation = requireModerationStorage();
+      // No read-then-write here: `createBan` returns the user's existing active
+      // ban rather than minting a second one, and decides that in a single
+      // statement so two moderators cannot both win (ADR 0019 §5).
+      return moderation.createBan({
+        userId: input.targetUserId,
+        createdByUserId: input.userId,
+        reason: normalizeOptionalModerationReason(input.reason),
+        expiresAt: input.expiresAt === undefined ? null : input.expiresAt,
+      });
+    },
+
+    async unbanUser(input) {
+      requireNonEmptyId(input.userId, "userId");
+      requireNonEmptyId(input.banId, "banId");
+      await requireModerator(input.userId, "bans.revoke", { banId: input.banId });
+      const moderation = requireModerationStorage();
+      if (!(await moderation.getBan(input.banId))) {
+        throw new ChatpackError("BAN_NOT_FOUND", `Ban "${input.banId}" was not found.`);
+      }
+      return moderation.revokeBan({ banId: input.banId, revokedByUserId: input.userId });
+    },
+  };
+
   const api: ChatpackApi = {
+    moderation: moderationApi,
     async getOrCreateConversation(input) {
       requireNonEmptyId(input.userId, "userId");
       requireNonEmptyId(input.otherUserId, "otherUserId");
+      await requireActiveUser(input.userId);
+      await requireActiveUser(input.otherUserId);
       if (input.userId === input.otherUserId) {
         throw new ChatpackError(
           "INVALID_INPUT",
           "A direct conversation requires two distinct users.",
+        );
+      }
+      if (
+        moderationStorage &&
+        (await moderationStorage.isBlocked(input.userId, input.otherUserId))
+      ) {
+        throw new ChatpackError(
+          "DIRECT_INTERACTION_BLOCKED",
+          "Direct interaction is blocked by one of the participants.",
         );
       }
 
@@ -1477,6 +1834,7 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
 
     async createGroupConversation(input) {
       requireNonEmptyId(input.userId, "userId");
+      await requireActiveUser(input.userId);
       const name = normalizeGroupName(input.name);
       // The creator is always a member, so passing their own id is redundant
       // rather than wrong - drop it instead of erroring.
@@ -1518,6 +1876,7 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
 
     async addParticipants(input) {
       requireNonEmptyId(input.userId, "userId");
+      await requireActiveUser(input.userId);
       const conversation = await requireConversation(input.conversationId);
       requireGroup(conversation);
       await requireManage(input.userId, conversation);
@@ -1554,6 +1913,7 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
     async removeParticipant(input) {
       requireNonEmptyId(input.userId, "userId");
       requireNonEmptyId(input.targetUserId, "targetUserId");
+      await requireActiveUser(input.userId);
       const conversation = await requireConversation(input.conversationId);
       requireGroup(conversation);
 
@@ -1595,6 +1955,7 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
     async setParticipantRole(input) {
       requireNonEmptyId(input.userId, "userId");
       requireNonEmptyId(input.targetUserId, "targetUserId");
+      await requireActiveUser(input.userId);
       if (input.role !== "admin" && input.role !== "member") {
         throw new ChatpackError("INVALID_INPUT", `"role" must be "admin" or "member".`);
       }
@@ -1641,6 +2002,7 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
 
     async updateConversation(input) {
       requireNonEmptyId(input.userId, "userId");
+      await requireActiveUser(input.userId);
       const conversation = await requireConversation(input.conversationId);
       requireGroup(conversation);
       await requireManage(input.userId, conversation);
@@ -1684,6 +2046,7 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
 
     async listConversations(input) {
       requireNonEmptyId(input.userId, "userId");
+      await requireActiveUser(input.userId);
       const { conversations, nextCursor } = await storage.listConversations({
         userId: input.userId,
         limit: normalizeLimit(input.limit),
@@ -1694,6 +2057,7 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
 
     async getConversation(input) {
       requireNonEmptyId(input.userId, "userId");
+      await requireActiveUser(input.userId);
       const conversation = await requireConversation(input.conversationId);
       await requireRead(input.userId, conversation);
       return withUnreadOne(input.userId, conversation);
@@ -1701,12 +2065,14 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
 
     async sendMessage(input) {
       requireNonEmptyId(input.userId, "userId");
+      await requireActiveUser(input.userId);
       if (typeof input.body !== "string" || input.body.trim() === "") {
         throw new ChatpackError("INVALID_INPUT", "Message body must be a non-empty string.");
       }
 
       const conversation = await requireConversation(input.conversationId);
       await requireWrite(input.userId, conversation);
+      await requireDirectInteractionAllowed(input.userId, conversation);
 
       // A reply must point inside this conversation (ADR 0013 §1). Same error
       // as markRead uses, so a cross-conversation id can't be used to probe
@@ -1759,6 +2125,7 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
 
     async listMessages(input) {
       requireNonEmptyId(input.userId, "userId");
+      await requireActiveUser(input.userId);
       const conversation = await requireConversation(input.conversationId);
       await requireRead(input.userId, conversation);
 
@@ -1772,6 +2139,7 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
 
     async searchMessages(input) {
       requireNonEmptyId(input.userId, "userId");
+      await requireActiveUser(input.userId);
       if (typeof input.query !== "string" || input.query.trim() === "") {
         throw new ChatpackError("INVALID_INPUT", '"query" must be a non-empty string.');
       }
@@ -1815,6 +2183,7 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
 
     async editMessage(input) {
       requireNonEmptyId(input.userId, "userId");
+      await requireActiveUser(input.userId);
       if (typeof input.body !== "string" || input.body.trim() === "") {
         throw new ChatpackError("INVALID_INPUT", "Message body must be a non-empty string.");
       }
@@ -1832,6 +2201,7 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
 
       const conversation = await requireConversation(existing.conversationId);
       await requireWrite(input.userId, conversation);
+      await requireDirectInteractionAllowed(input.userId, conversation);
 
       // Content rules apply to edits too - otherwise a blocked word could be
       // sent clean and edited in afterwards (docs/decisions/0011).
@@ -1865,6 +2235,7 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
 
     async deleteMessage(input) {
       requireNonEmptyId(input.userId, "userId");
+      await requireActiveUser(input.userId);
 
       const existing = await storage.getMessage(input.messageId);
       if (!existing) {
@@ -1877,6 +2248,7 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
 
       const conversation = await requireConversation(existing.conversationId);
       await requireWrite(input.userId, conversation);
+      await requireDirectInteractionAllowed(input.userId, conversation);
       const hookConversation = {
         ...conversation,
         participantIds: conversation.participants.map((p) => p.userId),
@@ -1901,6 +2273,7 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
 
     async markRead(input) {
       requireNonEmptyId(input.userId, "userId");
+      await requireActiveUser(input.userId);
       const conversation = await requireConversation(input.conversationId);
       await requireRead(input.userId, conversation);
 
@@ -1947,6 +2320,7 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
 
     async listMessagesAfter(input) {
       requireNonEmptyId(input.userId, "userId");
+      await requireActiveUser(input.userId);
       if (!Number.isInteger(input.afterSeq) || input.afterSeq < 0) {
         throw new ChatpackError(
           "INVALID_INPUT",
@@ -2356,7 +2730,18 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
   return {
     api,
     handler: (handlerOptions?: HandlerOptions) =>
-      createHandler(api, options.auth, handlerOptions, transport, pluginRuntime),
+      createHandler(
+        api,
+        options.auth,
+        handlerOptions,
+        transport,
+        pluginRuntime,
+        // Left undefined when bans are not enforced, so neither the pre-routing
+        // check nor the SSE heartbeat re-check runs at all.
+        banEnforcement === null
+          ? undefined
+          : async (userId) => Boolean(await banEnforcement.isUserBanned(userId)),
+      ),
     transport,
     telemetry,
     options,

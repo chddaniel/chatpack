@@ -33,10 +33,12 @@ export const chat = chatpack({
 
 ## Creating the tables
 
-Chatpack needs seven tables (`chatpack_conversations`,
+Chatpack needs eleven tables (`chatpack_conversations`,
 `chatpack_conversation_participants`, `chatpack_messages`,
 `chatpack_message_search_tokens`, `chatpack_message_reactions`,
-`chatpack_conversation_invites`, `chatpack_join_requests`). Users are
+`chatpack_conversation_invites`, `chatpack_join_requests`,
+`chatpack_user_blocks`, `chatpack_conversation_mutes`,
+`chatpack_moderation_reports`, `chatpack_user_bans`). Users are
 referenced **by id only** - there is no foreign key into your users table.
 
 <Callout type="warn">
@@ -63,6 +65,12 @@ referenced **by id only** - there is no foreign key into your users table.
 </Callout>
 
 <Callout type="info">
+  Moderation is gentle as well: `chatpack_user_blocks`, `chatpack_conversation_mutes`,
+  `chatpack_moderation_reports` and `chatpack_user_bans` are **pure table additions** with no changes
+  to existing tables, so they too are safe to apply before deploying the new code.
+</Callout>
+
+<Callout type="info">
   The group migration rewrites the pair-key index rather than adding one: a *partial* unique index
   (`WHERE pair_key IS NOT NULL`) lets unlimited null-keyed groups coexist with one-DM-per-pair.
   Postgres can't swap a total index for a partial one under the same name, so the migration drops
@@ -78,7 +86,7 @@ referenced **by id only** - there is no foreign key into your users table.
 Re-export the schema and generate a migration like any other table you own:
 
 ```ts title="db/schema.ts"
-export * from "@chatpack/adapter-drizzle"; // conversations, participants, messages, reactions, invites
+export * from "@chatpack/adapter-drizzle"; // conversations, participants, messages, reactions, invites, moderation
 ```
 
 ```sh

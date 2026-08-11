@@ -41,10 +41,12 @@ export const chat = chatpack({
 
 ## Creating the tables
 
-Chatpack needs seven tables (`chatpack_conversations`,
+Chatpack needs eleven tables (`chatpack_conversations`,
 `chatpack_conversation_participants`, `chatpack_messages`,
 `chatpack_message_search_tokens`, `chatpack_message_reactions`,
-`chatpack_conversation_invites`, `chatpack_join_requests`). Users are
+`chatpack_conversation_invites`, `chatpack_join_requests`,
+`chatpack_user_blocks`, `chatpack_conversation_mutes`,
+`chatpack_moderation_reports`, `chatpack_user_bans`). Users are
 referenced **by id only** - there is no foreign key into your users table.
 
 > **⚠️ Upgrading an existing database?** Group conversations added `type` and
@@ -74,13 +76,18 @@ referenced **by id only** - there is no foreign key into your users table.
 > adds `chatpack_conversations_public_idx`, a **partial** index
 > (`WHERE visibility = 'public'`) so the directory query doesn't index every
 > private conversation in the database.
+>
+> Moderation is gentle as well: `chatpack_user_blocks`,
+> `chatpack_conversation_mutes`, `chatpack_moderation_reports` and
+> `chatpack_user_bans` are **pure table additions** with no changes to existing
+> tables, so they are safe to apply before deploying the new code.
 
 **Option A - your `drizzle-kit` flow (recommended).** Re-export the schema and
 generate a migration like any other table you own:
 
 ```ts
 // db/schema.ts
-export * from "@chatpack/adapter-drizzle"; // conversations, participants, messages, search tokens, reactions, invites, join requests
+export * from "@chatpack/adapter-drizzle"; // conversations, participants, messages, search tokens, reactions, invites, join requests, moderation
 ```
 
 ```sh
@@ -192,6 +199,13 @@ adapter does them (details in
   legacy `NULL` or an out-of-union value comes back as `"private"` / `"approval"`
   instead of leaking to clients
   ([ADR 0020](../../docs/decisions/0020-public-channels.md)).
+- **One active ban, whoever gets there first** - `createBan` is an
+  `INSERT ... SELECT ... WHERE NOT EXISTS (an active ban for this user)`, so two
+  moderators banning the same person at the same moment leave exactly one active
+  row and both get it back. A read-then-insert would leave a second row that
+  keeps enforcing after the visible one is revoked. Blocks and mutes are plain
+  `DO NOTHING` upserts, and revoked or expired bans are kept for audit history
+  ([ADR 0021](../../docs/decisions/0021-moderation-suite.md)).
 
 ## Testing
 

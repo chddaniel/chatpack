@@ -5,14 +5,16 @@ icon: BookOpen
 ---
 
 Chatpack is **open-source chat infrastructure for developers**. Install a
-package, wire up your database and auth, and get a production-ready 1:1 chat
-backend - conversations, messages, permissions, read-state, and real-time
-delivery - without rebuilding it from scratch.
+package, wire up your database and auth, and get a production-ready chat
+backend - 1:1 and group conversations, public channels, messages, permissions,
+read-state, search, moderation, and real-time delivery - without rebuilding it
+from scratch.
 
 <Callout type="info">
-  **Status: `0.2.x`** - the v0 MVP (core engine, HTTP handler, real-time SSE, Postgres adapter) plus
-  the real-time plugins (`typing()`, `presence()`, `receipts()`) are published and installable now.
-  The API is young - expect minor breaking changes before `1.0`.
+  **Status: `@chatpack/core 0.10.x`** - the v0 MVP (core engine, HTTP handler, real-time SSE,
+  Postgres adapter), the real-time plugins (`typing()`, `presence()`, `receipts()`), groups,
+  reactions, search, invite links, public channels, and moderation are all published and installable
+  now. The API is young - expect minor breaking changes before `1.0`.
 </Callout>
 
 ## Why
@@ -65,6 +67,10 @@ One `chatpack()` instance gives you three things:
 | [`@chatpack/adapter-memory`](https://www.npmjs.com/package/@chatpack/adapter-memory)   | In-memory storage - demos/tests, single process only    |
 | [`@chatpack/adapter-drizzle`](https://www.npmjs.com/package/@chatpack/adapter-drizzle) | Postgres storage via Drizzle - production               |
 | [`@chatpack/next`](https://www.npmjs.com/package/@chatpack/next)                       | Next.js App Router mount helper (`toNextRouteHandlers`) |
+| [`@chatpack/client`](https://www.npmjs.com/package/@chatpack/client)                   | Typed browser client + React hooks, cache, and realtime |
+| [`@chatpack/cli`](https://www.npmjs.com/package/@chatpack/cli)                         | `npx @chatpack/cli init` - scaffold the wiring          |
+| [`@chatpack/transport-redis`](https://www.npmjs.com/package/@chatpack/transport-redis) | Redis pub/sub fan-out for multi-node deployments        |
+| [`@chatpack/file`](https://www.npmjs.com/package/@chatpack/file)                       | Filepack-backed file attachments                       |
 
 ## Design principles
 

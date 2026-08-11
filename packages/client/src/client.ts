@@ -1,5 +1,13 @@
 /** Composes the framework-agnostic Chatpack client and its resource actions. */
-import type { Metadata, MessageRole, ParticipantRole } from "@chatpack/core";
+import type {
+  ChannelJoinPolicy,
+  ChannelVisibility,
+  Metadata,
+  MessageRole,
+  ParticipantRole,
+  ReportStatus,
+  ReportTargetType,
+} from "@chatpack/core";
 import type { ChatClientOptions } from "./config";
 import type { ChatClientResult } from "./errors";
 import {
@@ -19,10 +27,20 @@ import {
 import { createChatpackCache, type ChatpackCache } from "./store-cache";
 import type { ReadonlyStore } from "./store";
 import type {
+  ClientAcceptInviteResult,
+  ClientChannelPage,
+  ClientConversationInvite,
   ClientConversation,
   ClientConversationPage,
+  ClientConversationMute,
+  ClientInvitePreview,
+  ClientJoinConversationResult,
+  ClientJoinRequest,
   ClientMessage,
   ClientMessagePage,
+  ClientModerationReport,
+  ClientUserBan,
+  ClientUserBlock,
 } from "./wire";
 
 /** Input for creating a conversation with another user. */
@@ -43,13 +61,22 @@ export interface GroupCreateInput {
    * start with only its creator, who becomes its first admin.
    */
   userIds?: string[];
+  /** Whether to list this group in the public channel directory. */
+  visibility?: ChannelVisibility;
+  /** How users joining a public channel are handled. */
+  joinPolicy?: ChannelJoinPolicy;
   metadata?: Metadata;
 }
 
-/** Input for renaming a group (ADR 0017). Admin-only; `name: null` clears the title. */
+/** Input for updating a group name or channel settings (ADR 0017/0020). */
 export interface ConversationUpdateInput {
   conversationId: string;
-  name: string | null;
+  /** New title, or `null` to clear it. Omit when changing channel settings only. */
+  name?: string | null;
+  /** Whether to list this group in the public channel directory. */
+  visibility?: ChannelVisibility;
+  /** How users joining a public channel are handled. */
+  joinPolicy?: ChannelJoinPolicy;
 }
 
 /** Input for adding members to a group (ADR 0017). Admin-only; already-present ids are no-ops. */
@@ -108,6 +135,119 @@ export interface MessageSearchInput {
   cursor?: string;
 }
 
+/** Input for minting an invite link for a group. */
+export interface InviteCreateInput {
+  conversationId: string;
+  expiresInSeconds?: number;
+  maxUses?: number;
+  requiresApproval?: boolean;
+  metadata?: Metadata;
+}
+
+/** Input for listing or revoking invites belonging to a group. */
+export interface InviteListInput {
+  conversationId: string;
+}
+
+/** Input for revoking one invite link. */
+export interface InviteRevokeInput extends InviteListInput {
+  code: string;
+}
+
+/** Input for previewing an invite link before accepting it. */
+export interface InvitePreviewInput {
+  code: string;
+}
+
+/** Input for accepting an invite link. */
+export interface InviteAcceptInput extends InvitePreviewInput {
+  message?: string;
+}
+
+/** Typed actions for invite links. */
+export interface InviteActions {
+  create(
+    input: InviteCreateInput,
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<ClientConversationInvite>>;
+  list(
+    input: InviteListInput,
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<{ invites: ClientConversationInvite[] }>>;
+  revoke(
+    input: InviteRevokeInput,
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<{ ok: true }>>;
+  preview(
+    input: InvitePreviewInput,
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<ClientInvitePreview>>;
+  accept(
+    input: InviteAcceptInput,
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<ClientAcceptInviteResult>>;
+}
+
+/** Input for creating a join request for a group or channel. */
+export interface JoinRequestCreateInput {
+  conversationId: string;
+  message?: string;
+}
+
+/** Input for listing a group's join requests. */
+export interface JoinRequestListInput extends InviteListInput {
+  status?: "pending" | "approved" | "denied";
+  limit?: number;
+}
+
+/** Input for approving or denying one user's join request. */
+export interface JoinRequestResolveInput extends InviteListInput {
+  userId: string;
+  decision: "approve" | "deny";
+}
+
+/** Typed actions for join requests. */
+export interface JoinRequestActions {
+  create(
+    input: JoinRequestCreateInput,
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<ClientJoinRequest>>;
+  list(
+    input: JoinRequestListInput,
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<{ joinRequests: ClientJoinRequest[] }>>;
+  resolve(
+    input: JoinRequestResolveInput,
+    options?: ChatClientRequestOptions,
+  ): Promise<
+    ChatClientResult<{ joinRequest: ClientJoinRequest; conversation: ClientConversation | null }>
+  >;
+}
+
+/** Optional pagination input for the public channel directory. */
+export interface ChannelListInput {
+  limit?: number;
+  cursor?: string;
+}
+
+/** Input for joining a public channel. */
+export interface ChannelJoinInput {
+  conversationId: string;
+  message?: string;
+}
+
+/** Typed actions for public channels. */
+export interface ChannelActions {
+  list(
+    input?: ChannelListInput,
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<ClientChannelPage>>;
+  join(
+    input: ChannelJoinInput,
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<ClientJoinConversationResult>>;
+}
+
 /** Input for sending a message. */
 export interface MessageSendInput {
   conversationId: string;
@@ -137,6 +277,100 @@ export interface MessageEditInput {
 /** Input for deleting a message. */
 export interface MessageDeleteInput {
   messageId: string;
+}
+
+/** Cursor pagination for moderation client actions. */
+export interface ModerationListInput {
+  limit?: number;
+  cursor?: string;
+}
+
+/** Report submission input for the REST client. */
+export interface ModerationReportInput {
+  targetType: ReportTargetType;
+  targetId: string;
+  reason: string;
+}
+
+/** Moderator report queue filters for the REST client. */
+export interface ModerationReportListInput extends ModerationListInput {
+  status?: ReportStatus;
+  targetType?: ReportTargetType;
+}
+
+/** Moderator report lifecycle update for the REST client. */
+export interface ModerationReportUpdateInput {
+  reportId: string;
+  status: ReportStatus;
+  moderatorNote?: string | null;
+}
+
+/** Permanent or timed ban input for the REST client. */
+export interface ModerationBanInput {
+  targetUserId: string;
+  reason?: string | null;
+  expiresAt?: string | null;
+}
+
+/** Ban list filters for the REST client. */
+export interface ModerationBanListInput extends ModerationListInput {
+  activeOnly?: boolean;
+}
+
+/** Typed user and moderator moderation actions. */
+export interface ModerationActions {
+  blockUser(
+    input: { targetUserId: string },
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<ClientUserBlock>>;
+  unblockUser(
+    input: { targetUserId: string },
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<{ ok: true }>>;
+  listBlockedUsers(
+    input?: ModerationListInput,
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<{ blocks: ClientUserBlock[]; nextCursor: string | null }>>;
+  muteConversation(
+    input: { conversationId: string },
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<ClientConversationMute>>;
+  unmuteConversation(
+    input: { conversationId: string },
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<{ ok: true }>>;
+  listMutedConversations(
+    input?: ModerationListInput,
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<{ mutes: ClientConversationMute[]; nextCursor: string | null }>>;
+  report(
+    input: ModerationReportInput,
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<ClientModerationReport>>;
+  listReports(
+    input?: ModerationReportListInput,
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<{ reports: ClientModerationReport[]; nextCursor: string | null }>>;
+  getReport(
+    input: { reportId: string },
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<ClientModerationReport>>;
+  updateReport(
+    input: ModerationReportUpdateInput,
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<ClientModerationReport>>;
+  listBans(
+    input?: ModerationBanListInput,
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<{ bans: ClientUserBan[]; nextCursor: string | null }>>;
+  banUser(
+    input: ModerationBanInput,
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<ClientUserBan>>;
+  unbanUser(
+    input: { banId: string },
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<ClientUserBan>>;
 }
 
 /** Per-request headers and cancellation options. */
@@ -229,6 +463,10 @@ export interface MessageActions {
 export interface ChatClient {
   conversations: ConversationActions;
   messages: MessageActions;
+  invites: InviteActions;
+  joinRequests: JoinRequestActions;
+  channels: ChannelActions;
+  moderation: ModerationActions;
   realtime: ChatRealtime;
   $store: ChatpackCache;
   $getPluginState(id: string): ReadonlyStore<unknown> | null;
@@ -530,7 +768,11 @@ export function createChatClient<
       return changeConversation(
         "/conversations/" + encodeURIComponent(input.conversationId),
         "PATCH",
-        { name: input.name },
+        {
+          name: input.name,
+          visibility: input.visibility,
+          joinPolicy: input.joinPolicy,
+        },
         optionsForRequest,
       );
     },
@@ -579,6 +821,126 @@ export function createChatClient<
         },
       );
       if (result.error === null) cache.applyRead(input.conversationId, input.messageId);
+      return result;
+    },
+  };
+
+  function applyJoinedConversation(conversation: ClientConversation): void {
+    cache.setConversation(conversation.id, { data: conversation, error: null });
+    cache.applyConversationSnapshot(conversation);
+    if (cache.isMissingFromConversations(conversation.id)) {
+      cache.prependConversation(conversation);
+    }
+  }
+
+  function applyJoinResult(result: ClientAcceptInviteResult | ClientJoinConversationResult): void {
+    if (result.status === "joined") applyJoinedConversation(result.conversation);
+  }
+
+  const inviteActions: InviteActions = {
+    async create(input, optionsForRequest) {
+      const { conversationId, ...body } = input;
+      const result = await requester.request<unknown>(
+        "/conversations/" + encodeURIComponent(conversationId) + "/invites",
+        {
+          method: "POST",
+          body,
+          ...requestOptions(optionsForRequest),
+        },
+      );
+      return unwrapResult<ClientConversationInvite>(result, "invite");
+    },
+    async list(input, optionsForRequest) {
+      return requester.request<{ invites: ClientConversationInvite[] }>(
+        "/conversations/" + encodeURIComponent(input.conversationId) + "/invites",
+        requestOptions(optionsForRequest),
+      );
+    },
+    async revoke(input, optionsForRequest) {
+      return requester.request<{ ok: true }>(
+        "/conversations/" +
+          encodeURIComponent(input.conversationId) +
+          "/invites/" +
+          encodeURIComponent(input.code),
+        { method: "DELETE", ...requestOptions(optionsForRequest) },
+      );
+    },
+    async preview(input, optionsForRequest) {
+      const result = await requester.request<unknown>(
+        "/invites/" + encodeURIComponent(input.code),
+        requestOptions(optionsForRequest),
+      );
+      return unwrapResult<ClientInvitePreview>(result, "invite");
+    },
+    async accept(input, optionsForRequest) {
+      const result = await requester.request<ClientAcceptInviteResult>(
+        "/invites/" + encodeURIComponent(input.code) + "/accept",
+        {
+          method: "POST",
+          body: input.message === undefined ? {} : { message: input.message },
+          ...requestOptions(optionsForRequest),
+        },
+      );
+      if (result.error === null) applyJoinResult(result.data);
+      return result;
+    },
+  };
+
+  const joinRequestActions: JoinRequestActions = {
+    async create(input, optionsForRequest) {
+      const { conversationId, ...body } = input;
+      const result = await requester.request<unknown>(
+        "/conversations/" + encodeURIComponent(conversationId) + "/join-requests",
+        {
+          method: "POST",
+          body,
+          ...requestOptions(optionsForRequest),
+        },
+      );
+      return unwrapResult<ClientJoinRequest>(result, "joinRequest");
+    },
+    async list(input, optionsForRequest) {
+      return requester.request<{ joinRequests: ClientJoinRequest[] }>(
+        "/conversations/" + encodeURIComponent(input.conversationId) + "/join-requests",
+        {
+          query: { status: input.status, limit: input.limit },
+          ...requestOptions(optionsForRequest),
+        },
+      );
+    },
+    async resolve(input, optionsForRequest) {
+      const result = await requester.request<{
+        joinRequest: ClientJoinRequest;
+        conversation: ClientConversation | null;
+      }>("/conversations/" + encodeURIComponent(input.conversationId) + "/join-requests", {
+        method: "PATCH",
+        body: { userId: input.userId, decision: input.decision },
+        ...requestOptions(optionsForRequest),
+      });
+      if (result.error === null && result.data.conversation !== null) {
+        applyJoinedConversation(result.data.conversation);
+      }
+      return result;
+    },
+  };
+
+  const channelActions: ChannelActions = {
+    async list(input = {}, optionsForRequest) {
+      return requester.request<ClientChannelPage>("/channels", {
+        query: { limit: input.limit, cursor: input.cursor },
+        ...requestOptions(optionsForRequest),
+      });
+    },
+    async join(input, optionsForRequest) {
+      const result = await requester.request<ClientJoinConversationResult>(
+        "/conversations/" + encodeURIComponent(input.conversationId) + "/join",
+        {
+          method: "POST",
+          body: input.message === undefined ? {} : { message: input.message },
+          ...requestOptions(optionsForRequest),
+        },
+      );
+      if (result.error === null) applyJoinResult(result.data);
       return result;
     },
   };
@@ -703,9 +1065,130 @@ export function createChatClient<
     },
   };
 
+  const moderationActions: ModerationActions = {
+    async blockUser(input, optionsForRequest) {
+      const result = await requester.request<unknown>("/moderation/blocks", {
+        method: "POST",
+        body: input,
+        ...requestOptions(optionsForRequest),
+      });
+      return unwrapResult<ClientUserBlock>(result, "block");
+    },
+    async unblockUser(input, optionsForRequest) {
+      return requester.request<{ ok: true }>("/moderation/blocks", {
+        method: "DELETE",
+        body: input,
+        ...requestOptions(optionsForRequest),
+      });
+    },
+    async listBlockedUsers(input = {}, optionsForRequest) {
+      return requester.request<{ blocks: ClientUserBlock[]; nextCursor: string | null }>(
+        "/moderation/blocks",
+        {
+          query: { limit: input.limit, cursor: input.cursor },
+          ...requestOptions(optionsForRequest),
+        },
+      );
+    },
+    async muteConversation(input, optionsForRequest) {
+      const result = await requester.request<unknown>("/moderation/mutes", {
+        method: "POST",
+        body: input,
+        ...requestOptions(optionsForRequest),
+      });
+      return unwrapResult<ClientConversationMute>(result, "mute");
+    },
+    async unmuteConversation(input, optionsForRequest) {
+      return requester.request<{ ok: true }>("/moderation/mutes", {
+        method: "DELETE",
+        body: input,
+        ...requestOptions(optionsForRequest),
+      });
+    },
+    async listMutedConversations(input = {}, optionsForRequest) {
+      return requester.request<{ mutes: ClientConversationMute[]; nextCursor: string | null }>(
+        "/moderation/mutes",
+        {
+          query: { limit: input.limit, cursor: input.cursor },
+          ...requestOptions(optionsForRequest),
+        },
+      );
+    },
+    async report(input, optionsForRequest) {
+      const result = await requester.request<unknown>("/moderation/reports", {
+        method: "POST",
+        body: input,
+        ...requestOptions(optionsForRequest),
+      });
+      return unwrapResult<ClientModerationReport>(result, "report");
+    },
+    async listReports(input = {}, optionsForRequest) {
+      return requester.request<{ reports: ClientModerationReport[]; nextCursor: string | null }>(
+        "/moderation/reports",
+        {
+          query: {
+            limit: input.limit,
+            cursor: input.cursor,
+            status: input.status,
+            targetType: input.targetType,
+          },
+          ...requestOptions(optionsForRequest),
+        },
+      );
+    },
+    async getReport(input, optionsForRequest) {
+      const result = await requester.request<unknown>(
+        "/moderation/reports/" + encodeURIComponent(input.reportId),
+        requestOptions(optionsForRequest),
+      );
+      return unwrapResult<ClientModerationReport>(result, "report");
+    },
+    async updateReport(input, optionsForRequest) {
+      const { reportId, ...body } = input;
+      const result = await requester.request<unknown>(
+        "/moderation/reports/" + encodeURIComponent(reportId),
+        { method: "PATCH", body, ...requestOptions(optionsForRequest) },
+      );
+      return unwrapResult<ClientModerationReport>(result, "report");
+    },
+    async listBans(input = {}, optionsForRequest) {
+      return requester.request<{ bans: ClientUserBan[]; nextCursor: string | null }>(
+        "/moderation/bans",
+        {
+          query: {
+            limit: input.limit,
+            cursor: input.cursor,
+            activeOnly:
+              input.activeOnly === undefined ? undefined : input.activeOnly ? "true" : "false",
+          },
+          ...requestOptions(optionsForRequest),
+        },
+      );
+    },
+    async banUser(input, optionsForRequest) {
+      const result = await requester.request<unknown>("/moderation/bans", {
+        method: "POST",
+        body: input,
+        ...requestOptions(optionsForRequest),
+      });
+      return unwrapResult<ClientUserBan>(result, "ban");
+    },
+    async unbanUser(input, optionsForRequest) {
+      const result = await requester.request<unknown>(
+        "/moderation/bans/" + encodeURIComponent(input.banId),
+        { method: "DELETE", ...requestOptions(optionsForRequest) },
+      );
+      return unwrapResult<ClientUserBan>(result, "ban");
+    },
+  };
+
   const client: ChatClient = {
     conversations: conversationActions,
     messages: messageActions,
+    invites: inviteActions,
+    joinRequests: joinRequestActions,
+    channels: channelActions,
+    moderation: moderationActions,
     realtime,
     $store: cache,
     $getPluginState(id) {

@@ -30,6 +30,7 @@ description: What shipped in v0, what's deliberately out of scope, and where Cha
 | File attachments (`@chatpack/file`)      | ✅ Done (v0.next) |
 | Invite links + join requests             | ✅ Done (v0.next) |
 | Public channels (browsable directory)    | ✅ Done (v0.next) |
+| Moderation: blocks, mutes, reports, bans | ✅ Done (v1.next) |
 
 ## Deliberately not in scope yet
 
@@ -49,13 +50,16 @@ description: What shipped in v0, what's deliberately out of scope, and where Cha
 - **Message formatting** - `body` remains opaque text. Applications choose
   plain text, Markdown, or another syntax and own safe parsing and rendering;
   Chatpack does not parse Markdown or return rendered HTML. See
-  [ADR 0021](/docs/concepts/architecture).
+  [ADR 0022](/docs/concepts/architecture).
 - **Push notification providers** - applications can start their own delivery
   work from `afterMessageMutation`, but Chatpack does not ship providers.
 - **React UI components** - Chatpack is headless; bring your own frontend.
 - **Non-participant search access** - the initial search implementation scopes
   storage results to participant conversations; dynamic `canRead` access for
   support/admin users needs a separate design.
+- **Moderation beyond the core suite** - Chatpack provides optional blocks,
+  mutes, reports, and bans. User identity, notifications, host-session
+  revocation, and moderation UI remain application-owned.
 - **Multi-node `presence()`** - durable events and typing/receipts relay across
   nodes via [`@chatpack/transport-redis`](/docs/realtime/multi-node), but
   presence counts live SSE connections in an in-process `Map`. Shared

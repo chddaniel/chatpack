@@ -256,7 +256,13 @@ A **denied** request is kept (status `denied`) so the requester can be told, and
 a later request from the same user replaces it with a fresh `pending` one -
 `(conversationId, userId)` is unique, one row per user per group. Denial is
 therefore not a block: blocking a user from ever re-requesting is a moderation
-feature (with its own list, its own permissions) and is out of scope here.
+feature, with its own list and its own permissions, and was out of scope here.
+
+**Amended by ADR 0021 (2026-08-11):** that feature now exists. Moderation is a
+separate optional capability - a `blockUser` list plus moderator-authorized bans -
+and it did not change anything above: a denial still isn't a block, and re-asking
+still replaces the row. The one-statement rule in this section is the rule ADR
+0021's `createBan` follows too, for the same reason.
 
 ### 6. No new transport event types
 
@@ -408,7 +414,8 @@ non-member, and must keep doing so.
 - **`@chatpack/client` does not wrap any of this yet**, the same deliberate lag
   groups had between core 0.7.0 and client 0.5.0. Hosts call `fetch` against
   the eight routes until it does. Worth doing next, because an invite flow is
-  mostly UI.
+  mostly UI. _(Closed in client 0.7.0: `chatClient.invites.*` and
+  `chatClient.joinRequests.*` wrap all eight.)_
 - **Expired invites are never garbage-collected.** A row past `expiresAt` stays
   until revoked; consume refuses it, so it is inert, and `listInvites` shows it
   as expired rather than pretending it is gone. Bounded by

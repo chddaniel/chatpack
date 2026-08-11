@@ -1,11 +1,21 @@
 /** JSON wire types returned by the Chatpack HTTP handler. */
 
 import type {
+  AcceptInviteResult,
+  ChannelPreview,
   Conversation,
+  ConversationInvite,
   ConversationWithUnread,
+  InvitePreview,
+  JoinConversationResult,
+  JoinRequest,
   MessageReference,
   MessageWithDetails,
   Metadata,
+  ConversationMute,
+  ModerationReport,
+  UserBan,
+  UserBlock,
   Participant,
   ReactionSummary,
 } from "@chatpack/core";
@@ -41,6 +51,26 @@ export type ClientReactionSummary = Jsonify<ReactionSummary>;
 export type ClientParticipant = Jsonify<Participant>;
 /** Metadata shape returned over HTTP. */
 export type ClientMetadata = Jsonify<Metadata>;
+/** Invite returned over HTTP. */
+export type ClientConversationInvite = Jsonify<ConversationInvite>;
+/** Thin invite data visible before acceptance. */
+export type ClientInvitePreview = Jsonify<InvitePreview>;
+/** Join request returned over HTTP. */
+export type ClientJoinRequest = Jsonify<JoinRequest>;
+/** Thin public-channel directory row. */
+export type ClientChannelPreview = Jsonify<ChannelPreview>;
+/** Result of accepting an invite. */
+export type ClientAcceptInviteResult = Jsonify<AcceptInviteResult>;
+/** Result of joining a public channel. */
+export type ClientJoinConversationResult = Jsonify<JoinConversationResult>;
+/** User block returned over HTTP. */
+export type ClientUserBlock = Jsonify<UserBlock>;
+/** Conversation mute returned over HTTP. */
+export type ClientConversationMute = Jsonify<ConversationMute>;
+/** Moderation report returned over HTTP. */
+export type ClientModerationReport = Jsonify<ModerationReport>;
+/** User ban returned over HTTP. */
+export type ClientUserBan = Jsonify<UserBan>;
 
 /** Paginated conversation response. */
 export interface ClientConversationPage {
@@ -51,6 +81,18 @@ export interface ClientConversationPage {
 /** Paginated message response, newest message first. */
 export interface ClientMessagePage {
   messages: ClientMessage[];
+  nextCursor: string | null;
+}
+
+/** Public-channel directory response. */
+export interface ClientChannelPage {
+  channels: ClientChannelPreview[];
+  nextCursor: string | null;
+}
+
+/** Generic cursor-paginated moderation response. */
+export interface ClientModerationPage<T> {
+  items: T[];
   nextCursor: string | null;
 }
 

@@ -36,7 +36,122 @@ import type {
   MessageRole,
   ParticipantRole,
   Reaction,
+  ConversationMute,
+  ModerationReport,
+  ReportStatus,
+  UserBan,
+  UserBlock,
 } from "./types";
+
+/** Persistence input for one directed user block relation. */
+export interface BlockUserInput {
+  blockerUserId: string;
+  blockedUserId: string;
+}
+
+/** Persistence pagination input for a user's blocks. */
+export interface ListBlocksInput {
+  blockerUserId: string;
+  limit: number;
+  cursor?: string;
+}
+
+/** Persistence input for one per-user conversation mute. */
+export interface MuteConversationInput {
+  userId: string;
+  conversationId: string;
+}
+
+/** Persistence pagination input for a user's mutes. */
+export interface ListMutesInput {
+  userId: string;
+  limit: number;
+  cursor?: string;
+}
+
+/** Persistence input for a report with captured evidence. */
+export interface CreateReportInput {
+  reporterUserId: string;
+  targetType: "user" | "message" | "conversation";
+  targetId: string;
+  reason: string;
+  evidence: ModerationReport["evidence"];
+}
+
+/** Persistence filters and pagination for the moderator report queue. */
+export interface ListReportsInput {
+  status?: ReportStatus;
+  targetType?: "user" | "message" | "conversation";
+  limit: number;
+  cursor?: string;
+}
+
+/** Persistence input for a moderator report lifecycle update. */
+export interface UpdateReportInput {
+  reportId: string;
+  status: ReportStatus;
+  moderatorNote: string | null;
+}
+
+/** Persistence input for a permanent or timed ban. */
+export interface CreateBanInput {
+  userId: string;
+  createdByUserId: string;
+  reason: string | null;
+  expiresAt: Date | null;
+}
+
+/** Persistence filters and pagination for bans. */
+export interface ListBansInput {
+  activeOnly: boolean;
+  limit: number;
+  cursor?: string;
+}
+
+/** Persistence input for revoking a ban without deleting its history. */
+export interface RevokeBanInput {
+  banId: string;
+  revokedByUserId: string;
+}
+
+/** Cursor-paginated moderation persistence result. */
+export interface ModerationPage<T> {
+  items: T[];
+  nextCursor: string | null;
+}
+
+/** Optional durable capability used by Chatpack's moderation API. */
+export interface ModerationStorage {
+  isUserBanned(userId: string, now?: Date): Promise<UserBan | null>;
+  isBlocked(userIdA: string, userIdB: string): Promise<boolean>;
+  createBlock(input: BlockUserInput): Promise<UserBlock>;
+  removeBlock(input: BlockUserInput): Promise<void>;
+  listBlocks(input: ListBlocksInput): Promise<ModerationPage<UserBlock>>;
+  createMute(input: MuteConversationInput): Promise<ConversationMute>;
+  removeMute(input: MuteConversationInput): Promise<void>;
+  listMutes(input: ListMutesInput): Promise<ModerationPage<ConversationMute>>;
+  findOpenReport(
+    reporterUserId: string,
+    targetType: "user" | "message" | "conversation",
+    targetId: string,
+  ): Promise<ModerationReport | null>;
+  createReport(input: CreateReportInput): Promise<ModerationReport>;
+  getReport(reportId: string): Promise<ModerationReport | null>;
+  listReports(input: ListReportsInput): Promise<ModerationPage<ModerationReport>>;
+  updateReport(input: UpdateReportInput): Promise<ModerationReport>;
+  getActiveBan(userId: string, now?: Date): Promise<UserBan | null>;
+  getBan(banId: string): Promise<UserBan | null>;
+  /**
+   * Ban a user, or return their existing active ban unchanged. Decide which in
+   * **one statement** rather than reading first and inserting after: two
+   * moderators banning the same user at the same moment must end up with one
+   * active ban, or revoking the ban a moderator can see would leave the other
+   * one enforcing (ADR 0019 §5, ADR 0021).
+   */
+  createBan(input: CreateBanInput): Promise<UserBan>;
+  listBans(input: ListBansInput): Promise<ModerationPage<UserBan>>;
+  revokeBan(input: RevokeBanInput): Promise<UserBan>;
+}
 
 /** Input for {@link StorageAdapter.createGroupConversation}. */
 export interface CreateGroupConversationInput {
@@ -470,6 +585,9 @@ export interface ChannelStorage {
  * messages (add, list, update-in-place), and read-state.
  */
 export interface StorageAdapter {
+  /** Optional moderation persistence capability. */
+  moderation?: ModerationStorage;
+
   /**
    * Find the direct conversation for `pairKey`, or atomically create it with
    * both participants. Must be idempotent: concurrent calls with the same

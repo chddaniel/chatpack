@@ -234,12 +234,23 @@ the UI so their absence degrades quietly.
 
 Also available: `realtime.pollNow()` for a manual "check for new messages".
 
-**The client does not yet wrap invites, join requests, or channels.** There is
-no `chatClient.invites.*`, `chatClient.joinRequests.*` or
-`chatClient.channels.*` - do not write one from memory. Call the ten HTTP routes
-directly with `fetch` (same `basePath`, same cookies) until a release adds them.
+**The client wraps invites, join requests, and channels.** Use
+`chatClient.invites.*`, `chatClient.joinRequests.*`, and `chatClient.channels.*`
+for the ten routes. `invites.accept` and `channels.join` return a
+`status`-discriminated result: `"joined"` carries a conversation and
+`"pending"` carries a join request. The client preserves `INVITE_NOT_FOUND`
+(404), `INVITE_EXPIRED` (410), `JOIN_REQUEST_NOT_FOUND` (404), and optional
+capability errors `INVITES_UNSUPPORTED` / `CHANNELS_UNSUPPORTED` (501).
 Arrivals still flow through the normal `participant.added` event, so the cache
 stays correct.
+
+**The client also wraps moderation.** `chatClient.moderation.*` covers the
+self-service actions (`blockUser`, `unblockUser`, `listBlockedUsers`,
+`muteConversation`, `unmuteConversation`, `listMutedConversations`, `report`)
+and the moderator ones (`listReports`, `getReport`, `updateReport`, `listBans`,
+`banUser`, `unbanUser`). Moderator calls return `NOT_MODERATOR` (403) unless
+the server's `canModerate` says otherwise, and every call returns
+`MODERATION_UNSUPPORTED` (501) on an adapter without the capability.
 
 ## Hard rules (violating any of these is the #1 cause of broken integrations)
 
@@ -550,6 +561,36 @@ A complete plain-Node version lives in `examples/node-server` in the repo.
 | POST   | `/messages/:id/reactions`     | `{ emoji }`                            | `{ message }` (full reaction set)         |
 | DELETE | `/messages/:id/reactions`     | `{ emoji }`                            | `{ message }` (full reaction set)         |
 | GET    | `/stream`                     | SSE; auto `Last-Event-ID` on reconnect | `text/event-stream`                       |
+
+Optional moderation routes use `StorageAdapter.moderation`. Blocks and mutes
+are self-service. Report queue and ban routes require
+`chatpack({ moderation: { canModerate } })` authorization:
+
+| Method | Path | Request body / query | Response |
+| --- | --- | --- | --- |
+| POST/DELETE | `/moderation/blocks` | `{ targetUserId }` | `{ block }` / `{ ok: true }` |
+| GET | `/moderation/blocks` | `?limit=&cursor=` | `{ blocks, nextCursor }` |
+| POST/DELETE | `/moderation/mutes` | `{ conversationId }` | `{ mute }` / `{ ok: true }` |
+| GET | `/moderation/mutes` | `?limit=&cursor=` | `{ mutes, nextCursor }` |
+| POST | `/moderation/reports` | `{ targetType, targetId, reason }` | `{ report }` |
+| GET/PATCH | `/moderation/reports[/:id]` | status, targetType, or `{ status, moderatorNote? }` | report page or `{ report }` |
+| GET/POST | `/moderation/bans` | filters or `{ targetUserId, reason?, expiresAt? }` | ban page or `{ ban }` |
+| DELETE | `/moderation/bans/:id` | - | `{ ban }` |
+
+Blocks stop new direct conversations and direct message mutations, but keep
+existing direct history readable and do not affect shared groups. Mutes do not
+change unread counts or SSE delivery. Reports support user, message, and
+conversation targets. Active bans return `USER_BANNED`; adapters without the
+optional capability return `MODERATION_UNSUPPORTED`.
+
+**Ban enforcement follows your config, not your adapter.** Bans are checked on
+every request and on every SSE heartbeat only when `moderation` is configured -
+by default whenever `canModerate` is set, since `banUser` is the only way to
+mint a ban. An app that never configures `moderation` pays no ban lookups even
+on an adapter that supports them. Set `moderation: { enforceBans: true }` when
+ban rows are written outside Chatpack, or `false` to keep the moderator tools
+without per-request enforcement. Blocks, mutes and reports are unaffected: they
+work off `StorageAdapter.moderation` alone.
 
 Plugin routes (only when the plugin is passed to `chatpack({ plugins })`):
 
@@ -1049,6 +1090,23 @@ numbers, versions, and underscored identifiers behave the same in memory and
 Postgres. Custom adapters should use these helpers to preserve the same
 contract; cursors remain opaque and adapter-defined.
 
+`moderation` is the fourth optional storage capability, independent of the other
+three. Implement
+`ModerationStorage` when the adapter supports blocks, mutes, reports, and bans;
+the memory and Drizzle adapters are the reference implementations. Persist
+four durable table families: symmetric block lookup, per-user conversation
+mutes, reports with immutable message/conversation evidence JSON, and bans with
+expiry and revocation fields. Make block and mute creates idempotent, reuse an
+open or triaged report for the same reporter and target, and keep revoked or
+expired bans in history. `createBan` must decide **in one statement** whether a
+user already has an active ban and return that ban instead of inserting a
+second: two moderators banning at the same moment must leave exactly one active
+row, or revoking the visible ban would leave the duplicate enforcing. "Active"
+means unrevoked *and* unexpired, which no unique index can express, so put the
+condition in the insert itself. `revokeBan` must keep the original revoker when
+called twice. Custom adapters that omit this capability remain compatible;
+moderation calls then return `MODERATION_UNSUPPORTED`.
+
 ### Entities your adapter stores
 
 - **Conversation**: `id`, `type` (`"direct" | "group"`),
@@ -1077,6 +1135,20 @@ contract; cursors remain opaque and adapter-defined.
   `inviteCode: string | null` (no foreign key - a request must outlive a
   revoked invite), `createdAt: Date`, `resolvedAt: Date | null`,
   `resolvedBy: string | null`, `metadata`. Unique on `(conversationId, userId)`.
+- **UserBlock** (optional capability): `blockerUserId`, `blockedUserId`,
+  `createdAt: Date`. Keyed on the pair; `isBlocked` must match in **either**
+  direction. No id.
+- **ConversationMute** (optional capability): `userId`, `conversationId`,
+  `createdAt: Date`. Keyed on the pair. No id.
+- **ModerationReport** (optional capability): `id`, `reporterUserId`,
+  `targetType` (`"user" | "message" | "conversation"`), `targetId`, `reason`,
+  `status` (`"open" | "triaged" | "resolved" | "dismissed"`),
+  `moderatorNote: string | null`, `evidence` (a JSON snapshot core builds - store
+  it verbatim and never refresh it), `createdAt: Date`, `updatedAt: Date`.
+- **UserBan** (optional capability): `id`, `userId`, `createdByUserId`,
+  `reason: string | null`, `createdAt: Date`, `expiresAt: Date | null`,
+  `revokedAt: Date | null`, `revokedByUserId: string | null`. Never deleted -
+  revoked and expired rows are the audit history.
 
 Adapters store `replyToMessageId` verbatim (core already validated it) and
 never see the API-only decorations `replyTo` / `reactions` - core computes
@@ -1373,6 +1445,62 @@ CREATE UNIQUE INDEX IF NOT EXISTS "chatpack_join_requests_conv_user_idx"
   ON "chatpack_join_requests" ("conversation_id", "user_id");
 CREATE INDEX IF NOT EXISTS "chatpack_join_requests_status_idx"
   ON "chatpack_join_requests" ("conversation_id", "status", "created_at");
+
+-- Optional moderation capability (ADR 0021). Four pure table additions: no
+-- column changes and no index swaps, so this is safe to run before deploying.
+CREATE TABLE IF NOT EXISTS "chatpack_user_blocks" (
+  "blocker_user_id" text NOT NULL,
+  "blocked_user_id" text NOT NULL,
+  "created_at" timestamptz NOT NULL,
+  PRIMARY KEY ("blocker_user_id", "blocked_user_id")
+);
+CREATE INDEX IF NOT EXISTS "chatpack_user_blocks_blocker_idx"
+  ON "chatpack_user_blocks" ("blocker_user_id", "created_at");
+CREATE TABLE IF NOT EXISTS "chatpack_conversation_mutes" (
+  "user_id" text NOT NULL,
+  "conversation_id" text NOT NULL
+    REFERENCES "chatpack_conversations"("id") ON DELETE CASCADE,
+  "created_at" timestamptz NOT NULL,
+  PRIMARY KEY ("user_id", "conversation_id")
+);
+CREATE INDEX IF NOT EXISTS "chatpack_conversation_mutes_user_idx"
+  ON "chatpack_conversation_mutes" ("user_id", "created_at");
+-- "evidence" is a snapshot core builds at filing time. Store it verbatim: a
+-- later edit or delete must not be able to launder the report.
+CREATE TABLE IF NOT EXISTS "chatpack_moderation_reports" (
+  "id" text PRIMARY KEY,
+  "reporter_user_id" text NOT NULL,
+  "target_type" text NOT NULL,
+  "target_id" text NOT NULL,
+  "reason" text NOT NULL,
+  "status" text NOT NULL DEFAULT 'open',
+  "moderator_note" text,
+  "evidence" jsonb NOT NULL,
+  "created_at" timestamptz NOT NULL,
+  "updated_at" timestamptz NOT NULL
+);
+CREATE INDEX IF NOT EXISTS "chatpack_moderation_reports_queue_idx"
+  ON "chatpack_moderation_reports" ("status", "created_at", "id");
+-- Backs the "reuse an open or triaged report for the same reporter+target" rule.
+CREATE INDEX IF NOT EXISTS "chatpack_moderation_reports_target_idx"
+  ON "chatpack_moderation_reports"
+     ("reporter_user_id", "target_type", "target_id", "status");
+-- No unique index can express "one ACTIVE ban" (active = unrevoked and
+-- unexpired), so createBan puts the condition in the insert instead.
+CREATE TABLE IF NOT EXISTS "chatpack_user_bans" (
+  "id" text PRIMARY KEY,
+  "user_id" text NOT NULL,
+  "created_by_user_id" text NOT NULL,
+  "reason" text,
+  "created_at" timestamptz NOT NULL,
+  "expires_at" timestamptz,
+  "revoked_at" timestamptz,
+  "revoked_by_user_id" text
+);
+CREATE INDEX IF NOT EXISTS "chatpack_user_bans_active_idx"
+  ON "chatpack_user_bans" ("user_id", "revoked_at", "expires_at");
+CREATE INDEX IF NOT EXISTS "chatpack_user_bans_created_idx"
+  ON "chatpack_user_bans" ("created_at", "id");
 ```
 
 `reply_to_message_id` deliberately has **no foreign key**: a reply must outlive
@@ -1406,6 +1534,22 @@ How the reference implementation satisfies the two hard invariants
   Postgres only matches an `ON CONFLICT` target to a partial index when the
   predicate is repeated. Omit it and **every DM insert** fails with "there is no
   unique or exclusion constraint matching the ON CONFLICT specification".
+
+- **One active ban under concurrency** - the same "one statement" shape, but the
+  predicate can't live in an index, so it lives in the insert:
+
+  ```sql
+  INSERT INTO chatpack_user_bans (...)
+  SELECT $id, $userId, ...
+  WHERE NOT EXISTS (
+    SELECT 1 FROM chatpack_user_bans
+    WHERE user_id = $userId AND revoked_at IS NULL
+      AND (expires_at IS NULL OR expires_at > $now)
+  );
+  ```
+
+  then re-select the active ban; zero inserted rows means a concurrent
+  moderator won and both converge on the same row.
 
 - **Group creation** takes the opposite path: a plain `INSERT` (no conflict
   target - a group is always new) for the conversation plus the participant
@@ -1824,6 +1968,17 @@ if any fails, the bug is in the adapter.
     `GET /channels`, the join route, *and* any attempt to set a non-default
     `visibility` must all be a clean 501; explicitly sending the defaults must
     still work.
+20. **Moderation, if you implemented it.** Block B as A: `isBlocked` is true in
+    both directions, A and B can still read their old DM, and neither can write
+    to it - but a shared group is unaffected. Block twice: one row. Report the
+    same message twice as the same reporter: the same report id back, and the
+    `evidence` body unchanged after the message is edited and deleted. Fire 2
+    parallel `createBan` calls for one user - both return the same id, and
+    `listBans({ activeOnly: false })` has exactly one row; revoke it and the user
+    is unbanned. Revoke twice: `revokedByUserId` still names the first revoker.
+    Backdate `expires_at` - the ban stops enforcing but stays in history. Omit
+    the `moderation` namespace and every moderation route must be a clean 501,
+    not a crash.
 
 ## Real-time plugins and custom adapters
 

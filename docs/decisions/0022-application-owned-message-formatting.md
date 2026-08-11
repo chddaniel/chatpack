@@ -1,4 +1,4 @@
-# ADR 0021: Application-owned message formatting
+# ADR 0022: Application-owned message formatting
 
 - **Status:** accepted
 - **Date:** 2026-08-11
