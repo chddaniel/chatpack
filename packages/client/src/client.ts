@@ -1,5 +1,11 @@
 /** Composes the framework-agnostic Chatpack client and its resource actions. */
-import type { Metadata, MessageRole, ParticipantRole } from "@chatpack/core";
+import type {
+  ChannelJoinPolicy,
+  ChannelVisibility,
+  Metadata,
+  MessageRole,
+  ParticipantRole,
+} from "@chatpack/core";
 import type { ChatClientOptions } from "./config";
 import type { ChatClientResult } from "./errors";
 import {
@@ -19,8 +25,14 @@ import {
 import { createChatpackCache, type ChatpackCache } from "./store-cache";
 import type { ReadonlyStore } from "./store";
 import type {
+  ClientAcceptInviteResult,
+  ClientChannelPage,
+  ClientConversationInvite,
   ClientConversation,
   ClientConversationPage,
+  ClientInvitePreview,
+  ClientJoinConversationResult,
+  ClientJoinRequest,
   ClientMessage,
   ClientMessagePage,
 } from "./wire";
@@ -43,13 +55,22 @@ export interface GroupCreateInput {
    * start with only its creator, who becomes its first admin.
    */
   userIds?: string[];
+  /** Whether to list this group in the public channel directory. */
+  visibility?: ChannelVisibility;
+  /** How users joining a public channel are handled. */
+  joinPolicy?: ChannelJoinPolicy;
   metadata?: Metadata;
 }
 
-/** Input for renaming a group (ADR 0017). Admin-only; `name: null` clears the title. */
+/** Input for updating a group name or channel settings (ADR 0017/0020). */
 export interface ConversationUpdateInput {
   conversationId: string;
-  name: string | null;
+  /** New title, or `null` to clear it. Omit when changing channel settings only. */
+  name?: string | null;
+  /** Whether to list this group in the public channel directory. */
+  visibility?: ChannelVisibility;
+  /** How users joining a public channel are handled. */
+  joinPolicy?: ChannelJoinPolicy;
 }
 
 /** Input for adding members to a group (ADR 0017). Admin-only; already-present ids are no-ops. */
@@ -106,6 +127,119 @@ export interface MessageSearchInput {
   query: string;
   limit?: number;
   cursor?: string;
+}
+
+/** Input for minting an invite link for a group. */
+export interface InviteCreateInput {
+  conversationId: string;
+  expiresInSeconds?: number;
+  maxUses?: number;
+  requiresApproval?: boolean;
+  metadata?: Metadata;
+}
+
+/** Input for listing or revoking invites belonging to a group. */
+export interface InviteListInput {
+  conversationId: string;
+}
+
+/** Input for revoking one invite link. */
+export interface InviteRevokeInput extends InviteListInput {
+  code: string;
+}
+
+/** Input for previewing an invite link before accepting it. */
+export interface InvitePreviewInput {
+  code: string;
+}
+
+/** Input for accepting an invite link. */
+export interface InviteAcceptInput extends InvitePreviewInput {
+  message?: string;
+}
+
+/** Typed actions for invite links. */
+export interface InviteActions {
+  create(
+    input: InviteCreateInput,
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<ClientConversationInvite>>;
+  list(
+    input: InviteListInput,
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<{ invites: ClientConversationInvite[] }>>;
+  revoke(
+    input: InviteRevokeInput,
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<{ ok: true }>>;
+  preview(
+    input: InvitePreviewInput,
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<ClientInvitePreview>>;
+  accept(
+    input: InviteAcceptInput,
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<ClientAcceptInviteResult>>;
+}
+
+/** Input for creating a join request for a group or channel. */
+export interface JoinRequestCreateInput {
+  conversationId: string;
+  message?: string;
+}
+
+/** Input for listing a group's join requests. */
+export interface JoinRequestListInput extends InviteListInput {
+  status?: "pending" | "approved" | "denied";
+  limit?: number;
+}
+
+/** Input for approving or denying one user's join request. */
+export interface JoinRequestResolveInput extends InviteListInput {
+  userId: string;
+  decision: "approve" | "deny";
+}
+
+/** Typed actions for join requests. */
+export interface JoinRequestActions {
+  create(
+    input: JoinRequestCreateInput,
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<ClientJoinRequest>>;
+  list(
+    input: JoinRequestListInput,
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<{ joinRequests: ClientJoinRequest[] }>>;
+  resolve(
+    input: JoinRequestResolveInput,
+    options?: ChatClientRequestOptions,
+  ): Promise<
+    ChatClientResult<{ joinRequest: ClientJoinRequest; conversation: ClientConversation | null }>
+  >;
+}
+
+/** Optional pagination input for the public channel directory. */
+export interface ChannelListInput {
+  limit?: number;
+  cursor?: string;
+}
+
+/** Input for joining a public channel. */
+export interface ChannelJoinInput {
+  conversationId: string;
+  message?: string;
+}
+
+/** Typed actions for public channels. */
+export interface ChannelActions {
+  list(
+    input?: ChannelListInput,
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<ClientChannelPage>>;
+  join(
+    input: ChannelJoinInput,
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<ClientJoinConversationResult>>;
 }
 
 /** Input for sending a message. */
@@ -229,6 +363,9 @@ export interface MessageActions {
 export interface ChatClient {
   conversations: ConversationActions;
   messages: MessageActions;
+  invites: InviteActions;
+  joinRequests: JoinRequestActions;
+  channels: ChannelActions;
   realtime: ChatRealtime;
   $store: ChatpackCache;
   $getPluginState(id: string): ReadonlyStore<unknown> | null;
@@ -530,7 +667,11 @@ export function createChatClient<
       return changeConversation(
         "/conversations/" + encodeURIComponent(input.conversationId),
         "PATCH",
-        { name: input.name },
+        {
+          name: input.name,
+          visibility: input.visibility,
+          joinPolicy: input.joinPolicy,
+        },
         optionsForRequest,
       );
     },
@@ -579,6 +720,126 @@ export function createChatClient<
         },
       );
       if (result.error === null) cache.applyRead(input.conversationId, input.messageId);
+      return result;
+    },
+  };
+
+  function applyJoinedConversation(conversation: ClientConversation): void {
+    cache.setConversation(conversation.id, { data: conversation, error: null });
+    cache.applyConversationSnapshot(conversation);
+    if (cache.isMissingFromConversations(conversation.id)) {
+      cache.prependConversation(conversation);
+    }
+  }
+
+  function applyJoinResult(result: ClientAcceptInviteResult | ClientJoinConversationResult): void {
+    if (result.status === "joined") applyJoinedConversation(result.conversation);
+  }
+
+  const inviteActions: InviteActions = {
+    async create(input, optionsForRequest) {
+      const { conversationId, ...body } = input;
+      const result = await requester.request<unknown>(
+        "/conversations/" + encodeURIComponent(conversationId) + "/invites",
+        {
+          method: "POST",
+          body,
+          ...requestOptions(optionsForRequest),
+        },
+      );
+      return unwrapResult<ClientConversationInvite>(result, "invite");
+    },
+    async list(input, optionsForRequest) {
+      return requester.request<{ invites: ClientConversationInvite[] }>(
+        "/conversations/" + encodeURIComponent(input.conversationId) + "/invites",
+        requestOptions(optionsForRequest),
+      );
+    },
+    async revoke(input, optionsForRequest) {
+      return requester.request<{ ok: true }>(
+        "/conversations/" +
+          encodeURIComponent(input.conversationId) +
+          "/invites/" +
+          encodeURIComponent(input.code),
+        { method: "DELETE", ...requestOptions(optionsForRequest) },
+      );
+    },
+    async preview(input, optionsForRequest) {
+      const result = await requester.request<unknown>(
+        "/invites/" + encodeURIComponent(input.code),
+        requestOptions(optionsForRequest),
+      );
+      return unwrapResult<ClientInvitePreview>(result, "invite");
+    },
+    async accept(input, optionsForRequest) {
+      const result = await requester.request<ClientAcceptInviteResult>(
+        "/invites/" + encodeURIComponent(input.code) + "/accept",
+        {
+          method: "POST",
+          body: input.message === undefined ? {} : { message: input.message },
+          ...requestOptions(optionsForRequest),
+        },
+      );
+      if (result.error === null) applyJoinResult(result.data);
+      return result;
+    },
+  };
+
+  const joinRequestActions: JoinRequestActions = {
+    async create(input, optionsForRequest) {
+      const { conversationId, ...body } = input;
+      const result = await requester.request<unknown>(
+        "/conversations/" + encodeURIComponent(conversationId) + "/join-requests",
+        {
+          method: "POST",
+          body,
+          ...requestOptions(optionsForRequest),
+        },
+      );
+      return unwrapResult<ClientJoinRequest>(result, "joinRequest");
+    },
+    async list(input, optionsForRequest) {
+      return requester.request<{ joinRequests: ClientJoinRequest[] }>(
+        "/conversations/" + encodeURIComponent(input.conversationId) + "/join-requests",
+        {
+          query: { status: input.status, limit: input.limit },
+          ...requestOptions(optionsForRequest),
+        },
+      );
+    },
+    async resolve(input, optionsForRequest) {
+      const result = await requester.request<{
+        joinRequest: ClientJoinRequest;
+        conversation: ClientConversation | null;
+      }>("/conversations/" + encodeURIComponent(input.conversationId) + "/join-requests", {
+        method: "PATCH",
+        body: { userId: input.userId, decision: input.decision },
+        ...requestOptions(optionsForRequest),
+      });
+      if (result.error === null && result.data.conversation !== null) {
+        applyJoinedConversation(result.data.conversation);
+      }
+      return result;
+    },
+  };
+
+  const channelActions: ChannelActions = {
+    async list(input = {}, optionsForRequest) {
+      return requester.request<ClientChannelPage>("/channels", {
+        query: { limit: input.limit, cursor: input.cursor },
+        ...requestOptions(optionsForRequest),
+      });
+    },
+    async join(input, optionsForRequest) {
+      const result = await requester.request<ClientJoinConversationResult>(
+        "/conversations/" + encodeURIComponent(input.conversationId) + "/join",
+        {
+          method: "POST",
+          body: input.message === undefined ? {} : { message: input.message },
+          ...requestOptions(optionsForRequest),
+        },
+      );
+      if (result.error === null) applyJoinResult(result.data);
       return result;
     },
   };
@@ -706,6 +967,9 @@ export function createChatClient<
   const client: ChatClient = {
     conversations: conversationActions,
     messages: messageActions,
+    invites: inviteActions,
+    joinRequests: joinRequestActions,
+    channels: channelActions,
     realtime,
     $store: cache,
     $getPluginState(id) {

@@ -686,8 +686,9 @@ Like reactions, these are not gap-filled - refetch the conversation list when
 the stream reopens.
 
 <Callout type="warn">
-  `@chatpack/client` does not subscribe to these three events yet, and has no wrappers for the
-  group, invite, join-request, or channel routes. Call them with `fetch` and refetch afterwards.
+  `@chatpack/client` subscribes to the existing membership events and wraps the group, invite,
+  join-request, and channel routes. It does not add new React cache queries for the imperative
+  invite, queue, or directory actions.
 </Callout>
 
 Ephemeral plugin events (never stored, never replayed, no `id:` field):

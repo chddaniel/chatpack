@@ -8,6 +8,12 @@ import { presenceClient, typingClient } from "../src/plugins";
 
 const client = createChatClient({ plugins: [typingClient(), presenceClient()] });
 client.conversations.createGroup({ name: "Project", userIds: ["alice", "bob"] });
+client.conversations.createGroup({
+  name: "Public project",
+  visibility: "public",
+  joinPolicy: "approval",
+});
+client.conversations.update({ conversationId: "c1", visibility: "public", joinPolicy: "open" });
 client.conversations.addParticipants({ conversationId: "c1", userIds: ["carol"] });
 client.conversations.removeParticipant({ conversationId: "c1", userId: "carol" });
 client.conversations.setParticipantRole({ conversationId: "c1", userId: "alice", role: "admin" });
@@ -18,6 +24,31 @@ client.presence.state.getSnapshot()["alice"];
 client.messages.search({ query: "whole words", limit: 20 });
 client.messages.react({ messageId: "m1", emoji: "thumbs-up" });
 client.messages.unreact({ messageId: "m1", emoji: "thumbs-up" });
+client.invites.create({ conversationId: "c1", requiresApproval: true });
+client.invites.list({ conversationId: "c1" });
+client.invites.revoke({ conversationId: "c1", code: "invite" });
+client.invites.preview({ code: "invite" });
+client.invites.accept({ code: "invite", message: "hello" });
+client.joinRequests.create({ conversationId: "c1", message: "please" });
+client.joinRequests.list({ conversationId: "c1", status: "pending", limit: 10 });
+client.joinRequests.resolve({ conversationId: "c1", userId: "bob", decision: "approve" });
+client.channels.list({ limit: 10, cursor: "next" });
+client.channels.join({ conversationId: "c1", message: "please" });
+
+async function narrowInviteResult() {
+  const result = await client.invites.accept({ code: "invite" });
+  if (result.error === null) {
+    if (result.data.status === "joined") {
+      result.data.conversation.id;
+      result.data.joinRequest;
+    } else {
+      result.data.conversation;
+      result.data.joinRequest.id;
+    }
+  }
+}
+
+void narrowInviteResult;
 
 const reactClient = createReactChatClient();
 reactClient.useMessageSearch({ query: "whole words", limit: 20 }).loadMore();

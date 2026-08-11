@@ -90,20 +90,23 @@ The client retains at most ten normalized query entries per instance.
 
 The framework-agnostic client mirrors the server routes from `@chatpack/core`:
 
-| Client surface           | Core route or behavior                                |
-| ------------------------ | ----------------------------------------------------- |
-| `conversations.create`   | `POST /conversations`                                 |
-| `conversations.list`     | `GET /conversations`                                  |
-| `conversations.get`      | `GET /conversations/:id`                              |
-| `conversations.markRead` | `POST /conversations/:id/read`                        |
-| `messages.list`          | `GET /conversations/:id/messages`                     |
-| `messages.search`        | `GET /search/messages?q=...`                          |
-| `messages.send`          | `POST /conversations/:id/messages`                    |
-| `messages.edit`          | `PATCH /messages/:id`                                 |
-| `messages.delete`        | `DELETE /messages/:id`                                |
-| `messages.react`         | `POST /messages/:id/reactions`                        |
-| `messages.unreact`       | `DELETE /messages/:id/reactions`                      |
-| `realtime`               | `GET /stream` with native reconnect and deduplication |
+| Client surface           | Core route or behavior                                        |
+| ------------------------ | ------------------------------------------------------------- |
+| `conversations.create`   | `POST /conversations`                                         |
+| `conversations.list`     | `GET /conversations`                                          |
+| `conversations.get`      | `GET /conversations/:id`                                      |
+| `conversations.markRead` | `POST /conversations/:id/read`                                |
+| `messages.list`          | `GET /conversations/:id/messages`                             |
+| `messages.search`        | `GET /search/messages?q=...`                                  |
+| `messages.send`          | `POST /conversations/:id/messages`                            |
+| `messages.edit`          | `PATCH /messages/:id`                                         |
+| `messages.delete`        | `DELETE /messages/:id`                                        |
+| `messages.react`         | `POST /messages/:id/reactions`                                |
+| `messages.unreact`       | `DELETE /messages/:id/reactions`                              |
+| `invites`                | Invite creation, listing, preview, acceptance, and revocation |
+| `joinRequests`           | Join-request creation, moderation queue, and resolution       |
+| `channels`               | Public-channel directory and self-service joining             |
+| `realtime`               | `GET /stream` with native reconnect and deduplication         |
 
 Every request returns `{ data, error }`. The client passes browser credentials
 to the server and never replaces the server's auth hook. The optional `userId`
@@ -250,6 +253,41 @@ renames and role changes merge in place, being added to a group backfills it
 into the list, and being removed drops the conversation from every cache
 surface - the polling fallback converges the same way on its next tick,
 treating a thread poll's `FORBIDDEN_READ` as the removal signal.
+
+Group creation and updates also accept `visibility` (`"private"` or
+`"public"`) and `joinPolicy` (`"approval"` or `"open"`) for public channels.
+
+## Invites, join requests, and channels
+
+The client wraps all invite, join-request, and public-channel routes:
+
+```ts
+const invite = await chatClient.invites.create({
+  conversationId: groupId,
+  expiresInSeconds: 3600,
+  requiresApproval: true,
+});
+
+if (invite.error === null) {
+  const accepted = await chatClient.invites.accept({ code: invite.data.code });
+  if (accepted.error === null && accepted.data.status === "pending") {
+    console.log("Waiting for approval", accepted.data.joinRequest.id);
+  }
+}
+
+const channels = await chatClient.channels.list();
+if (channels.error === null) {
+  await chatClient.channels.join({ conversationId: channels.data.channels[0]!.conversationId });
+}
+```
+
+`invites.accept` and `channels.join` return a status-discriminated result:
+`"joined"` includes a conversation, while `"pending"` includes a join request.
+Repeated pending requests return the existing request. Unknown or revoked invite
+codes return `INVITE_NOT_FOUND` (404); expired or exhausted codes return
+`INVITE_EXPIRED` (410). Resolving an already-resolved request returns
+`JOIN_REQUEST_NOT_FOUND` (404). Adapters without the optional capabilities return
+`INVITES_UNSUPPORTED` or `CHANNELS_UNSUPPORTED` (501) as structured results.
 
 ## Source layout
 

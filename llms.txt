@@ -234,10 +234,13 @@ the UI so their absence degrades quietly.
 
 Also available: `realtime.pollNow()` for a manual "check for new messages".
 
-**The client does not yet wrap invites, join requests, or channels.** There is
-no `chatClient.invites.*`, `chatClient.joinRequests.*` or
-`chatClient.channels.*` - do not write one from memory. Call the ten HTTP routes
-directly with `fetch` (same `basePath`, same cookies) until a release adds them.
+**The client wraps invites, join requests, and channels.** Use
+`chatClient.invites.*`, `chatClient.joinRequests.*`, and `chatClient.channels.*`
+for the ten routes. `invites.accept` and `channels.join` return a
+`status`-discriminated result: `"joined"` carries a conversation and
+`"pending"` carries a join request. The client preserves `INVITE_NOT_FOUND`
+(404), `INVITE_EXPIRED` (410), `JOIN_REQUEST_NOT_FOUND` (404), and optional
+capability errors `INVITES_UNSUPPORTED` / `CHANNELS_UNSUPPORTED` (501).
 Arrivals still flow through the normal `participant.added` event, so the cache
 stays correct.
 

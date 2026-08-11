@@ -98,6 +98,41 @@ next tick instead, including the removal case (the poll's `FORBIDDEN_READ`
 triggers the same drop). Like reactions, these events are not gap-filled after
 a reconnect - refetch conversations when the stream reopens.
 
+## Invites, join requests, and channels
+
+The imperative client wraps invite links, join-request moderation, and public
+channel discovery. Group creation and updates accept `visibility` and
+`joinPolicy` so a channel needs no raw request:
+
+```ts
+const channel = await chatClient.conversations.createGroup({
+  name: "Engineering",
+  visibility: "public",
+  joinPolicy: "approval",
+});
+
+const directory = await chatClient.channels.list();
+if (directory.error === null) {
+  const preview = directory.data.channels[0];
+  if (preview !== undefined && !preview.requestPending && !preview.alreadyParticipant) {
+    const result = await chatClient.channels.join({
+      conversationId: preview.conversationId,
+      message: "I work on this project",
+    });
+    if (result.error === null && result.data.status === "pending") {
+      console.log("Request pending", result.data.joinRequest.id);
+    }
+  }
+}
+```
+
+`invites.accept` and `channels.join` return `status: "joined"` with a
+conversation or `status: "pending"` with a join request. Repeated pending
+requests return the existing request. The client preserves `INVITE_NOT_FOUND`
+(404), `INVITE_EXPIRED` (410), `JOIN_REQUEST_NOT_FOUND` (404),
+`INVITES_UNSUPPORTED` (501), and `CHANNELS_UNSUPPORTED` (501) as structured
+errors.
+
 ## Message search
 
 Search all conversations visible to the signed-in participant with the
