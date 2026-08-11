@@ -52,7 +52,7 @@ Chatpack stays headless and provider-neutral.
   to each process.
 - Public channels are discoverable, not readable. Browsing the directory
   returns a name and a participant count; reading messages requires joining.
-- Moderation suites and multi-region infrastructure have not shipped.
+- Multi-region infrastructure has not shipped.
 
 These boundaries keep the core small. They are not release promises.
 

@@ -1,7 +1,7 @@
 /**
  * The Chatpack Postgres schema (MVP §8), defined with Drizzle ORM.
  *
- * Seven tables carry the whole durable domain:
+ * Eleven tables carry the whole durable domain:
  *
  * - `chatpack_conversations` - one row per conversation. DMs are unique per
  *   `pair_key` (see `docs/decisions/0002-pair-key.md`); groups carry a null
@@ -23,6 +23,10 @@
  *   own secret `code`, with expiry and use limits (ADR 0019).
  * - `chatpack_join_requests` - pending/approved/denied requests to join a
  *   group, one row per (conversation, user) (ADR 0019).
+ * - `chatpack_user_blocks` and `chatpack_conversation_mutes` - private
+ *   moderation preferences.
+ * - `chatpack_moderation_reports` - immutable report evidence and lifecycle.
+ * - `chatpack_user_bans` - durable active and revoked bans.
  *
  * Users are referenced **by id only** - Chatpack never owns a users table,
  * so there are no foreign keys into your `users` table (MVP §8).
@@ -280,6 +284,87 @@ export const joinRequests = pgTable(
   ],
 );
 
+/** One private block relation. User ids are owned by the host application. */
+export const userBlocks = pgTable(
+  "chatpack_user_blocks",
+  {
+    blockerUserId: text("blocker_user_id").notNull(),
+    blockedUserId: text("blocked_user_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.blockerUserId, table.blockedUserId],
+      name: "chatpack_user_blocks_pk",
+    }),
+    index("chatpack_user_blocks_blocker_idx").on(table.blockerUserId, table.createdAt),
+  ],
+);
+
+/** Per-user notification preference for one conversation. */
+export const conversationMutes = pgTable(
+  "chatpack_conversation_mutes",
+  {
+    userId: text("user_id").notNull(),
+    conversationId: text("conversation_id")
+      .notNull()
+      .references(() => conversations.id, { onDelete: "cascade" }),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.userId, table.conversationId],
+      name: "chatpack_conversation_mutes_pk",
+    }),
+    index("chatpack_conversation_mutes_user_idx").on(table.userId, table.createdAt),
+  ],
+);
+
+/** Durable abuse report with immutable submit-time evidence. */
+export const moderationReports = pgTable(
+  "chatpack_moderation_reports",
+  {
+    id: text("id").primaryKey(),
+    reporterUserId: text("reporter_user_id").notNull(),
+    targetType: text("target_type").notNull(),
+    targetId: text("target_id").notNull(),
+    reason: text("reason").notNull(),
+    status: text("status").notNull().default("open"),
+    moderatorNote: text("moderator_note"),
+    evidence: jsonb("evidence").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true, mode: "date" }).notNull(),
+  },
+  (table) => [
+    index("chatpack_moderation_reports_queue_idx").on(table.status, table.createdAt, table.id),
+    index("chatpack_moderation_reports_target_idx").on(
+      table.reporterUserId,
+      table.targetType,
+      table.targetId,
+      table.status,
+    ),
+  ],
+);
+
+/** Durable account bans. Revocation is recorded instead of deleting history. */
+export const userBans = pgTable(
+  "chatpack_user_bans",
+  {
+    id: text("id").primaryKey(),
+    userId: text("user_id").notNull(),
+    createdByUserId: text("created_by_user_id").notNull(),
+    reason: text("reason"),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true, mode: "date" }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true, mode: "date" }),
+    revokedByUserId: text("revoked_by_user_id"),
+  },
+  (table) => [
+    index("chatpack_user_bans_active_idx").on(table.userId, table.revokedAt, table.expiresAt),
+    index("chatpack_user_bans_created_idx").on(table.createdAt, table.id),
+  ],
+);
+
 /** All Chatpack tables, ready to spread into a Drizzle schema object. */
 export const chatpackSchema = {
   conversations,
@@ -289,6 +374,10 @@ export const chatpackSchema = {
   messageReactions,
   conversationInvites,
   joinRequests,
+  userBlocks,
+  conversationMutes,
+  moderationReports,
+  userBans,
 };
 
 /**
@@ -443,6 +532,52 @@ export const migrationStatements: readonly string[] = [
   ON "chatpack_join_requests" ("conversation_id", "user_id")`,
   `CREATE INDEX IF NOT EXISTS "chatpack_join_requests_status_idx"
   ON "chatpack_join_requests" ("conversation_id", "status", "created_at")`,
+  `CREATE TABLE IF NOT EXISTS "chatpack_user_blocks" (
+  "blocker_user_id" text NOT NULL,
+  "blocked_user_id" text NOT NULL,
+  "created_at" timestamptz NOT NULL,
+  PRIMARY KEY ("blocker_user_id", "blocked_user_id")
+)`,
+  `CREATE INDEX IF NOT EXISTS "chatpack_user_blocks_blocker_idx"
+  ON "chatpack_user_blocks" ("blocker_user_id", "created_at")`,
+  `CREATE TABLE IF NOT EXISTS "chatpack_conversation_mutes" (
+  "user_id" text NOT NULL,
+  "conversation_id" text NOT NULL REFERENCES "chatpack_conversations"("id") ON DELETE CASCADE,
+  "created_at" timestamptz NOT NULL,
+  PRIMARY KEY ("user_id", "conversation_id")
+)`,
+  `CREATE INDEX IF NOT EXISTS "chatpack_conversation_mutes_user_idx"
+  ON "chatpack_conversation_mutes" ("user_id", "created_at")`,
+  `CREATE TABLE IF NOT EXISTS "chatpack_moderation_reports" (
+  "id" text PRIMARY KEY,
+  "reporter_user_id" text NOT NULL,
+  "target_type" text NOT NULL,
+  "target_id" text NOT NULL,
+  "reason" text NOT NULL,
+  "status" text NOT NULL DEFAULT 'open',
+  "moderator_note" text,
+  "evidence" jsonb NOT NULL,
+  "created_at" timestamptz NOT NULL,
+  "updated_at" timestamptz NOT NULL
+)`,
+  `CREATE INDEX IF NOT EXISTS "chatpack_moderation_reports_queue_idx"
+  ON "chatpack_moderation_reports" ("status", "created_at", "id")`,
+  `CREATE INDEX IF NOT EXISTS "chatpack_moderation_reports_target_idx"
+  ON "chatpack_moderation_reports" ("reporter_user_id", "target_type", "target_id", "status")`,
+  `CREATE TABLE IF NOT EXISTS "chatpack_user_bans" (
+  "id" text PRIMARY KEY,
+  "user_id" text NOT NULL,
+  "created_by_user_id" text NOT NULL,
+  "reason" text,
+  "created_at" timestamptz NOT NULL,
+  "expires_at" timestamptz,
+  "revoked_at" timestamptz,
+  "revoked_by_user_id" text
+)`,
+  `CREATE INDEX IF NOT EXISTS "chatpack_user_bans_active_idx"
+  ON "chatpack_user_bans" ("user_id", "revoked_at", "expires_at")`,
+  `CREATE INDEX IF NOT EXISTS "chatpack_user_bans_created_idx"
+  ON "chatpack_user_bans" ("created_at", "id")`,
 ];
 
 /**

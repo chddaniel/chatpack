@@ -88,6 +88,18 @@ export type ChatpackErrorCode =
    * than a refusal (`docs/decisions/0020` §7).
    */
   | "NOT_PUBLIC_CONVERSATION"
+  /** The configured storage adapter has no moderation capability. */
+  | "MODERATION_UNSUPPORTED"
+  /** The authenticated Chatpack user has an active ban. */
+  | "USER_BANNED"
+  /** The host moderator hook denied an admin operation. */
+  | "NOT_MODERATOR"
+  /** A direct conversation is blocked by either participant. */
+  | "DIRECT_INTERACTION_BLOCKED"
+  /** A moderation report was not found. */
+  | "REPORT_NOT_FOUND"
+  /** A moderation ban was not found. */
+  | "BAN_NOT_FOUND"
   /** Invalid input (empty body, self-conversation, bad limit, ...). */
   | "INVALID_INPUT";
 

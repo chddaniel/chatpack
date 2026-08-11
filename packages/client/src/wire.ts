@@ -12,6 +12,10 @@ import type {
   MessageReference,
   MessageWithDetails,
   Metadata,
+  ConversationMute,
+  ModerationReport,
+  UserBan,
+  UserBlock,
   Participant,
   ReactionSummary,
 } from "@chatpack/core";
@@ -59,6 +63,14 @@ export type ClientChannelPreview = Jsonify<ChannelPreview>;
 export type ClientAcceptInviteResult = Jsonify<AcceptInviteResult>;
 /** Result of joining a public channel. */
 export type ClientJoinConversationResult = Jsonify<JoinConversationResult>;
+/** User block returned over HTTP. */
+export type ClientUserBlock = Jsonify<UserBlock>;
+/** Conversation mute returned over HTTP. */
+export type ClientConversationMute = Jsonify<ConversationMute>;
+/** Moderation report returned over HTTP. */
+export type ClientModerationReport = Jsonify<ModerationReport>;
+/** User ban returned over HTTP. */
+export type ClientUserBan = Jsonify<UserBan>;
 
 /** Paginated conversation response. */
 export interface ClientConversationPage {
@@ -75,6 +87,12 @@ export interface ClientMessagePage {
 /** Public-channel directory response. */
 export interface ClientChannelPage {
   channels: ClientChannelPreview[];
+  nextCursor: string | null;
+}
+
+/** Generic cursor-paginated moderation response. */
+export interface ClientModerationPage<T> {
+  items: T[];
   nextCursor: string | null;
 }
 

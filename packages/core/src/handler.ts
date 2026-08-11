@@ -36,6 +36,14 @@
  * | PATCH  | `/conversations/:id/join-requests` | approve/deny a request      |
  * | GET    | `/channels?limit&cursor`          | browse public channels       |
  * | POST   | `/conversations/:id/join`         | join a public channel        |
+ * | POST/DELETE | `/moderation/blocks`       | manage private user blocks   |
+ * | GET    | `/moderation/blocks`              | list my blocked users        |
+ * | POST/DELETE | `/moderation/mutes`        | manage conversation mutes   |
+ * | GET    | `/moderation/mutes`               | list my muted conversations  |
+ * | POST   | `/moderation/reports`             | submit a report              |
+ * | GET/PATCH | `/moderation/reports[/:id]`   | moderate reports             |
+ * | GET/POST | `/moderation/bans`              | list or create bans          |
+ * | DELETE | `/moderation/bans/:id`            | revoke a ban                 |
  * | GET    | `/stream`                         | SSE: live events for me      |
  *
  * Plugins (`chatpack({ plugins: [...] })`) may add routes of their own; they
@@ -121,6 +129,12 @@ const STATUS_BY_CODE: Record<ChatpackErrorCode, number> = {
   // would be a lie every other route would then have to keep telling to stay
   // consistent, and the caller already had the id (ADR 0020 §7).
   NOT_PUBLIC_CONVERSATION: 403,
+  MODERATION_UNSUPPORTED: 501,
+  USER_BANNED: 403,
+  NOT_MODERATOR: 403,
+  DIRECT_INTERACTION_BLOCKED: 403,
+  REPORT_NOT_FOUND: 404,
+  BAN_NOT_FOUND: 404,
 };
 
 function json(status: number, payload: unknown): Response {
@@ -254,6 +268,18 @@ function optionalEnum<T extends string>(
 const VISIBILITIES = ["private", "public"] as const;
 const JOIN_POLICIES = ["open", "approval"] as const;
 
+function optionalDate(value: unknown, field: string): Date | null | undefined {
+  if (value === undefined || value === null) return value === null ? null : undefined;
+  if (typeof value !== "string") {
+    throw new ChatpackError("INVALID_INPUT", `"${field}" must be an ISO date string or null.`);
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    throw new ChatpackError("INVALID_INPUT", `"${field}" must be a valid ISO date string.`);
+  }
+  return date;
+}
+
 function parseLimit(params: URLSearchParams): number | undefined {
   const raw = params.get("limit");
   if (raw === null) return undefined;
@@ -369,6 +395,7 @@ export function createHandler(
   options: HandlerOptions = {},
   transport?: Transport,
   plugins?: PluginRuntime,
+  isUserBanned?: (userId: string) => Promise<boolean>,
 ): ChatpackHandler {
   if (!auth) {
     throw new Error(
@@ -404,6 +431,7 @@ export function createHandler(
     let unsubscribe: (() => void) | undefined;
     let heartbeat: ReturnType<typeof setInterval> | undefined;
     let closed = false;
+    let banCheckInFlight = false;
 
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
@@ -464,7 +492,28 @@ export function createHandler(
 
         // 3. Heartbeat comments keep intermediaries from closing the socket.
         if (heartbeatIntervalMs > 0) {
-          heartbeat = setInterval(() => enqueue(`: ping\n\n`), heartbeatIntervalMs);
+          heartbeat = setInterval(() => {
+            enqueue(`: ping\n\n`);
+            if (!isUserBanned || banCheckInFlight || closed) return;
+            banCheckInFlight = true;
+            void isUserBanned(userId)
+              .then((banned) => {
+                if (!banned || closed) return;
+                closed = true;
+                unsubscribe?.();
+                if (heartbeat !== undefined) clearInterval(heartbeat);
+                try {
+                  controller.close();
+                } catch {
+                  // Consumer already closed.
+                }
+                plugins?.notifyStreamClose(userId);
+              })
+              .catch((err) => console.error("chatpack: moderation ban check failed", err))
+              .finally(() => {
+                banCheckInFlight = false;
+              });
+          }, heartbeatIntervalMs);
           // Never keep a Node process alive just for heartbeats.
           if (typeof heartbeat === "object" && "unref" in heartbeat) heartbeat.unref();
         }
@@ -525,6 +574,10 @@ export function createHandler(
         return unauthenticatedResponse(request, user);
       }
       const userId = user.id;
+
+      if (isUserBanned && (await isUserBanned(userId))) {
+        return errorResponse(403, "USER_BANNED", `User "${userId}" has an active Chatpack ban.`);
+      }
 
       // GET /stream - SSE live events (M3)
       if (method === "GET" && segments.length === 1 && segments[0] === "stream") {
@@ -668,6 +721,200 @@ export function createHandler(
           role,
         });
         return json(200, { conversation });
+      }
+
+      // POST/DELETE /moderation/blocks - manage the caller's private blocks.
+      if (
+        method === "POST" &&
+        segments.length === 2 &&
+        segments[0] === "moderation" &&
+        segments[1] === "blocks"
+      ) {
+        const body = await readJsonBody(request);
+        const block = await api.moderation.blockUser({
+          userId,
+          targetUserId: requiredString(body["targetUserId"], "targetUserId"),
+        });
+        return json(200, { block });
+      }
+      if (
+        method === "DELETE" &&
+        segments.length === 2 &&
+        segments[0] === "moderation" &&
+        segments[1] === "blocks"
+      ) {
+        const body = await readJsonBody(request);
+        await api.moderation.unblockUser({
+          userId,
+          targetUserId: requiredString(body["targetUserId"], "targetUserId"),
+        });
+        return json(200, { ok: true });
+      }
+      if (
+        method === "GET" &&
+        segments.length === 2 &&
+        segments[0] === "moderation" &&
+        segments[1] === "blocks"
+      ) {
+        const page = await api.moderation.listBlockedUsers({
+          userId,
+          limit: parseLimit(url.searchParams),
+          ...(url.searchParams.get("cursor") === null
+            ? {}
+            : { cursor: url.searchParams.get("cursor")! }),
+        });
+        return json(200, page);
+      }
+
+      // POST/DELETE /moderation/mutes - manage the caller's mutes.
+      if (
+        method === "POST" &&
+        segments.length === 2 &&
+        segments[0] === "moderation" &&
+        segments[1] === "mutes"
+      ) {
+        const body = await readJsonBody(request);
+        const mute = await api.moderation.muteConversation({
+          userId,
+          conversationId: requiredString(body["conversationId"], "conversationId"),
+        });
+        return json(200, { mute });
+      }
+      if (
+        method === "DELETE" &&
+        segments.length === 2 &&
+        segments[0] === "moderation" &&
+        segments[1] === "mutes"
+      ) {
+        const body = await readJsonBody(request);
+        await api.moderation.unmuteConversation({
+          userId,
+          conversationId: requiredString(body["conversationId"], "conversationId"),
+        });
+        return json(200, { ok: true });
+      }
+      if (
+        method === "GET" &&
+        segments.length === 2 &&
+        segments[0] === "moderation" &&
+        segments[1] === "mutes"
+      ) {
+        const page = await api.moderation.listMutedConversations({
+          userId,
+          limit: parseLimit(url.searchParams),
+          ...(url.searchParams.get("cursor") === null
+            ? {}
+            : { cursor: url.searchParams.get("cursor")! }),
+        });
+        return json(200, page);
+      }
+
+      // POST /moderation/reports - submit a user, message, or conversation report.
+      if (
+        method === "POST" &&
+        segments.length === 2 &&
+        segments[0] === "moderation" &&
+        segments[1] === "reports"
+      ) {
+        const body = await readJsonBody(request);
+        const report = await api.moderation.report({
+          userId,
+          targetType: requiredString(body["targetType"], "targetType") as
+            "user" | "message" | "conversation",
+          targetId: requiredString(body["targetId"], "targetId"),
+          reason: requiredString(body["reason"], "reason"),
+        });
+        return json(200, { report });
+      }
+      if (
+        method === "GET" &&
+        segments.length === 2 &&
+        segments[0] === "moderation" &&
+        segments[1] === "reports"
+      ) {
+        const status = url.searchParams.get("status");
+        const targetType = url.searchParams.get("targetType");
+        const reports = await api.moderation.listReports({
+          userId,
+          ...(status === null
+            ? {}
+            : { status: status as "open" | "triaged" | "resolved" | "dismissed" }),
+          ...(targetType === null
+            ? {}
+            : { targetType: targetType as "user" | "message" | "conversation" }),
+          limit: parseLimit(url.searchParams),
+          ...(url.searchParams.get("cursor") === null
+            ? {}
+            : { cursor: url.searchParams.get("cursor")! }),
+        });
+        return json(200, reports);
+      }
+      if (segments.length === 3 && segments[0] === "moderation" && segments[1] === "reports") {
+        if (method === "GET") {
+          const report = await api.moderation.getReport({ userId, reportId: segments[2]! });
+          return json(200, { report });
+        }
+        if (method === "PATCH") {
+          const body = await readJsonBody(request);
+          const moderatorNote =
+            body["moderatorNote"] === undefined
+              ? undefined
+              : optionalString(body["moderatorNote"], "moderatorNote");
+          const report = await api.moderation.updateReport({
+            userId,
+            reportId: segments[2]!,
+            status: requiredString(body["status"], "status") as
+              "open" | "triaged" | "resolved" | "dismissed",
+            ...(moderatorNote === undefined ? {} : { moderatorNote }),
+          });
+          return json(200, { report });
+        }
+      }
+
+      // GET/POST /moderation/bans and DELETE /moderation/bans/:id.
+      if (
+        method === "GET" &&
+        segments.length === 2 &&
+        segments[0] === "moderation" &&
+        segments[1] === "bans"
+      ) {
+        const active = url.searchParams.get("activeOnly");
+        const bans = await api.moderation.listBans({
+          userId,
+          ...(active === null ? {} : { activeOnly: active !== "false" }),
+          limit: parseLimit(url.searchParams),
+          ...(url.searchParams.get("cursor") === null
+            ? {}
+            : { cursor: url.searchParams.get("cursor")! }),
+        });
+        return json(200, bans);
+      }
+      if (
+        method === "POST" &&
+        segments.length === 2 &&
+        segments[0] === "moderation" &&
+        segments[1] === "bans"
+      ) {
+        const body = await readJsonBody(request);
+        const expiresAt = optionalDate(body["expiresAt"], "expiresAt");
+        const reason =
+          body["reason"] === undefined ? undefined : optionalString(body["reason"], "reason");
+        const ban = await api.moderation.banUser({
+          userId,
+          targetUserId: requiredString(body["targetUserId"], "targetUserId"),
+          ...(reason === undefined ? {} : { reason }),
+          ...(expiresAt === undefined ? {} : { expiresAt }),
+        });
+        return json(200, { ban });
+      }
+      if (
+        method === "DELETE" &&
+        segments.length === 3 &&
+        segments[0] === "moderation" &&
+        segments[1] === "bans"
+      ) {
+        const ban = await api.moderation.unbanUser({ userId, banId: segments[2]! });
+        return json(200, { ban });
       }
 
       // POST /conversations/:id/messages - send

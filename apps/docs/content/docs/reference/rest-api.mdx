@@ -193,6 +193,37 @@ after core routes miss, before the 404:
 | POST   | `/conversations/:id/typing` | `typing()`   | `{ isTyping?: boolean }` | `{ ok: true }`                                   |
 | GET    | `/presence`                 | `presence()` | `?userIds=a,b` (max 50)  | `{ presence: { [id]: { online, lastSeenAt } } }` |
 
+## Moderation routes
+
+Moderation routes use the optional `StorageAdapter.moderation` capability.
+Self-service routes are available to signed-in users. Report queue and ban
+routes require the host's `moderation.canModerate` hook.
+
+| Method | Path                      | Request body / query                    | Response                  |
+| ------ | ------------------------- | --------------------------------------- | ------------------------- |
+| POST   | `/moderation/blocks`      | `{ targetUserId }`                      | `{ block }`               |
+| DELETE | `/moderation/blocks`      | `{ targetUserId }`                      | `{ ok: true }`            |
+| GET    | `/moderation/blocks`      | `?limit=&cursor=`                       | `{ blocks, nextCursor }`  |
+| POST   | `/moderation/mutes`       | `{ conversationId }`                    | `{ mute }`                |
+| DELETE | `/moderation/mutes`       | `{ conversationId }`                    | `{ ok: true }`            |
+| GET    | `/moderation/mutes`       | `?limit=&cursor=`                       | `{ mutes, nextCursor }`   |
+| POST   | `/moderation/reports`     | `{ targetType, targetId, reason }`      | `{ report }`              |
+| GET    | `/moderation/reports`     | `?status=&targetType=&limit=&cursor=`   | `{ reports, nextCursor }` |
+| GET    | `/moderation/reports/:id` | -                                       | `{ report }`              |
+| PATCH  | `/moderation/reports/:id` | `{ status, moderatorNote? }`            | `{ report }`              |
+| GET    | `/moderation/bans`        | `?activeOnly=&limit=&cursor=`           | `{ bans, nextCursor }`    |
+| POST   | `/moderation/bans`        | `{ targetUserId, reason?, expiresAt? }` | `{ ban }`                 |
+| DELETE | `/moderation/bans/:id`    | -                                       | `{ ban }`                 |
+
+Blocks stop new direct conversations and direct message mutations, but keep
+existing direct history readable. They do not affect shared groups. Mutes do
+not change `unreadCount` or SSE delivery. Reports support `user`, `message`,
+and `conversation` targets, with statuses `open`, `triaged`, `resolved`, and
+`dismissed`.
+
+Active bans return `403 USER_BANNED`. Missing moderation persistence returns
+`501 MODERATION_UNSUPPORTED`.
+
 ## Semantics
 
 These trip up hand-written and generated clients alike:

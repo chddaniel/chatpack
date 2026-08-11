@@ -17,6 +17,67 @@
  */
 export type Metadata = Record<string, unknown>;
 
+/** User-level moderation relation. */
+export interface UserBlock {
+  blockerUserId: string;
+  blockedUserId: string;
+  createdAt: Date;
+}
+
+/** A viewer's notification preference for one conversation. */
+export interface ConversationMute {
+  userId: string;
+  conversationId: string;
+  createdAt: Date;
+}
+
+export type ReportTargetType = "user" | "message" | "conversation";
+export type ReportStatus = "open" | "triaged" | "resolved" | "dismissed";
+
+/** Immutable evidence captured when a report is submitted. */
+export type ReportEvidence =
+  | { targetType: "user" }
+  | {
+      targetType: "message";
+      messageId: string;
+      conversationId: string;
+      senderId: string;
+      body: string;
+      deletedAt: Date | null;
+      createdAt: Date;
+    }
+  | {
+      targetType: "conversation";
+      conversationId: string;
+      type: ConversationType;
+      name: string | null;
+      participantIds: string[];
+    };
+
+export interface ModerationReport {
+  id: string;
+  reporterUserId: string;
+  targetType: ReportTargetType;
+  targetId: string;
+  reason: string;
+  status: ReportStatus;
+  moderatorNote: string | null;
+  evidence: ReportEvidence;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface UserBan {
+  id: string;
+  userId: string;
+  createdByUserId: string;
+  reason: string | null;
+  createdAt: Date;
+  expiresAt: Date | null;
+  revokedAt: Date | null;
+  revokedByUserId: string | null;
+}
+
 /**
  * The role of a message sender.
  *

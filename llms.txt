@@ -554,6 +554,27 @@ A complete plain-Node version lives in `examples/node-server` in the repo.
 | DELETE | `/messages/:id/reactions`     | `{ emoji }`                            | `{ message }` (full reaction set)         |
 | GET    | `/stream`                     | SSE; auto `Last-Event-ID` on reconnect | `text/event-stream`                       |
 
+Optional moderation routes use `StorageAdapter.moderation`. Blocks and mutes
+are self-service. Report queue and ban routes require
+`chatpack({ moderation: { canModerate } })` authorization:
+
+| Method | Path | Request body / query | Response |
+| --- | --- | --- | --- |
+| POST/DELETE | `/moderation/blocks` | `{ targetUserId }` | `{ block }` / `{ ok: true }` |
+| GET | `/moderation/blocks` | `?limit=&cursor=` | `{ blocks, nextCursor }` |
+| POST/DELETE | `/moderation/mutes` | `{ conversationId }` | `{ mute }` / `{ ok: true }` |
+| GET | `/moderation/mutes` | `?limit=&cursor=` | `{ mutes, nextCursor }` |
+| POST | `/moderation/reports` | `{ targetType, targetId, reason }` | `{ report }` |
+| GET/PATCH | `/moderation/reports[/:id]` | status, targetType, or `{ status, moderatorNote? }` | report page or `{ report }` |
+| GET/POST | `/moderation/bans` | filters or `{ targetUserId, reason?, expiresAt? }` | ban page or `{ ban }` |
+| DELETE | `/moderation/bans/:id` | - | `{ ban }` |
+
+Blocks stop new direct conversations and direct message mutations, but keep
+existing direct history readable and do not affect shared groups. Mutes do not
+change unread counts or SSE delivery. Reports support user, message, and
+conversation targets. Active bans return `USER_BANNED`; adapters without the
+optional capability return `MODERATION_UNSUPPORTED`.
+
 Plugin routes (only when the plugin is passed to `chatpack({ plugins })`):
 
 | Method | Path                        | Plugin       | Request body / query     | Response                                         |
@@ -1051,6 +1072,16 @@ matching, and occurrence-sum relevance. This makes URLs, paths, emails, phone
 numbers, versions, and underscored identifiers behave the same in memory and
 Postgres. Custom adapters should use these helpers to preserve the same
 contract; cursors remain opaque and adapter-defined.
+
+`moderation` is a second optional storage capability. Implement
+`ModerationStorage` when the adapter supports blocks, mutes, reports, and bans;
+the memory and Drizzle adapters are the reference implementations. Persist
+four durable table families: symmetric block lookup, per-user conversation
+mutes, reports with immutable message/conversation evidence JSON, and bans with
+expiry and revocation fields. Make block and mute creates idempotent, reuse an
+open or triaged report for the same reporter and target, and keep revoked or
+expired bans in history. Custom adapters that omit this capability remain
+compatible; moderation calls then return `MODERATION_UNSUPPORTED`.
 
 ### Entities your adapter stores
 

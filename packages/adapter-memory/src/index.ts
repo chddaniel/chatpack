@@ -37,6 +37,12 @@ import type {
   ListPublicConversationsInput,
   ListPublicConversationsResult,
   Message,
+  ModerationPage,
+  ModerationStorage,
+  ModerationReport,
+  ConversationMute,
+  UserBan,
+  UserBlock,
   Participant,
   Reaction,
   ReactionInput,
@@ -149,11 +155,237 @@ export function memoryAdapter(): StorageAdapter {
   const joinRequestsByKey = new Map<string, JoinRequest>();
   const joinRequestKey = (conversationId: string, userId: string): string =>
     `${conversationId}\u0000${userId}`;
+  const blocks = new Map<string, UserBlock>();
+  const mutes = new Map<string, ConversationMute>();
+  const reports = new Map<string, ModerationReport>();
+  const bans = new Map<string, UserBan>();
 
   let idCounter = 0;
   const nextId = (prefix: string): string => `${prefix}_${(++idCounter).toString(36)}`;
   /** Global tick so "most recently active" is comparable across conversations. */
   let activityTick = 0;
+
+  const blockKey = (blockerUserId: string, blockedUserId: string): string =>
+    `${blockerUserId}\u0000${blockedUserId}`;
+  const muteKey = (userId: string, conversationId: string): string =>
+    `${userId}\u0000${conversationId}`;
+
+  const moderation: ModerationStorage = {
+    async isUserBanned(userId, now = new Date()) {
+      return this.getActiveBan(userId, now);
+    },
+
+    async isBlocked(userIdA, userIdB) {
+      return blocks.has(blockKey(userIdA, userIdB)) || blocks.has(blockKey(userIdB, userIdA));
+    },
+
+    async createBlock(input) {
+      const key = blockKey(input.blockerUserId, input.blockedUserId);
+      const existing = blocks.get(key);
+      if (existing) return { ...existing };
+      const block: UserBlock = {
+        blockerUserId: input.blockerUserId,
+        blockedUserId: input.blockedUserId,
+        createdAt: new Date(),
+      };
+      blocks.set(key, block);
+      return { ...block };
+    },
+
+    async removeBlock(input) {
+      blocks.delete(blockKey(input.blockerUserId, input.blockedUserId));
+    },
+
+    async listBlocks(input): Promise<ModerationPage<UserBlock>> {
+      const items = [...blocks.values()]
+        .filter((block) => block.blockerUserId === input.blockerUserId)
+        .sort(
+          (a, b) =>
+            b.createdAt.getTime() - a.createdAt.getTime() ||
+            blockKey(a.blockerUserId, a.blockedUserId).localeCompare(
+              blockKey(b.blockerUserId, b.blockedUserId),
+            ),
+        );
+      const start = input.cursor
+        ? Math.max(
+            0,
+            items.findIndex(
+              (item) => blockKey(item.blockerUserId, item.blockedUserId) === input.cursor,
+            ) + 1,
+          )
+        : 0;
+      const page = items.slice(start, start + input.limit);
+      const last = page[page.length - 1];
+      return {
+        items: page.map((item) => ({ ...item })),
+        nextCursor:
+          last && start + input.limit < items.length
+            ? blockKey(last.blockerUserId, last.blockedUserId)
+            : null,
+      };
+    },
+
+    async createMute(input) {
+      const key = muteKey(input.userId, input.conversationId);
+      const existing = mutes.get(key);
+      if (existing) return { ...existing };
+      const mute: ConversationMute = {
+        userId: input.userId,
+        conversationId: input.conversationId,
+        createdAt: new Date(),
+      };
+      mutes.set(key, mute);
+      return { ...mute };
+    },
+
+    async removeMute(input) {
+      mutes.delete(muteKey(input.userId, input.conversationId));
+    },
+
+    async listMutes(input): Promise<ModerationPage<ConversationMute>> {
+      const items = [...mutes.values()]
+        .filter((mute) => mute.userId === input.userId)
+        .sort(
+          (a, b) =>
+            b.createdAt.getTime() - a.createdAt.getTime() ||
+            a.conversationId.localeCompare(b.conversationId),
+        );
+      const start = input.cursor
+        ? Math.max(0, items.findIndex((item) => item.conversationId === input.cursor) + 1)
+        : 0;
+      const page = items.slice(start, start + input.limit);
+      const last = page[page.length - 1];
+      return {
+        items: page.map((item) => ({ ...item })),
+        nextCursor: last && start + input.limit < items.length ? last.conversationId : null,
+      };
+    },
+
+    async findOpenReport(reporterUserId, targetType, targetId) {
+      for (const report of reports.values()) {
+        if (
+          report.reporterUserId === reporterUserId &&
+          report.targetType === targetType &&
+          report.targetId === targetId &&
+          (report.status === "open" || report.status === "triaged")
+        ) {
+          return { ...report };
+        }
+      }
+      return null;
+    },
+
+    async createReport(input) {
+      const now = new Date();
+      const report: ModerationReport = {
+        id: nextId("report"),
+        reporterUserId: input.reporterUserId,
+        targetType: input.targetType,
+        targetId: input.targetId,
+        reason: input.reason,
+        status: "open",
+        moderatorNote: null,
+        evidence: input.evidence,
+        createdAt: now,
+        updatedAt: now,
+      };
+      reports.set(report.id, report);
+      return { ...report };
+    },
+
+    async getReport(reportId) {
+      const report = reports.get(reportId);
+      return report ? { ...report } : null;
+    },
+
+    async listReports(input): Promise<ModerationPage<ModerationReport>> {
+      const items = [...reports.values()]
+        .filter((report) => input.status === undefined || report.status === input.status)
+        .filter(
+          (report) => input.targetType === undefined || report.targetType === input.targetType,
+        )
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || b.id.localeCompare(a.id));
+      const start = input.cursor
+        ? Math.max(0, items.findIndex((item) => item.id === input.cursor) + 1)
+        : 0;
+      const page = items.slice(start, start + input.limit);
+      const last = page[page.length - 1];
+      return {
+        items: page.map((item) => ({ ...item })),
+        nextCursor: last && start + input.limit < items.length ? last.id : null,
+      };
+    },
+
+    async updateReport(input) {
+      const report = reports.get(input.reportId);
+      if (!report) throw new Error(`memoryAdapter: unknown report "${input.reportId}".`);
+      report.status = input.status;
+      report.moderatorNote = input.moderatorNote;
+      report.updatedAt = new Date();
+      return { ...report };
+    },
+
+    async getActiveBan(userId, now = new Date()) {
+      const active = [...bans.values()]
+        .filter((ban) => ban.userId === userId && ban.revokedAt === null)
+        .filter((ban) => ban.expiresAt === null || ban.expiresAt.getTime() > now.getTime())
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
+      return active ? { ...active } : null;
+    },
+
+    async getBan(banId) {
+      const ban = bans.get(banId);
+      return ban ? { ...ban } : null;
+    },
+
+    async createBan(input) {
+      const existing = await this.getActiveBan(input.userId);
+      if (existing) return existing;
+      const ban: UserBan = {
+        id: nextId("ban"),
+        userId: input.userId,
+        createdByUserId: input.createdByUserId,
+        reason: input.reason,
+        createdAt: new Date(),
+        expiresAt: input.expiresAt,
+        revokedAt: null,
+        revokedByUserId: null,
+      };
+      bans.set(ban.id, ban);
+      return { ...ban };
+    },
+
+    async listBans(input): Promise<ModerationPage<UserBan>> {
+      const now = new Date();
+      const items = [...bans.values()]
+        .filter(
+          (ban) =>
+            !input.activeOnly ||
+            (ban.revokedAt === null &&
+              (ban.expiresAt === null || ban.expiresAt.getTime() > now.getTime())),
+        )
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime() || b.id.localeCompare(a.id));
+      const start = input.cursor
+        ? Math.max(0, items.findIndex((item) => item.id === input.cursor) + 1)
+        : 0;
+      const page = items.slice(start, start + input.limit);
+      const last = page[page.length - 1];
+      return {
+        items: page.map((item) => ({ ...item })),
+        nextCursor: last && start + input.limit < items.length ? last.id : null,
+      };
+    },
+
+    async revokeBan(input) {
+      const ban = bans.get(input.banId);
+      if (!ban) throw new Error(`memoryAdapter: unknown ban "${input.banId}".`);
+      if (ban.revokedAt === null) {
+        ban.revokedAt = new Date();
+        ban.revokedByUserId = input.revokedByUserId;
+      }
+      return { ...ban };
+    },
+  };
 
   function toConversation(record: ConversationRecord): Conversation {
     return {
@@ -207,6 +439,7 @@ export function memoryAdapter(): StorageAdapter {
   }
 
   return {
+    moderation,
     async getOrCreateDirectConversation(
       input: GetOrCreateDirectConversationInput,
     ): Promise<GetOrCreateDirectConversationResult> {

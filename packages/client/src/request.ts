@@ -77,6 +77,12 @@ const serverErrorCodes = {
   ALREADY_PARTICIPANT: true,
   CHANNELS_UNSUPPORTED: true,
   NOT_PUBLIC_CONVERSATION: true,
+  MODERATION_UNSUPPORTED: true,
+  USER_BANNED: true,
+  NOT_MODERATOR: true,
+  DIRECT_INTERACTION_BLOCKED: true,
+  REPORT_NOT_FOUND: true,
+  BAN_NOT_FOUND: true,
   INVALID_INPUT: true,
 } satisfies Record<ChatpackErrorCode, true>;
 

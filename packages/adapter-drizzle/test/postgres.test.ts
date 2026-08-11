@@ -1616,6 +1616,54 @@ describe("public channels on Postgres (ADR 0020)", () => {
   });
 });
 
+describe("moderation on Postgres", () => {
+  it("persists blocks, reports, workflow updates, and ban revocation", async () => {
+    const staffChat = chatpack({
+      storage: drizzleAdapter(db),
+      telemetry: false,
+      moderation: { canModerate: ({ user }) => user.id === "staff" },
+    });
+    const direct = await staffChat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "bob",
+    });
+    const message = await staffChat.api.sendMessage({
+      userId: "bob",
+      conversationId: direct.id,
+      body: "abuse",
+    });
+
+    await staffChat.api.moderation.blockUser({ userId: "alice", targetUserId: "bob" });
+    expect(
+      (await staffChat.api.moderation.listBlockedUsers({ userId: "alice" })).blocks,
+    ).toHaveLength(1);
+
+    const report = await staffChat.api.moderation.report({
+      userId: "alice",
+      targetType: "message",
+      targetId: message.id,
+      reason: "abuse",
+    });
+    expect(report.evidence).toMatchObject({ body: "abuse", senderId: "bob" });
+    await staffChat.api.moderation.updateReport({
+      userId: "staff",
+      reportId: report.id,
+      status: "resolved",
+    });
+
+    const ban = await staffChat.api.moderation.banUser({
+      userId: "staff",
+      targetUserId: "bob",
+      reason: "abuse",
+    });
+    await expect(staffChat.api.listConversations({ userId: "bob" })).rejects.toMatchObject({
+      code: "USER_BANNED",
+    });
+    await staffChat.api.moderation.unbanUser({ userId: "staff", banId: ban.id });
+    await expect(staffChat.api.listConversations({ userId: "bob" })).resolves.toBeDefined();
+  });
+});
+
 describe("upgrading a pre-ADR-0013 database", () => {
   it("adds reply_to_message_id and the reactions table to an existing schema", async () => {
     const legacy = new PGlite();
