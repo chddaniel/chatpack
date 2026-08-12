@@ -1,0 +1,27 @@
+name: Feature request
+description: Suggest something Chatpack should do
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: '"When I try to Y, I can''t because Z" is more useful than "I want X".'
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Optional — how do you imagine it working?
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you've considered
+  - type: checkboxes
+    id: checklist
+    attributes:
+      label: Before submitting
+      options:
+        - label: I've checked the [roadmap](https://docs.chatpack.dev/docs/project/roadmap) and this isn't already planned
+          required: true

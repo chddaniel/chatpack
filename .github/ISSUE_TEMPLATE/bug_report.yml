@@ -1,0 +1,51 @@
+name: Bug report
+description: Something isn't working as documented
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: "Before filing: check the [FAQ](https://docs.chatpack.dev/docs/project/faq) and [open discussions](https://github.com/chddaniel/chatpack/discussions) — your question may already be answered there."
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: Describe the bug and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: The smallest code that triggers the bug. A snippet or repo link is ideal.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: "@chatpack/core version"
+      placeholder: "0.11.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: adapter
+    attributes:
+      label: Storage adapter
+      options:
+        - "@chatpack/adapter-drizzle (Postgres)"
+        - "@chatpack/adapter-memory"
+        - "Custom adapter"
+    validations:
+      required: true
+  - type: dropdown
+    id: framework
+    attributes:
+      label: Framework
+      options:
+        - "Next.js App Router"
+        - "Hono"
+        - "Express"
+        - "TanStack Start"
+        - "Elysia"
+        - "Plain Node / other"
+    validations:
+      required: true

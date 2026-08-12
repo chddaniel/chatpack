@@ -834,6 +834,13 @@ CHATPACK_TELEMETRY=0
 Failures are silently ignored and the flush timer never keeps your process
 alive. Details in [docs/MVP.md §12](./docs/MVP.md).
 
+## Community
+
+- **[GitHub Discussions](https://github.com/chddaniel/chatpack/discussions)** — questions, show-and-tell, and feedback
+- **[Open an issue](https://github.com/chddaniel/chatpack/issues/new/choose)** — bugs and feature requests
+
+If you've built something with Chatpack, got stuck installing it, or have opinions about the API — we want to hear from you. The team reads everything.
+
 ## Contributing
 
 Contributions are very welcome - see [CONTRIBUTING.md](./CONTRIBUTING.md) for

@@ -3,6 +3,10 @@
 Thanks for your interest in contributing! This document covers everything you
 need to get productive in the repo.
 
+**Have a question rather than a bug or PR?** Start in
+[GitHub Discussions](https://github.com/chddaniel/chatpack/discussions) — it's
+faster, and future users searching the same question will find the answer too.
+
 ## Repo layout
 
 ```

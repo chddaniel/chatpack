@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Ask a question
+    url: https://github.com/chddaniel/chatpack/discussions
+    about: Questions, show-and-tell, and feedback belong in Discussions, not issues.
+  - name: Documentation & FAQ
+    url: https://docs.chatpack.dev/docs/project/faq
+    about: Most common questions and failure modes are already answered here.

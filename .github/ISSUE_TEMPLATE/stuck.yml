@@ -1,0 +1,40 @@
+name: I got stuck
+description: Hit a wall during installation or setup? Let us help.
+labels: ["help wanted"]
+body:
+  - type: markdown
+    attributes:
+      value: "We actively want to know where people get stuck — it tells us what to improve in the docs. Please share the full picture."
+  - type: textarea
+    id: goal
+    attributes:
+      label: What are you trying to do?
+    validations:
+      required: true
+  - type: textarea
+    id: stuck
+    attributes:
+      label: Where did you get stuck?
+      description: Include any error messages, unexpected responses, or confusing behaviour.
+    validations:
+      required: true
+  - type: textarea
+    id: tried
+    attributes:
+      label: What have you tried?
+  - type: input
+    id: version
+    attributes:
+      label: "@chatpack/core version"
+      placeholder: "0.11.0"
+  - type: dropdown
+    id: framework
+    attributes:
+      label: Framework / setup
+      options:
+        - "Next.js App Router"
+        - "Hono"
+        - "Express"
+        - "TanStack Start"
+        - "Elysia"
+        - "Plain Node / other"
