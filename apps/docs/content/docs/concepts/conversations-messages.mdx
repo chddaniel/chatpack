@@ -118,6 +118,24 @@ request and never stored: `replyTo` (the quoted parent's preview) and
 [Quote-replies](#quote-replies-a-pointer-not-a-thread) and
 [Reactions](#reactions).
 
+## Message formatting
+
+`message.body` is opaque text. Chatpack does not interpret Markdown, HTML, or
+another formatting syntax. It does not return rendered HTML or choose a
+formatter for your application.
+
+Your application may choose plain text, Markdown, or another convention. Keep
+the stored value as the source text and apply the same convention when you
+render new messages, history, edits, and reply previews. Search and excerpts
+use the raw `body` value.
+
+<Callout type="warn">
+  Message bodies are untrusted input. Render `body` as text by default. If you support markup, parse
+  it with a maintained library and sanitize the result with an explicit element and URL-scheme
+  allowlist before inserting HTML. Do not pass a raw message body to `innerHTML` or
+  `dangerouslySetInnerHTML`.
+</Callout>
+
 **Reaction**
 
 <TypeTable
