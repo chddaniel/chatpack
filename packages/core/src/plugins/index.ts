@@ -19,5 +19,18 @@
  */
 
 export { typing } from "./typing";
-export { presence, type PresenceOptions } from "./presence";
+export {
+  presence,
+  type PresenceCloseInput,
+  type PresenceCloseResult,
+  type PresenceFinalizeOfflineInput,
+  type PresenceFinalizeOfflineResult,
+  type PresenceGetInput,
+  type PresenceHeartbeatInput,
+  type PresenceOpenInput,
+  type PresenceOpenResult,
+  type PresenceOptions,
+  type PresenceState,
+  type PresenceStore,
+} from "./presence";
 export { receipts } from "./receipts";

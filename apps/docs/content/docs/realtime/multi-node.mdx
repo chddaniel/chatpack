@@ -33,16 +33,19 @@ dependency of its own.
 ```ts
 import { chatpack } from "@chatpack/core";
 import { drizzleAdapter } from "@chatpack/adapter-drizzle";
-import { redisTransport } from "@chatpack/transport-redis";
+import { redisPresenceStore, redisTransport } from "@chatpack/transport-redis";
+import { presence } from "@chatpack/core/plugins";
 import Redis from "ioredis";
 
+const publisher = new Redis(process.env.REDIS_URL!);
 export const chat = chatpack({
   storage: drizzleAdapter(db),
   auth: async (req) => getSessionUser(req),
   transport: redisTransport({
-    publisher: new Redis(process.env.REDIS_URL!),
+    publisher,
     subscriber: new Redis(process.env.REDIS_URL!),
   }),
+  plugins: [presence({ store: redisPresenceStore({ client: publisher }) })],
 });
 ```
 
@@ -93,14 +96,12 @@ is yours to do, since this package didn't open them.
 | `participant.added` / `.removed` / `conversation.updated` | ✅ Yes      |
 | `typing()` indicators                                     | ✅ Yes      |
 | `receipts()` delivered/read ticks                         | ✅ Yes      |
-| `presence()` online/offline                               | ❌ Per-node |
+| `presence()` online/offline with shared store             | ✅ Yes      |
 
 <Callout type="warn">
-  **`presence()` stays per-node.** It counts live SSE connections in an in-process `Map`, so
-  relaying events doesn't teach node A about node B's connections. `GET /presence` answers for
-  locally-connected users only, and online/offline transitions fire per node. Multi-node presence
-  needs shared connection state (e.g. a Redis key per connection with a TTL) - it's a presence
-  change, not a transport one, and isn't solved by this package.
+  **Configure both Redis pieces.** `redisTransport()` relays events. `redisPresenceStore()` shares
+  expiring per-connection leases and must use a normal publisher/general Redis connection; the
+  subscriber connection remains dedicated to `SUBSCRIBE`.
 </Callout>
 
 ## When Redis goes down

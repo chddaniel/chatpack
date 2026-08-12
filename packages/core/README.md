@@ -632,9 +632,11 @@ gap-fill. The `data` payload is
 Client conventions: throttle typing POSTs to one every few seconds and expire
 the indicator after ~5s of silence; dedupe receipt ticks by
 `payload.messageId`; treat `lastReadMessageId` (durable, in core) as the
-source of truth for read-state. Presence keeps in-memory, single-node state -
-the SSE connection itself is the heartbeat, with an offline grace period
-(`presence({ offlineDelayMs })`, default 5000) to absorb reconnect flaps.
+source of truth for read-state. Presence uses process-local state by default.
+For multi-node deployments, pass an implementation of `PresenceStore` such as
+`redisPresenceStore()` from `@chatpack/transport-redis`. Each SSE connection is
+an expiring lease; the offline grace period (`presence({ offlineDelayMs })`,
+default 5000) absorbs reconnect flaps.
 Design rationale:
 [ADR 0008](../../docs/decisions/0008-ephemeral-events-in-core-plugins.md).
 
@@ -655,7 +657,7 @@ you need the `seq`/`id:` frame. Plugin `onEventDelivered` still only ever sees a
 > Running 2+ app servers behind a load balancer? Events published on one node
 > never reach streams held by another - drop in
 > [`@chatpack/transport-redis`](../transport-redis), a one-line change with the
-> same public API (`presence()` still stays per-node).
+> same public API; pass `redisPresenceStore()` to `presence()` for shared state.
 > On serverless/edge platforms (Cloudflare Workers, Vercel/AWS Lambda), each
 > isolate has its own memory and a bounded lifetime, so SSE is a poor fit
 > whatever the transport: use a database adapter

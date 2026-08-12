@@ -142,3 +142,88 @@ export class FakeNodeRedis extends EventEmitter {
     return Promise.resolve();
   }
 }
+
+/** Shared state double for Redis presence Lua scripts. */
+export class FakePresenceDatabase {
+  readonly strings = new Map<string, { value: string; expiresAt: number | null }>();
+  readonly sortedSets = new Map<string, Map<string, number>>();
+
+  private clean(now: number, leaseKey: string): Map<string, number> {
+    const set = this.sortedSets.get(leaseKey) ?? new Map<string, number>();
+    for (const [member, expiry] of set) if (expiry <= now) set.delete(member);
+    this.sortedSets.set(leaseKey, set);
+    for (const [key, value] of this.strings) {
+      if (value.expiresAt !== null && value.expiresAt <= now) this.strings.delete(key);
+    }
+    return set;
+  }
+
+  eval(script: string, keys: string[], args: string[]): unknown {
+    const [leaseKey, lastSeenKey, pendingKey] = keys;
+    const now = Number(args[0]);
+    const set = this.clean(now, leaseKey!);
+
+    if (script.includes("wasOnline")) {
+      const wasOnline = set.size > 0;
+      const wasPending = this.strings.has(pendingKey!);
+      set.set(args[2]!, Number(args[1]));
+      this.strings.set(lastSeenKey!, { value: args[0]!, expiresAt: null });
+      this.strings.delete(pendingKey!);
+      return [wasOnline ? 1 : 0, wasPending ? 1 : 0];
+    }
+    if (script.includes("ZSCORE")) {
+      if (!set.has(args[2]!)) return 0;
+      set.set(args[2]!, Number(args[1]));
+      this.strings.set(lastSeenKey!, { value: args[0]!, expiresAt: null });
+      return 1;
+    }
+    if (script.includes("local removed")) {
+      if (!set.delete(args[1]!)) {
+        return [0, 0, this.strings.get(lastSeenKey!)?.value ?? ""];
+      }
+      this.strings.set(lastSeenKey!, { value: args[0]!, expiresAt: null });
+      if (set.size === 0) {
+        this.strings.set(pendingKey!, {
+          value: args[2]!,
+          expiresAt: now + Math.max(Number(args[3]) + 1000, 1000),
+        });
+      }
+      return [1, set.size, this.strings.get(lastSeenKey!)?.value ?? ""];
+    }
+    if (script.includes('GET", KEYS[3]') && script.includes("ARGV[2]")) {
+      if (this.strings.get(pendingKey!)?.value !== args[1] || set.size > 0) return [0, ""];
+      this.strings.delete(pendingKey!);
+      return [1, this.strings.get(lastSeenKey!)?.value ?? ""];
+    }
+    const lastSeen = this.strings.get(lastSeenKey!)?.value ?? "";
+    return [set.size > 0 ? 1 : 0, lastSeen];
+  }
+}
+
+/** ioredis-shaped presence client for atomic store tests. */
+export class FakeIoredisPresence {
+  constructor(private readonly database: FakePresenceDatabase = new FakePresenceDatabase()) {}
+
+  eval(script: string, numberOfKeys: number, ...keysAndArguments: string[]): Promise<unknown> {
+    return Promise.resolve(
+      this.database.eval(
+        script,
+        keysAndArguments.slice(0, numberOfKeys),
+        keysAndArguments.slice(numberOfKeys),
+      ),
+    );
+  }
+}
+
+/** node-redis-shaped presence client for driver compatibility tests. */
+export class FakeNodeRedisPresence {
+  pSubscribe(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  constructor(private readonly database: FakePresenceDatabase = new FakePresenceDatabase()) {}
+
+  eval(script: string, options: { keys: string[]; arguments: string[] }): Promise<unknown> {
+    return Promise.resolve(this.database.eval(script, options.keys, options.arguments));
+  }
+}

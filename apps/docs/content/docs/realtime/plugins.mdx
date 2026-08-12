@@ -135,8 +135,9 @@ field too - never from receipt ticks.
 
 ## Single-node caveat
 
-Like the default transport, plugin state is **in-memory and single-node**.
-Multi-node fan-out is a future transport, not an API change. See
+Typing and receipt plugin state is **in-memory and single-node**. Presence is
+process-local by default, but it supports a shared `PresenceStore`; configure
+`redisPresenceStore()` with the Redis transport for multi-node presence. See
 [Deployment](/docs/integrations/deployment).
 
 <Callout type="info">

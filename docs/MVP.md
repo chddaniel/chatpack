@@ -118,7 +118,10 @@ WhatsApp-style extras feel related to 1:1 because consumer apps bundle them. Cha
   per-request hydrated preview.
   Threads stay a non-goal - they need a thread identity, per-thread counts, and
   nested pagination, which is a different data model, not a column.
-- **Horizontal multi-node fan-out _in core_** - core ships single-node only. The `Transport` seam held: multi-node fan-out shipped as the optional `@chatpack/transport-redis` package (ADR 0012) with **zero changes to core** and no public API change. Multi-node `presence()` is still a non-goal - it needs shared connection state, not a transport.
+- **Horizontal multi-node fan-out _in core_** - core ships single-node by
+  default. The `Transport` seam held: multi-node fan-out shipped as the
+  optional `@chatpack/transport-redis` package (ADR 0012). Multi-node presence
+  uses the generic `PresenceStore` seam and Redis leases (ADR 0023).
 
 ## 6. Architecture (backend-only, adapter-driven)
 

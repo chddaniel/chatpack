@@ -4,13 +4,14 @@
  * (typing, presence, receipts), exercised through the real HTTP handler and
  * `GET /stream` SSE endpoint.
  */
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   chatpack,
   type ChatpackHandler,
   type ChatpackInstance,
   type ChatpackPlugin,
+  type PresenceStore,
 } from "@chatpack/core";
 import { typing, presence, receipts } from "@chatpack/core/plugins";
 import { memoryAdapter } from "../src/index";
@@ -270,6 +271,57 @@ describe("typing()", () => {
 });
 
 describe("presence()", () => {
+  it("returns null lastSeenAt for an unseen user", async () => {
+    const { chat, handler } = createHttpChat([presence({ offlineDelayMs: 0 })]);
+    await chat.api.getOrCreateConversation({ userId: "alice", otherUserId: "bob" });
+
+    const response = await request(handler, "GET", "/presence?userIds=alice", "bob");
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      presence: Record<string, { online: boolean; lastSeenAt: string | null }>;
+    };
+    expect(body.presence["alice"]).toEqual({ online: false, lastSeenAt: null });
+  });
+
+  it("keeps reconnects inside the offline grace period", async () => {
+    const { chat, handler } = createHttpChat([presence({ offlineDelayMs: 50 })]);
+    await chat.api.getOrCreateConversation({ userId: "alice", otherUserId: "bob" });
+
+    const bob = await connect(handler, "bob");
+    const alice = await connect(handler, "alice");
+    await bob.waitFor((e) => e.event === "presence.online");
+
+    await alice.close();
+    const reconnected = await connect(handler, "alice");
+    const offline = await bob.waitFor((e) => e.event === "presence.offline", 1, 100);
+    expect(offline).toHaveLength(0);
+    await reconnected.close();
+  });
+
+  it("notifies a presence store only once for duplicate stream close", async () => {
+    const close = vi.fn(async () => ({
+      state: { online: false, lastSeenAt: new Date() },
+      offlineToken: null,
+    }));
+    const store: PresenceStore = {
+      open: vi.fn(async () => ({
+        state: { online: true, lastSeenAt: new Date() },
+        transition: null,
+      })),
+      heartbeat: vi.fn(async () => {}),
+      close,
+      finalizeOffline: vi.fn(async () => null),
+      get: vi.fn(async () => ({ online: false, lastSeenAt: null })),
+    };
+    const { handler } = createHttpChat([presence({ store })]);
+    const client = await connect(handler, "alice");
+    await vi.waitFor(() => expect(store.open).toHaveBeenCalledTimes(1));
+
+    await client.close();
+    await client.close();
+    await vi.waitFor(() => expect(close).toHaveBeenCalledTimes(1));
+  });
+
   it("publishes presence.online / presence.offline to conversation partners", async () => {
     const { chat, handler } = createHttpChat([presence({ offlineDelayMs: 0 })]);
     await chat.api.getOrCreateConversation({ userId: "alice", otherUserId: "bob" });
@@ -322,6 +374,34 @@ describe("presence()", () => {
     const probed = await request(handler, "GET", `/presence?userIds=alice`, "mallory");
     const probedBody = (await probed.json()) as { presence: Record<string, unknown> };
     expect(probedBody.presence["alice"]).toBeUndefined();
+  });
+
+  it("returns an internal error when a shared presence snapshot fails", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const failedStore: PresenceStore = {
+      open: async () => ({
+        state: { online: true, lastSeenAt: new Date() },
+        transition: null,
+      }),
+      heartbeat: async () => {},
+      close: async () => ({
+        state: { online: false, lastSeenAt: new Date() },
+        offlineToken: null,
+      }),
+      finalizeOffline: async () => null,
+      get: async () => {
+        throw new Error("presence store unavailable");
+      },
+    };
+    try {
+      const { chat, handler } = createHttpChat([presence({ store: failedStore })]);
+      await chat.api.getOrCreateConversation({ userId: "alice", otherUserId: "bob" });
+      const response = await request(handler, "GET", "/presence?userIds=alice", "bob");
+      expect(response.status).toBe(500);
+      expect(errorSpy).toHaveBeenCalled();
+    } finally {
+      errorSpy.mockRestore();
+    }
   });
 });
 

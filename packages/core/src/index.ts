@@ -205,6 +205,21 @@ export type {
   PublishEphemeralInput,
 } from "./plugin";
 
+// Shared presence state contract (`docs/decisions/0023`).
+export type {
+  PresenceCloseInput,
+  PresenceCloseResult,
+  PresenceFinalizeOfflineInput,
+  PresenceFinalizeOfflineResult,
+  PresenceGetInput,
+  PresenceHeartbeatInput,
+  PresenceOpenInput,
+  PresenceOpenResult,
+  PresenceOptions,
+  PresenceState,
+  PresenceStore,
+} from "./plugins/presence";
+
 // Errors
 export { ChatpackError, type ChatpackErrorCode } from "./errors";
 

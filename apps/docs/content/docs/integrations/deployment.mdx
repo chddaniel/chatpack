@@ -59,12 +59,11 @@ Without the first-party client, poll `GET /conversations/:id/messages` and
 **replace** each cached message with what comes back rather than skipping ids
 you've already seen.
 
-Plugin signals (typing, presence, receipts) are in-memory, so they won't fire
-across isolates either - and they're unavailable while polling for the same
-reason: nothing stores them, so there's nothing to poll. The durable state
-(`lastReadMessageId`) still works everywhere. On multi-node long-lived servers
-the Redis transport relays typing and receipts, but `presence()` remains
-per-node.
+Plugin signals (typing, presence, receipts) are ephemeral, so they're
+unavailable while polling. On multi-node long-lived servers, the Redis
+transport relays typing and receipts; configure `redisPresenceStore()` with
+`presence()` to share presence leases. The durable state
+(`lastReadMessageId`) still works everywhere.
 
 ## Databases on edge runtimes
 

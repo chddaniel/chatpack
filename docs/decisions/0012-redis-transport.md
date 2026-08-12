@@ -118,13 +118,11 @@ one Redis instance can serve staging and production without crosstalk.
 - **Good:** no Redis dependency anywhere in the tree; the test suite proves the
   cross-node path with an in-memory broker that round-trips real JSON (which is
   what catches the `Date` bug).
-- **Limitation - presence is still per-node.** `presence()` counts live
-  connections in a per-process `Map` (ADR 0008). Relaying events does not give
-  node A knowledge of node B's connections, so `GET /presence` still answers
-  only for locally-connected users and online/offline transitions fire per node.
-  Fixing this needs shared connection state (e.g. a Redis key per connection
-  with TTL) and is deliberately out of scope here - it is a presence change, not
-  a transport change.
+- **Presence state is a separate shared capability.** `redisTransport()` relays
+  presence transitions, while `redisPresenceStore()` stores one expiring lease
+  per SSE connection. Configure both on every node for global presence. Without
+  the store, `presence()` remains process-local for backward compatibility. The
+  lease design and atomic transition rules are in ADR 0023.
 - **Limitation - Redis pub/sub is at-most-once.** An event published while a node
   is disconnected from Redis is gone; there is no replay buffer. This is
   tolerable precisely because durable events are replayable from storage and

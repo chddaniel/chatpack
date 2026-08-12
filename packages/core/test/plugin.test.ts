@@ -156,6 +156,41 @@ describe("createPluginRuntime", () => {
     }
   });
 
+  it("passes distinct connection ids and isolates async stream hook failures", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const transport = inProcessTransport();
+      const opened: string[] = [];
+      const closed: string[] = [];
+      const healthy: ChatpackPlugin = {
+        name: "healthy",
+        async onStreamOpen(ctx) {
+          opened.push(ctx.connectionId);
+        },
+        async onStreamClose(ctx) {
+          closed.push(ctx.connectionId);
+        },
+      };
+      const broken: ChatpackPlugin = {
+        name: "broken",
+        async onStreamOpen() {
+          throw new Error("async boom");
+        },
+      };
+      const runtime = createPluginRuntime([broken, healthy], fakeApi, transport);
+
+      await runtime.notifyStreamOpen("alice", "node-a/stream-1");
+      await runtime.notifyStreamOpen("alice", "node-b/stream-2");
+      await runtime.notifyStreamClose("alice", "node-a/stream-1");
+
+      expect(opened).toEqual(["node-a/stream-1", "node-b/stream-2"]);
+      expect(closed).toEqual(["node-a/stream-1"]);
+      expect(errorSpy).toHaveBeenCalledTimes(2);
+    } finally {
+      errorSpy.mockRestore();
+    }
+  });
+
   it("handleRequest: first plugin response wins, null passes through", async () => {
     const transport = inProcessTransport();
     const basePaths: string[] = [];

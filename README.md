@@ -737,10 +737,9 @@ Notes that keep the design honest:
   Ticks are at-least-once - dedupe by `payload.messageId`. Each tick is
   **per-user**, so in a group collect `senderId`s rather than treating one tick
   as "everyone read it". The durable truth is still `lastReadMessageId`.
-- Plugin state is **in-memory and single-node** (MVP §5).
-  [`@chatpack/transport-redis`](./packages/transport-redis) relays events
-  between nodes, but `presence()` connection state remains local to each
-  process.
+- Plugin state is in-memory by default. For several long-lived app servers,
+  [`@chatpack/transport-redis`](./packages/transport-redis) relays events and
+  `redisPresenceStore()` shares presence leases across nodes.
 
 Want to write your own plugin? The seam is public - see `ChatpackPlugin` in
 [`@chatpack/core`](./packages/core) and

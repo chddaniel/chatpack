@@ -829,25 +829,29 @@ events.onerror = () => {
 | Several long-lived processes behind a load balancer (2+ containers/dynos, `pm2 -i`, autoscaled VMs) | Drizzle (or custom adapter) | `/stream` works **only** with `@chatpack/transport-redis` - the default transport is per-process |
 | Serverless / edge / multi-instance: Vercel & AWS Lambda, Cloudflare Workers, **published AI-builder apps**, Replit Autoscale | Drizzle (or custom adapter) - `memoryAdapter` is per-isolate and loses everything | SSE is unsuitable here whatever the transport (function lifetime, not fan-out, is the blocker). Use `@chatpack/client` with `realtime: { mode: "poll" }` - or `auto`, the default, which falls back on its own. Typing/presence/receipts are unavailable; do not hand-roll an interval |
 
-The default transport and plugin state (typing/presence/receipts) are
-in-process, single-node. A demo on `memoryAdapter` + `/stream` is correct in
-a preview and wrong in a serverless deploy - say so in the app's README.
+The default transport and plugin state are in-process. A demo on
+`memoryAdapter` + `/stream` is correct in a preview and wrong in a serverless
+deploy - say so in the app's README. For several long-lived nodes, use the
+Redis transport plus `redisPresenceStore()` with `presence()`.
 
 **Multi-node SSE (2+ long-lived processes).** Swap in the Redis transport -
 one line, no other API change:
 
 ```ts
-import { redisTransport } from "@chatpack/transport-redis";
+import { redisPresenceStore, redisTransport } from "@chatpack/transport-redis";
+import { presence } from "@chatpack/core/plugins";
 import Redis from "ioredis";
 
 // Two connections: a client in subscriber mode cannot PUBLISH.
+const publisher = new Redis(process.env.REDIS_URL!);
 export const chat = chatpack({
   storage,
   auth,
   transport: redisTransport({
-    publisher: new Redis(process.env.REDIS_URL!),
+    publisher,
     subscriber: new Redis(process.env.REDIS_URL!),
   }),
+  plugins: [presence({ store: redisPresenceStore({ client: publisher }) })],
 });
 ```
 
@@ -858,9 +862,9 @@ Hard rules for the Redis transport:
 - Bring your own client - `ioredis` or `node-redis` v4+ both work; Chatpack has
   no Redis dependency. Options: `channel` (default `chatpack:events`), `nodeId`,
   `onError`.
-- Messages, typing, and receipts go multi-node. **`presence()` does not** - it
-  counts connections in a per-process Map, so `GET /presence` still answers for
-  locally-connected users only.
+- Messages, typing, receipts, and presence go multi-node when the Redis
+  transport and `redisPresenceStore()` are configured. Presence uses expiring
+  per-connection leases and keeps five seconds of offline grace by default.
 - A Redis outage degrades live delivery, never the send: `publish` stays
   synchronous and never throws, senders succeed, and other-node clients
   gap-fill from storage on reconnect.
