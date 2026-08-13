@@ -230,7 +230,7 @@ export type ClientPageResult<Key extends string, Item> = {
 
 /** Unwrap and validate a cursor-paginated response envelope. */
 export function unwrapPageResult<Key extends string, Item>(
-  result: ChatClientResult<unknown>,
+  result: ChatClientResult<ClientPageResult<Key, Item>>,
   key: Key,
 ): ChatClientResult<ClientPageResult<Key, Item>> {
   if (result.error !== null) return result;
@@ -254,7 +254,9 @@ export function unwrapPageResult<Key extends string, Item>(
 }
 
 /** Unwrap and validate the `{ ok: true }` response used by delete routes. */
-export function unwrapOkResult(result: ChatClientResult<unknown>): ChatClientResult<{ ok: true }> {
+export function unwrapOkResult(
+  result: ChatClientResult<{ ok: true }>,
+): ChatClientResult<{ ok: true }> {
   if (result.error !== null) return result;
   if (!isRecord(result.data) || result.data.ok !== true) {
     return failure(
