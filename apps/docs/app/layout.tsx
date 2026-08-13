@@ -18,10 +18,10 @@ export const metadata: Metadata = {
   authors: [
     { name: "Yeabsra Habtu", url: "https://github.com/Yeabsra-Habtu" },
     { name: "Ikem Peter", url: "https://github.com/ikemHood" },
-    { name: "chhddavid", url: "https://github.com/chhddavid" },
+    { name: "DavidCH", url: "https://github.com/chhddavid" },
   ],
-  creator: "chddaniel and chhddavid",
-  publisher: "chddaniel and chhddavid",
+  creator: "DanielCH and DavidCH",
+  publisher: "DanielCH and DavidCH",
 };
 
 export default function Layout({ children }: LayoutProps<"/">) {

@@ -1,13 +1,13 @@
 {
   "name": "@chatpack/adapter-drizzle",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "description": "Drizzle ORM (Postgres) storage adapter for Chatpack - real persistence for production",
   "license": "MIT",
   "author": "Yeabsra Habtu <yeabsra.h@shipper.now> (https://github.com/Yeabsra-Habtu)",
   "contributors": [
-    "chddaniel <hello@chdaniel.com> (https://github.com/chddaniel)",
+    "DanielCH <hello@chdaniel.com> (https://github.com/chddaniel)",
     "Ikem Peter <ikem.peter@shipper.now> (https://github.com/ikemHood)",
-    "chhddavid <chhddavid@gmail.com> (https://github.com/chhddavid)"
+    "DavidCH <chhddavid@gmail.com> (https://github.com/chhddavid)"
   ],
   "homepage": "https://github.com/chddaniel/chatpack#readme",
   "repository": {

@@ -1,13 +1,13 @@
 {
   "name": "@chatpack/core",
-  "version": "0.11.1",
+  "version": "0.11.2",
   "description": "Open-source chat infrastructure for developers - the Chatpack core engine",
   "license": "MIT",
   "author": "Yeabsra Habtu <yeabsra.h@shipper.now> (https://github.com/Yeabsra-Habtu)",
   "contributors": [
-    "chddaniel <hello@chdaniel.com> (https://github.com/chddaniel)",
+    "DanielCH <hello@chdaniel.com> (https://github.com/chddaniel)",
     "Ikem Peter <ikem.peter@shipper.now> (https://github.com/ikemHood)",
-    "chhddavid <chhddavid@gmail.com> (https://github.com/chhddavid)"
+    "DavidCH <chhddavid@gmail.com> (https://github.com/chhddavid)"
   ],
   "homepage": "https://github.com/chddaniel/chatpack#readme",
   "repository": {

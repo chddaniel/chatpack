@@ -1,5 +1,12 @@
 # @chatpack/cli
 
+## 0.2.2
+
+### Patch Changes
+
+- Credit the project's co-owners by name rather than GitHub handle in package
+  `contributors` metadata and the credits surfaces: DanielCH and DavidCH.
+
 ## 0.2.1
 
 ### Patch Changes

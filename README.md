@@ -17,8 +17,8 @@ quickstart, concepts, real-time, storage adapters, framework guides, and the
 full REST reference. (Source in [`apps/docs`](./apps/docs); run locally with
 `pnpm --filter @chatpack/docs dev`.)
 
-A project by **[chddaniel](https://github.com/chddaniel)** and
-**[chhddavid](https://github.com/chhddavid)** · principal author
+A project by **[DanielCH](https://github.com/chddaniel)** and
+**[DavidCH](https://github.com/chhddavid)** · principal author
 **[Yeabsra Habtu](https://github.com/Yeabsra-Habtu)** ·
 [all contributors](https://github.com/chddaniel/chatpack/graphs/contributors)
 
@@ -855,8 +855,8 @@ repo layout, dev workflow, and the adapter contract.
 
 ## Credits
 
-Chatpack is a project by **[chddaniel](https://github.com/chddaniel)** and
-**[chhddavid](https://github.com/chhddavid)**, who own and maintain it.
+Chatpack is a project by **[DanielCH](https://github.com/chddaniel)** and
+**[DavidCH](https://github.com/chhddavid)**, who own and maintain it.
 
 The library itself was written by
 **[Yeabsra Habtu](https://github.com/Yeabsra-Habtu)** — the core engine and
@@ -866,13 +866,13 @@ ephemeral plugin trio, and the first-party browser client.
 
 **[Ikem Peter](https://github.com/ikemHood)** builds Chatpack alongside him — the
 moderation suite, the client's message search and its invite, join-request and
-channel wrappers, and the CLI refresh. **[chhddavid](https://github.com/chhddavid)**
+channel wrappers, and the CLI refresh. **[DavidCH](https://github.com/chhddavid)**
 contributes to the code as well as co-owning the project.
 
 | Role                                                  |                                    |
 | ----------------------------------------------------- | ---------------------------------- |
-| **[chddaniel](https://github.com/chddaniel)**         | Project co-owner, maintainer       |
-| **[chhddavid](https://github.com/chhddavid)**         | Project co-owner, contributor      |
+| **[DanielCH](https://github.com/chddaniel)**          | Project co-owner, maintainer       |
+| **[DavidCH](https://github.com/chhddavid)**           | Project co-owner, contributor      |
 | **[Yeabsra Habtu](https://github.com/Yeabsra-Habtu)** | Principal author, maintainer       |
 | **[Ikem Peter](https://github.com/ikemHood)**         | Contributing developer, maintainer |
 

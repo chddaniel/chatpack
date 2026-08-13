@@ -1,5 +1,14 @@
 # @chatpack/next
 
+## 0.1.17
+
+### Patch Changes
+
+- Credit the project's co-owners by name rather than GitHub handle in package
+  `contributors` metadata and the credits surfaces: DanielCH and DavidCH.
+- Updated dependencies
+  - @chatpack/core@0.11.2
+
 ## 0.1.16
 
 ### Patch Changes

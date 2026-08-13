@@ -1,5 +1,17 @@
 # @chatpack/client
 
+## 0.7.2
+
+### Patch Changes
+
+- Credit the project's co-owners by name rather than GitHub handle in package
+  `contributors` metadata and the credits surfaces: DanielCH and DavidCH.
+- ac8fb5b: Harden moderation client responses with typed action inputs, validated pagination
+  and delete envelopes, and focused structured-error coverage for blocks, mutes,
+  reports, and moderator bans.
+- Updated dependencies
+  - @chatpack/core@0.11.2
+
 ## 0.7.1
 
 ### Patch Changes

@@ -1,13 +1,13 @@
 {
   "name": "@chatpack/next",
-  "version": "0.1.16",
+  "version": "0.1.17",
   "description": "Next.js App Router integration for Chatpack - mount the chat API on one route",
   "license": "MIT",
   "author": "Yeabsra Habtu <yeabsra.h@shipper.now> (https://github.com/Yeabsra-Habtu)",
   "contributors": [
-    "chddaniel <hello@chdaniel.com> (https://github.com/chddaniel)",
+    "DanielCH <hello@chdaniel.com> (https://github.com/chddaniel)",
     "Ikem Peter <ikem.peter@shipper.now> (https://github.com/ikemHood)",
-    "chhddavid <chhddavid@gmail.com> (https://github.com/chhddavid)"
+    "DavidCH <chhddavid@gmail.com> (https://github.com/chhddavid)"
   ],
   "homepage": "https://github.com/chddaniel/chatpack#readme",
   "repository": {
