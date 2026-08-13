@@ -35,12 +35,16 @@ export type {
   ParticipantRemoveInput,
   ParticipantRoleInput,
   ModerationActions,
+  ModerationBlockInput,
+  ModerationMuteInput,
   ModerationListInput,
   ModerationReportInput,
+  ModerationReportGetInput,
   ModerationReportListInput,
   ModerationReportUpdateInput,
   ModerationBanInput,
   ModerationBanListInput,
+  ModerationBanRevokeInput,
 } from "./client";
 export type {
   ChatClientOptions,

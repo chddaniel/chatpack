@@ -305,6 +305,16 @@ await chatClient.moderation.report({
 });
 ```
 
+The complete action surface is:
+
+| Action                                                               | Route                      | Access       |
+| -------------------------------------------------------------------- | -------------------------- | ------------ |
+| `blockUser` / `unblockUser` / `listBlockedUsers`                     | `/moderation/blocks`       | Self-service |
+| `muteConversation` / `unmuteConversation` / `listMutedConversations` | `/moderation/mutes`        | Self-service |
+| `report`                                                             | `POST /moderation/reports` | Self-service |
+| `listReports` / `getReport` / `updateReport`                         | `/moderation/reports`      | Moderator    |
+| `listBans` / `banUser` / `unbanUser`                                 | `/moderation/bans`         | Moderator    |
+
 The other seven are for your moderators and return `NOT_MODERATOR` (403) unless
 the server's `moderation.canModerate` hook admits the caller:
 
@@ -321,8 +331,12 @@ SSE delivery are unchanged, so read `listMutedConversations` and suppress
 notifications yourself. Every route answers `USER_BANNED` (403) for a banned
 caller - including `/stream`, so a live subscription is closed at the next
 heartbeat rather than instantly - and `MODERATION_UNSUPPORTED` (501) on an
-adapter without the capability. None of these actions touch the query cache;
-refetch after a mutation that should change what the user sees.
+adapter without the capability. The client returns these structured errors,
+plus `DIRECT_INTERACTION_BLOCKED`, `REPORT_NOT_FOUND`, `BAN_NOT_FOUND`, and
+`INVALID_INPUT`, in `{ data: null, error }`; expected failures do not throw.
+Malformed successful moderation envelopes return `INVALID_RESPONSE` instead of
+being exposed as unchecked `undefined` values. None of these actions touch the
+query cache; refetch after a mutation that should change what the user sees.
 
 ## Source layout
 
