@@ -150,10 +150,19 @@ await chatClient.moderation.report({
   reason: "harassment",
 });
 
+// additional self-service actions
+await chatClient.moderation.unblockUser({ targetUserId: "bob" });
+await chatClient.moderation.listBlockedUsers({ limit: 20 });
+await chatClient.moderation.unmuteConversation({ conversationId });
+await chatClient.moderation.listMutedConversations();
+
 // moderators only
 const queue = await chatClient.moderation.listReports({ status: "open" });
+await chatClient.moderation.getReport({ reportId });
 await chatClient.moderation.updateReport({ reportId, status: "triaged" });
+await chatClient.moderation.listBans({ activeOnly: true });
 await chatClient.moderation.banUser({ targetUserId: "troll", reason: "spam" });
+await chatClient.moderation.unbanUser({ banId });
 ```
 
 Blocks and mutes are idempotent, and a repeated report for the same target
@@ -163,7 +172,9 @@ notifications yourself. A banned caller gets `USER_BANNED` (403) from every
 route including `/stream`, which means a live subscription is closed at the next
 heartbeat rather than instantly; treat that code as "stop retrying and show a
 blocked screen". Adapters without the capability return
-`MODERATION_UNSUPPORTED` (501) as a structured error.
+`MODERATION_UNSUPPORTED` (501) as a structured error. Missing reports and bans
+return `REPORT_NOT_FOUND` and `BAN_NOT_FOUND`; malformed successful envelopes
+return `INVALID_RESPONSE`. Expected failures never throw.
 
 <Callout type="warn">
   None of the moderation actions update the query cache. Refetch conversations or messages yourself

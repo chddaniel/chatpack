@@ -20,6 +20,8 @@ import { createRealtime, type ChatRealtime } from "./realtime";
 import {
   createRequester,
   normalizeBasePath,
+  unwrapOkResult,
+  unwrapPageResult,
   unwrapResult,
   type ClientRequestInit,
   type ChatpackRequester,
@@ -285,6 +287,16 @@ export interface ModerationListInput {
   cursor?: string;
 }
 
+/** Input for blocking or unblocking one user. */
+export interface ModerationBlockInput {
+  targetUserId: string;
+}
+
+/** Input for muting or unmuting one conversation. */
+export interface ModerationMuteInput {
+  conversationId: string;
+}
+
 /** Report submission input for the REST client. */
 export interface ModerationReportInput {
   targetType: ReportTargetType;
@@ -305,6 +317,11 @@ export interface ModerationReportUpdateInput {
   moderatorNote?: string | null;
 }
 
+/** Input for loading one report. */
+export interface ModerationReportGetInput {
+  reportId: string;
+}
+
 /** Permanent or timed ban input for the REST client. */
 export interface ModerationBanInput {
   targetUserId: string;
@@ -317,14 +334,19 @@ export interface ModerationBanListInput extends ModerationListInput {
   activeOnly?: boolean;
 }
 
+/** Input for revoking one ban. */
+export interface ModerationBanRevokeInput {
+  banId: string;
+}
+
 /** Typed user and moderator moderation actions. */
 export interface ModerationActions {
   blockUser(
-    input: { targetUserId: string },
+    input: ModerationBlockInput,
     options?: ChatClientRequestOptions,
   ): Promise<ChatClientResult<ClientUserBlock>>;
   unblockUser(
-    input: { targetUserId: string },
+    input: ModerationBlockInput,
     options?: ChatClientRequestOptions,
   ): Promise<ChatClientResult<{ ok: true }>>;
   listBlockedUsers(
@@ -332,11 +354,11 @@ export interface ModerationActions {
     options?: ChatClientRequestOptions,
   ): Promise<ChatClientResult<{ blocks: ClientUserBlock[]; nextCursor: string | null }>>;
   muteConversation(
-    input: { conversationId: string },
+    input: ModerationMuteInput,
     options?: ChatClientRequestOptions,
   ): Promise<ChatClientResult<ClientConversationMute>>;
   unmuteConversation(
-    input: { conversationId: string },
+    input: ModerationMuteInput,
     options?: ChatClientRequestOptions,
   ): Promise<ChatClientResult<{ ok: true }>>;
   listMutedConversations(
@@ -352,7 +374,7 @@ export interface ModerationActions {
     options?: ChatClientRequestOptions,
   ): Promise<ChatClientResult<{ reports: ClientModerationReport[]; nextCursor: string | null }>>;
   getReport(
-    input: { reportId: string },
+    input: ModerationReportGetInput,
     options?: ChatClientRequestOptions,
   ): Promise<ChatClientResult<ClientModerationReport>>;
   updateReport(
@@ -368,7 +390,7 @@ export interface ModerationActions {
     options?: ChatClientRequestOptions,
   ): Promise<ChatClientResult<ClientUserBan>>;
   unbanUser(
-    input: { banId: string },
+    input: ModerationBanRevokeInput,
     options?: ChatClientRequestOptions,
   ): Promise<ChatClientResult<ClientUserBan>>;
 }
@@ -1067,7 +1089,7 @@ export function createChatClient<
 
   const moderationActions: ModerationActions = {
     async blockUser(input, optionsForRequest) {
-      const result = await requester.request<unknown>("/moderation/blocks", {
+      const result = await requester.request<{ block: ClientUserBlock }>("/moderation/blocks", {
         method: "POST",
         body: input,
         ...requestOptions(optionsForRequest),
@@ -1075,69 +1097,80 @@ export function createChatClient<
       return unwrapResult<ClientUserBlock>(result, "block");
     },
     async unblockUser(input, optionsForRequest) {
-      return requester.request<{ ok: true }>("/moderation/blocks", {
+      const result = await requester.request<{ ok: true }>("/moderation/blocks", {
         method: "DELETE",
         body: input,
         ...requestOptions(optionsForRequest),
       });
+      return unwrapOkResult(result);
     },
     async listBlockedUsers(input = {}, optionsForRequest) {
-      return requester.request<{ blocks: ClientUserBlock[]; nextCursor: string | null }>(
-        "/moderation/blocks",
+      const result = await requester.request<{
+        blocks: ClientUserBlock[];
+        nextCursor: string | null;
+      }>("/moderation/blocks", {
+        query: { limit: input.limit, cursor: input.cursor },
+        ...requestOptions(optionsForRequest),
+      });
+      return unwrapPageResult<"blocks", ClientUserBlock>(result, "blocks");
+    },
+    async muteConversation(input, optionsForRequest) {
+      const result = await requester.request<{ mute: ClientConversationMute }>(
+        "/moderation/mutes",
         {
-          query: { limit: input.limit, cursor: input.cursor },
+          method: "POST",
+          body: input,
           ...requestOptions(optionsForRequest),
         },
       );
-    },
-    async muteConversation(input, optionsForRequest) {
-      const result = await requester.request<unknown>("/moderation/mutes", {
-        method: "POST",
-        body: input,
-        ...requestOptions(optionsForRequest),
-      });
       return unwrapResult<ClientConversationMute>(result, "mute");
     },
     async unmuteConversation(input, optionsForRequest) {
-      return requester.request<{ ok: true }>("/moderation/mutes", {
+      const result = await requester.request<{ ok: true }>("/moderation/mutes", {
         method: "DELETE",
         body: input,
         ...requestOptions(optionsForRequest),
       });
+      return unwrapOkResult(result);
     },
     async listMutedConversations(input = {}, optionsForRequest) {
-      return requester.request<{ mutes: ClientConversationMute[]; nextCursor: string | null }>(
-        "/moderation/mutes",
+      const result = await requester.request<{
+        mutes: ClientConversationMute[];
+        nextCursor: string | null;
+      }>("/moderation/mutes", {
+        query: { limit: input.limit, cursor: input.cursor },
+        ...requestOptions(optionsForRequest),
+      });
+      return unwrapPageResult<"mutes", ClientConversationMute>(result, "mutes");
+    },
+    async report(input, optionsForRequest) {
+      const result = await requester.request<{ report: ClientModerationReport }>(
+        "/moderation/reports",
         {
-          query: { limit: input.limit, cursor: input.cursor },
+          method: "POST",
+          body: input,
           ...requestOptions(optionsForRequest),
         },
       );
-    },
-    async report(input, optionsForRequest) {
-      const result = await requester.request<unknown>("/moderation/reports", {
-        method: "POST",
-        body: input,
-        ...requestOptions(optionsForRequest),
-      });
       return unwrapResult<ClientModerationReport>(result, "report");
     },
     async listReports(input = {}, optionsForRequest) {
-      return requester.request<{ reports: ClientModerationReport[]; nextCursor: string | null }>(
-        "/moderation/reports",
-        {
-          query: {
-            limit: input.limit,
-            cursor: input.cursor,
-            status: input.status,
-            targetType: input.targetType,
-          },
-          ...requestOptions(optionsForRequest),
+      const result = await requester.request<{
+        reports: ClientModerationReport[];
+        nextCursor: string | null;
+      }>("/moderation/reports", {
+        query: {
+          limit: input.limit,
+          cursor: input.cursor,
+          status: input.status,
+          targetType: input.targetType,
         },
-      );
+        ...requestOptions(optionsForRequest),
+      });
+      return unwrapPageResult<"reports", ClientModerationReport>(result, "reports");
     },
     async getReport(input, optionsForRequest) {
-      const result = await requester.request<unknown>(
+      const result = await requester.request<{ report: ClientModerationReport }>(
         "/moderation/reports/" + encodeURIComponent(input.reportId),
         requestOptions(optionsForRequest),
       );
@@ -1145,28 +1178,29 @@ export function createChatClient<
     },
     async updateReport(input, optionsForRequest) {
       const { reportId, ...body } = input;
-      const result = await requester.request<unknown>(
+      const result = await requester.request<{ report: ClientModerationReport }>(
         "/moderation/reports/" + encodeURIComponent(reportId),
         { method: "PATCH", body, ...requestOptions(optionsForRequest) },
       );
       return unwrapResult<ClientModerationReport>(result, "report");
     },
     async listBans(input = {}, optionsForRequest) {
-      return requester.request<{ bans: ClientUserBan[]; nextCursor: string | null }>(
-        "/moderation/bans",
-        {
-          query: {
-            limit: input.limit,
-            cursor: input.cursor,
-            activeOnly:
-              input.activeOnly === undefined ? undefined : input.activeOnly ? "true" : "false",
-          },
-          ...requestOptions(optionsForRequest),
+      const result = await requester.request<{
+        bans: ClientUserBan[];
+        nextCursor: string | null;
+      }>("/moderation/bans", {
+        query: {
+          limit: input.limit,
+          cursor: input.cursor,
+          activeOnly:
+            input.activeOnly === undefined ? undefined : input.activeOnly ? "true" : "false",
         },
-      );
+        ...requestOptions(optionsForRequest),
+      });
+      return unwrapPageResult<"bans", ClientUserBan>(result, "bans");
     },
     async banUser(input, optionsForRequest) {
-      const result = await requester.request<unknown>("/moderation/bans", {
+      const result = await requester.request<{ ban: ClientUserBan }>("/moderation/bans", {
         method: "POST",
         body: input,
         ...requestOptions(optionsForRequest),
@@ -1174,7 +1208,7 @@ export function createChatClient<
       return unwrapResult<ClientUserBan>(result, "ban");
     },
     async unbanUser(input, optionsForRequest) {
-      const result = await requester.request<unknown>(
+      const result = await requester.request<{ ban: ClientUserBan }>(
         "/moderation/bans/" + encodeURIComponent(input.banId),
         { method: "DELETE", ...requestOptions(optionsForRequest) },
       );

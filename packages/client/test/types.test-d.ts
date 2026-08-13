@@ -34,6 +34,19 @@ client.joinRequests.list({ conversationId: "c1", status: "pending", limit: 10 })
 client.joinRequests.resolve({ conversationId: "c1", userId: "bob", decision: "approve" });
 client.channels.list({ limit: 10, cursor: "next" });
 client.channels.join({ conversationId: "c1", message: "please" });
+client.moderation.blockUser({ targetUserId: "bob" });
+client.moderation.unblockUser({ targetUserId: "bob" });
+client.moderation.listBlockedUsers({ limit: 10, cursor: "next" });
+client.moderation.muteConversation({ conversationId: "c1" });
+client.moderation.unmuteConversation({ conversationId: "c1" });
+client.moderation.listMutedConversations();
+client.moderation.report({ targetType: "user", targetId: "bob", reason: "spam" });
+client.moderation.listReports({ status: "open", targetType: "user" });
+client.moderation.getReport({ reportId: "r1" });
+client.moderation.updateReport({ reportId: "r1", status: "resolved", moderatorNote: null });
+client.moderation.listBans({ activeOnly: true });
+client.moderation.banUser({ targetUserId: "bob", expiresAt: "2030-01-01T00:00:00.000Z" });
+client.moderation.unbanUser({ banId: "b1" });
 
 async function narrowInviteResult() {
   const result = await client.invites.accept({ code: "invite" });
