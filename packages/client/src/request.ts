@@ -222,3 +222,44 @@ export function unwrapResult<T>(
   }
   return success(result.data[key] as T);
 }
+
+/** A named key plus a cursor returned by a paginated REST route. */
+export type ClientPageResult<Key extends string, Item> = {
+  [Property in Key]: Item[];
+} & { nextCursor: string | null };
+
+/** Unwrap and validate a cursor-paginated response envelope. */
+export function unwrapPageResult<Key extends string, Item>(
+  result: ChatClientResult<unknown>,
+  key: Key,
+): ChatClientResult<ClientPageResult<Key, Item>> {
+  if (result.error !== null) return result;
+  if (
+    !isRecord(result.data) ||
+    !Array.isArray(result.data[key]) ||
+    (result.data.nextCursor !== null && typeof result.data.nextCursor !== "string")
+  ) {
+    return failure(
+      createClientError(
+        "INVALID_RESPONSE",
+        'Chatpack response must contain an array "' + key + '" and a string or null "nextCursor".',
+        null,
+      ),
+    );
+  }
+  return success({
+    [key]: result.data[key] as Item[],
+    nextCursor: result.data.nextCursor as string | null,
+  } as ClientPageResult<Key, Item>);
+}
+
+/** Unwrap and validate the `{ ok: true }` response used by delete routes. */
+export function unwrapOkResult(result: ChatClientResult<unknown>): ChatClientResult<{ ok: true }> {
+  if (result.error !== null) return result;
+  if (!isRecord(result.data) || result.data.ok !== true) {
+    return failure(
+      createClientError("INVALID_RESPONSE", 'Chatpack response is missing "ok: true".', null),
+    );
+  }
+  return success({ ok: true });
+}
