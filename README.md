@@ -10,6 +10,7 @@ and real-time delivery - without rebuilding it from scratch.
 
 [![CI](https://github.com/chddaniel/chatpack/actions/workflows/ci.yml/badge.svg)](https://github.com/chddaniel/chatpack/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
+[![Discord](https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/gY3GCTRv5Y)
 
 **[Documentation → docs.chatpack.dev](https://docs.chatpack.dev)** -
 quickstart, concepts, real-time, storage adapters, framework guides, and the
@@ -837,6 +838,7 @@ alive. Details in [docs/MVP.md §12](./docs/MVP.md).
 ## Community
 
 - **[GitHub Discussions](https://github.com/chddaniel/chatpack/discussions)** — questions, show-and-tell, and feedback
+- **[Discord](https://discord.gg/gY3GCTRv5Y)** — chat with the community
 - **[Open an issue](https://github.com/chddaniel/chatpack/issues/new/choose)** — bugs and feature requests
 
 If you've built something with Chatpack, got stuck installing it, or have opinions about the API — we want to hear from you. The team reads everything.
