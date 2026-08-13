@@ -1,0 +1,38 @@
+cff-version: 1.2.0
+message: "If you use Chatpack in your work, please cite it using the metadata below."
+title: "Chatpack: open-source chat infrastructure for developers"
+abstract: >-
+  Chatpack is an open-source TypeScript chat backend library. It provides 1:1 and
+  group conversations, messages, permissions, read-state, and real-time SSE
+  delivery behind a web-standard request handler, with pluggable storage
+  adapters. Developers bring their own auth and frontend.
+type: software
+license: MIT
+repository-code: "https://github.com/chddaniel/chatpack"
+url: "https://docs.chatpack.dev"
+version: 0.11.1
+date-released: "2026-08-13"
+keywords:
+  - chat
+  - messaging
+  - typescript
+  - realtime
+  - sse
+  - backend
+authors:
+  - given-names: Yeabsra
+    family-names: Habtu
+    alias: Yeabsra-Habtu
+    email: yeabsra.h@shipper.now
+  - given-names: Daniel
+    family-names: CH
+    alias: chddaniel
+    email: hello@chdaniel.com
+  - given-names: Ikem
+    family-names: Peter
+    alias: ikemHood
+    email: ikem.peter@shipper.now
+  - given-names: David
+    family-names: CH
+    alias: chhddavid
+    email: chhddavid@gmail.com

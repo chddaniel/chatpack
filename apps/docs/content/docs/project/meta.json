@@ -1,5 +1,5 @@
 {
   "title": "Project",
   "icon": "Compass",
-  "pages": ["roadmap", "contributing", "faq"]
+  "pages": ["roadmap", "contributing", "credits", "faq"]
 }

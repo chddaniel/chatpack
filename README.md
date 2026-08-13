@@ -16,6 +16,11 @@ quickstart, concepts, real-time, storage adapters, framework guides, and the
 full REST reference. (Source in [`apps/docs`](./apps/docs); run locally with
 `pnpm --filter @chatpack/docs dev`.)
 
+A project by **[chddaniel](https://github.com/chddaniel)** and
+**[chhddavid](https://github.com/chhddavid)** · principal author
+**[Yeabsra Habtu](https://github.com/Yeabsra-Habtu)** ·
+[all contributors](https://github.com/chddaniel/chatpack/graphs/contributors)
+
 </div>
 
 ---
@@ -845,6 +850,36 @@ If you've built something with Chatpack, got stuck installing it, or have opinio
 
 Contributions are very welcome - see [CONTRIBUTING.md](./CONTRIBUTING.md) for
 repo layout, dev workflow, and the adapter contract.
+
+## Credits
+
+Chatpack is a project by **[chddaniel](https://github.com/chddaniel)** and
+**[chhddavid](https://github.com/chhddavid)**, who own and maintain it.
+
+The library itself was written by
+**[Yeabsra Habtu](https://github.com/Yeabsra-Habtu)** — the core engine and
+permission model, the HTTP handler, the storage adapter contract and both its
+memory and Drizzle/Postgres implementations, the real-time SSE transport and the
+ephemeral plugin trio, and the first-party browser client.
+
+**[Ikem Peter](https://github.com/ikemHood)** builds Chatpack alongside him — the
+moderation suite, the client's message search and its invite, join-request and
+channel wrappers, and the CLI refresh. **[chhddavid](https://github.com/chhddavid)**
+contributes to the code as well as co-owning the project.
+
+| Role                                                  |                                    |
+| ----------------------------------------------------- | ---------------------------------- |
+| **[chddaniel](https://github.com/chddaniel)**         | Project co-owner, maintainer       |
+| **[chhddavid](https://github.com/chhddavid)**         | Project co-owner, contributor      |
+| **[Yeabsra Habtu](https://github.com/Yeabsra-Habtu)** | Principal author, maintainer       |
+| **[Ikem Peter](https://github.com/ikemHood)**         | Contributing developer, maintainer |
+
+Who wrote what is verifiable rather than asserted — see the
+[contributor graph](https://github.com/chddaniel/chatpack/graphs/contributors)
+or run `git shortlog -sne` in a clone.
+
+Citing Chatpack in a paper or writeup? See [`CITATION.cff`](./CITATION.cff), or
+use the "Cite this repository" button in the GitHub sidebar.
 
 ## License
 

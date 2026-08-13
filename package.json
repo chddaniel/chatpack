@@ -3,6 +3,12 @@
   "private": true,
   "description": "Chatpack monorepo - open-source chat infrastructure for developers",
   "license": "MIT",
+  "author": "Yeabsra Habtu <yeabsra.h@shipper.now> (https://github.com/Yeabsra-Habtu)",
+  "contributors": [
+    "chddaniel <hello@chdaniel.com> (https://github.com/chddaniel)",
+    "Ikem Peter <ikem.peter@shipper.now> (https://github.com/ikemHood)",
+    "chhddavid <chhddavid@gmail.com> (https://github.com/chhddavid)"
+  ],
   "repository": {
     "type": "git",
     "url": "https://github.com/chddaniel/chatpack.git"
