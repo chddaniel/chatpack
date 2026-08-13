@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { copyFile, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
+import { copyFile, cp, mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { promisify } from "node:util";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -56,6 +56,50 @@ describe("installed bin entrypoint", () => {
         "--dry-run",
       ]);
       expect(stdout).toContain("Dry run complete. No packages installed and no files changed.");
+    }
+  });
+
+  it("loads published starter assets from bundled ESM and CJS artifacts", async () => {
+    const root = await mkdtemp(join("/tmp", "chatpack-cli-starter-bin-"));
+    temporaryRoots.push(root);
+    const packageRoot = fileURLToPath(new URL("../", import.meta.url));
+    const isolatedPackage = join(root, "package");
+    await mkdir(join(isolatedPackage, "dist"), { recursive: true });
+    await cp(join(packageRoot, "templates"), join(isolatedPackage, "templates"), {
+      recursive: true,
+    });
+    await copyFile(
+      join(packageRoot, "dist", "index.js"),
+      join(isolatedPackage, "dist", "index.js"),
+    );
+    await copyFile(
+      join(packageRoot, "dist", "index.cjs"),
+      join(isolatedPackage, "dist", "index.cjs"),
+    );
+    await writeFile(join(isolatedPackage, "package.json"), '{"type":"module"}\n');
+
+    for (const artifact of ["index.js", "index.cjs"]) {
+      const fixture = join(root, artifact.replace(".", "-"));
+      await mkdir(join(fixture, ".git"), { recursive: true });
+      const { stdout } = await execFileAsync(process.execPath, [
+        join(isolatedPackage, "dist", artifact),
+        "init",
+        "--cwd",
+        fixture,
+        "--framework",
+        "next",
+        "--auth-provider",
+        "auth0",
+        "--package-manager",
+        "pnpm",
+        "--name",
+        "packed-starter",
+        "--yes",
+        "--dry-run",
+      ]);
+      expect(stdout).toContain("src/components/ui/sidebar.tsx");
+      expect(stdout).toContain("src/proxy.ts");
+      expect(stdout).toContain("pnpm install");
     }
   });
 });

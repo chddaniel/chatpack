@@ -121,6 +121,17 @@ describe("creating groups", () => {
     expect(group.participants.map((p) => p.userId)).toEqual(["alice", "bob"]);
   });
 
+  it("validates every new seeded member through the host", async () => {
+    const chat = createChat({ userExists: (userId) => userId !== "ghost" });
+
+    await expect(
+      chat.api.createGroupConversation({ userId: "alice", userIds: ["bob", "ghost"] }),
+    ).rejects.toMatchObject({ code: "USER_NOT_FOUND" });
+    await expect(
+      chat.api.createGroupConversation({ userId: "alice", userIds: ["bob"] }),
+    ).resolves.toMatchObject({ type: "group" });
+  });
+
   it("trims the name and rejects an empty or oversized one", async () => {
     const chat = createChat();
 
@@ -223,6 +234,29 @@ describe("membership", () => {
       userIds: ["dave"],
     });
     expect(again.participants.map((p) => p.userId)).toEqual(["alice", "bob", "carol", "dave"]);
+  });
+
+  it("validates only new members through the host before storage changes", async () => {
+    const userExists = vi.fn((userId: string) => userId !== "ghost");
+    const chat = createChat({ userExists });
+    const group = await chat.api.createGroupConversation({
+      userId: "alice",
+      userIds: ["bob"],
+    });
+    userExists.mockClear();
+
+    await expect(
+      chat.api.addParticipants({
+        userId: "alice",
+        conversationId: group.id,
+        userIds: ["bob", "ghost"],
+      }),
+    ).rejects.toMatchObject({ code: "USER_NOT_FOUND" });
+    expect(userExists).toHaveBeenCalledTimes(1);
+    expect(userExists).toHaveBeenCalledWith("ghost");
+    expect(
+      (await chat.api.getConversation({ userId: "alice", conversationId: group.id })).participants,
+    ).toHaveLength(2);
   });
 
   it("never demotes an existing admin on a replayed add", async () => {

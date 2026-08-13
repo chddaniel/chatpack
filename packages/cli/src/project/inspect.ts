@@ -237,9 +237,54 @@ function routes(files: FileInfo[], framework: Framework | undefined): string[] {
     .map((file) => file.path);
 }
 
+function starterInspection(cwd: string, generated = false): ProjectInspection {
+  const root = resolve(cwd);
+  const entries = readdirSync(root, { withFileTypes: true });
+  const safeName = /^(?:README(?:\..*)?|LICENSE(?:\..*)?|\.gitignore)$/i;
+  const conflicts = entries
+    .filter((entry) => !generated && entry.name !== ".git" && !safeName.test(entry.name))
+    .map((entry) => entry.name)
+    .sort();
+  const readme = entries.find((entry) => /^README(?:\..*)?$/i.test(entry.name));
+  return {
+    mode: "starter",
+    cwd: root,
+    packageRoot: root,
+    workspaceRoot: root,
+    packageJsonPath: join(root, "package.json"),
+    packageJson: generated ? readJson(join(root, "package.json")) : {},
+    sourceRoot: join(root, "src"),
+    language: "typescript",
+    packageManagerEvidence: [],
+    frameworkEvidence: [],
+    aliases: {},
+    files: [],
+    chatpackConfigs: [],
+    chatpackRoutes: [],
+    databaseCandidates: [],
+    authCandidates: [],
+    serverEntrypoints: [],
+    starterConflicts: conflicts,
+    ...(!generated && readme ? { existingReadme: join(root, readme.name) } : {}),
+  };
+}
+
 export function inspectProject(cwd: string): ProjectInspection {
-  const packageJsonPath = findUp(cwd, ["package.json"]);
-  if (!packageJsonPath) throw new Error(`No package.json found from ${cwd}.`);
+  const requestedRoot = resolve(cwd);
+  const directPackageJson = join(requestedRoot, "package.json");
+  if (existsSync(directPackageJson) && readJson(directPackageJson).chatpackStarter) {
+    return starterInspection(requestedRoot, true);
+  }
+  if (!existsSync(directPackageJson)) {
+    const entries = readdirSync(requestedRoot, { withFileTypes: true });
+    const isRepositoryRoot = entries.some((entry) => entry.name === ".git");
+    const parentPackageJson = findUp(requestedRoot, ["package.json"]);
+    if (isRepositoryRoot || !parentPackageJson) return starterInspection(requestedRoot);
+  }
+  const packageJsonPath = existsSync(directPackageJson)
+    ? directPackageJson
+    : findUp(requestedRoot, ["package.json"]);
+  if (!packageJsonPath) return starterInspection(requestedRoot);
   const packageRoot = packageJsonPath.slice(0, -"package.json".length).replace(/[\\/]$/, "");
   const workspaceMarker = findUp(packageRoot, [
     "pnpm-workspace.yaml",
@@ -261,6 +306,7 @@ export function inspectProject(cwd: string): ProjectInspection {
   const sourceRoot = existsSync(join(packageRoot, "src")) ? join(packageRoot, "src") : packageRoot;
   const db = databaseCandidates(files, dependencies);
   return {
+    mode: "existing",
     cwd: resolve(cwd),
     packageRoot,
     workspaceRoot,
@@ -282,6 +328,7 @@ export function inspectProject(cwd: string): ProjectInspection {
     databaseCandidates: db,
     authCandidates: authCandidates(files, dependencies),
     serverEntrypoints: entrypoints(files, parsedFramework.framework),
+    starterConflicts: [],
   };
 }
 

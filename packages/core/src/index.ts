@@ -61,6 +61,7 @@ export type {
   ChatpackOptions,
   ChatpackUser,
   AuthHook,
+  UserExistsHook,
   PermissionContext,
   PermissionHooks,
   MessageHooks,

@@ -2,8 +2,10 @@ import type { PackageJson } from "./package-json";
 
 export type Framework = "next" | "hono" | "express" | "web";
 export type Adapter = "memory" | "drizzle";
+export type AuthProvider = "better-auth" | "authjs" | "auth0";
 export type PackageManager = "npm" | "pnpm" | "yarn" | "bun";
 export type Language = "typescript" | "javascript";
+export type ProjectMode = "starter" | "existing";
 
 export interface CliArgs {
   command: string | undefined;
@@ -16,6 +18,8 @@ export interface CliArgs {
   dbPath?: string;
   dbExport?: string;
   packageManager?: PackageManager;
+  authProvider?: AuthProvider;
+  name?: string;
   client: boolean;
   yes: boolean;
   dryRun: boolean;
@@ -29,6 +33,7 @@ export interface FileInfo {
 }
 
 export interface ProjectInspection {
+  mode: ProjectMode;
   cwd: string;
   packageRoot: string;
   workspaceRoot: string;
@@ -48,6 +53,8 @@ export interface ProjectInspection {
   databaseCandidates: Array<{ path: string; exportName: string }>;
   authCandidates: string[];
   serverEntrypoints: string[];
+  starterConflicts: string[];
+  existingReadme?: string;
 }
 
 export interface SetupAnswers {
@@ -57,6 +64,8 @@ export interface SetupAnswers {
   auth?: { path: string; exportName: string; idProperty: string };
   database?: { path: string; exportName: string };
   client: boolean;
+  authProvider?: AuthProvider;
+  packageName?: string;
 }
 
 export type ActionKind = "install" | "create" | "modify" | "skip";

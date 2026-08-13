@@ -3,9 +3,12 @@ import type { SetupPlan } from "./types";
 export function printPlan(plan: SetupPlan): void {
   console.log("\nChatpack setup plan\n");
   console.log(`Project:  ${plan.inspection.packageRoot}`);
+  console.log(`Mode:      ${plan.inspection.mode}`);
   console.log(`Framework: ${plan.answers.framework}`);
   console.log(`Storage:   ${plan.answers.adapter}`);
   console.log(`Manager:   ${plan.answers.packageManager}`);
+  if (plan.answers.authProvider) console.log(`Auth:      ${plan.answers.authProvider}`);
+  if (plan.answers.packageName) console.log(`Package:   ${plan.answers.packageName}`);
   for (const action of plan.actions) {
     const target = action.command ?? action.path ?? "project";
     const state = action.conflict ? "CONFLICT" : action.reason;

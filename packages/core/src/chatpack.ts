@@ -782,6 +782,15 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
     }
   }
 
+  async function requireKnownUsers(userIds: string[]): Promise<void> {
+    if (!options.userExists) return;
+    for (const userId of userIds) {
+      if (!(await options.userExists(userId))) {
+        throw new ChatpackError("USER_NOT_FOUND", `User "${userId}" was not found.`);
+      }
+    }
+  }
+
   async function requireModerator(
     userId: string,
     action: ModerationAction,
@@ -1811,6 +1820,7 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
           "A direct conversation requires two distinct users.",
         );
       }
+      await requireKnownUsers([input.otherUserId]);
       if (
         moderationStorage &&
         (await moderationStorage.isBlocked(input.userId, input.otherUserId))
@@ -1847,6 +1857,7 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
           `A group may hold at most ${MAX_GROUP_PARTICIPANTS} participants, got ${userIds.length + 1}.`,
         );
       }
+      await requireKnownUsers(userIds);
 
       const { visibility, joinPolicy } = resolveChannelFields(input.visibility, input.joinPolicy);
 
@@ -1895,6 +1906,7 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
           `A group may hold at most ${MAX_GROUP_PARTICIPANTS} participants, got ${existing.size + userIds.length}.`,
         );
       }
+      await requireKnownUsers(userIds);
 
       const updated = await storage.addParticipants({
         conversationId: conversation.id,

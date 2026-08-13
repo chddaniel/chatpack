@@ -1,5 +1,5 @@
 import { inspectProject } from "../project/inspect";
-import { installPackages } from "../install";
+import { installPackages, installProject } from "../install";
 import { applyFileAction } from "../modify";
 import { makePlan } from "../plan";
 import { confirm } from "../prompts";
@@ -33,7 +33,7 @@ export async function runInit(args: CliArgs): Promise<number> {
     }
   }
   const install = plan.actions.find((action) => action.kind === "install" && action.command);
-  if (install?.command) {
+  if (install?.command && plan.inspection.mode === "existing") {
     const packages = install.command.split(" ").slice(2);
     try {
       await installPackages(plan.answers.packageManager, packages, plan.inspection.packageRoot);
@@ -52,6 +52,16 @@ export async function runInit(args: CliArgs): Promise<number> {
       `Error: setup stopped after dependency installation; inspect the reported files and retry: ${String(error)}`,
     );
     return 1;
+  }
+  if (install?.command && plan.inspection.mode === "starter") {
+    try {
+      await installProject(plan.answers.packageManager, plan.inspection.packageRoot);
+    } catch (error) {
+      console.error(
+        `Error: starter files were created, but dependency installation failed: ${String(error)}. Fix the package-manager error and rerun ${plan.answers.packageManager} install.`,
+      );
+      return 1;
+    }
   }
   const appliedErrors = validateApplied(plan);
   if (appliedErrors.length > 0) {

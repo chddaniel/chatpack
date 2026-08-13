@@ -114,41 +114,26 @@ Search uses the same case-insensitive, punctuation-separated token contract as
 the memory adapter. Results require every query term and rank by term
 occurrences, creation time, then message id. Tombstones are excluded.
 
-> **One-statement-per-call drivers** (Neon HTTP, Vercel Postgres, Cloudflare
-> D1) reject multi-statement queries - use `migrationStatements` instead,
-> which is the same DDL split into individual statements:
->
-> ```ts
-> import { neon } from "@neondatabase/serverless";
-> import { migrationStatements } from "@chatpack/adapter-drizzle";
->
-> const sql = neon(process.env.DATABASE_URL!);
-> for (const statement of migrationStatements) await sql(statement);
-> ```
+## Neon and serverless runtimes
 
-## Serverless / edge runtimes (Cloudflare Workers, Vercel Edge)
-
-TCP-based drivers like `pg` (node-postgres) don't run on edge runtimes - use
-an HTTP/WebSocket driver instead. The adapter itself is driver-agnostic, so
-only the `drizzle()` line changes. Neon on Workers:
+Chatpack message writes use `db.transaction()`. Use Neon's WebSocket Pool in a
+Node.js runtime, not the Neon HTTP driver:
 
 ```ts
-import { neon } from "@neondatabase/serverless";
-import { drizzle } from "drizzle-orm/neon-http";
-import { chatpack } from "@chatpack/core";
-import { drizzleAdapter } from "@chatpack/adapter-drizzle";
+import { Pool, neonConfig } from "@neondatabase/serverless";
+import { attachDatabasePool } from "@vercel/functions";
+import { drizzle } from "drizzle-orm/neon-serverless";
+import ws from "ws";
 
-const db = drizzle(neon(env.DATABASE_URL));
+neonConfig.webSocketConstructor = ws;
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+attachDatabasePool(pool);
 
-export const chat = chatpack({
-  storage: drizzleAdapter(db),
-  auth: async (req) => getSessionUser(req),
-});
-
-export default { fetch: chat.handler().fetch };
+export const db = drizzle({ client: pool });
 ```
 
-The same pattern works with `drizzle-orm/vercel-postgres` on Vercel Edge.
+The Neon HTTP driver cannot run the transactions required for message ordering
+and group mutations.
 
 > **Real-time on serverless:** the default SSE transport is in-process, so on
 > Workers/Lambda-style platforms poll instead of `/stream` -

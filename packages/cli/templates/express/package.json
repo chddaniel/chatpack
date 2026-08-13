@@ -1,0 +1,37 @@
+{
+  "name": "{{PACKAGE_NAME}}",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "chatpackStarter": {
+    "framework": "express"
+  },
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc --noEmit",
+    "start": "tsx src/index.ts",
+    "typecheck": "tsc --noEmit",
+    "lint": "tsc --noEmit",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "setup:check": "tsx scripts/setup-check.ts"
+  },
+  "dependencies": {
+    "@chatpack/adapter-drizzle": "0.8.1",
+    "@chatpack/core": "0.12.0",
+    "@neondatabase/serverless": "1.1.0",
+    "@vercel/functions": "3.9.3",
+    "drizzle-orm": "0.45.2",
+    "express": "5.2.1",
+    "ws": "8.21.3"
+  },
+  "devDependencies": {
+    "@types/express": "5.0.6",
+    "@types/node": "26.1.1",
+    "@types/ws": "8.18.1",
+    "dotenv": "17.4.2",
+    "drizzle-kit": "0.31.10",
+    "tsx": "4.23.12",
+    "typescript": "5.9.3"
+  }
+}

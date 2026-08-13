@@ -13,6 +13,8 @@ export function validatePlan(plan: SetupPlan): string[] {
       continue;
     }
     if (!action.path || action.content === undefined) continue;
+    if (!/\.(?:[cm]?[jt]sx?)$/.test(action.path)) continue;
+    if (/\.d\.ts$/.test(action.path)) continue;
     try {
       parseSource(action.path, action.content);
       const diagnostics =
@@ -27,12 +29,16 @@ export function validatePlan(plan: SetupPlan): string[] {
       errors.push(`${action.path}: generated source could not be parsed (${String(error)}).`);
     }
   }
-  if (plan.answers.framework === "next") {
+  if (plan.inspection.mode === "existing" && plan.answers.framework === "next") {
     const route = plan.actions.find((action) => action.path?.includes("[...chatpack]"));
     if (!route && plan.inspection.chatpackRoutes.length === 0)
       errors.push("Next.js catch-all route is missing.");
   }
-  if (plan.answers.adapter === "drizzle" && !plan.answers.database)
+  if (
+    plan.inspection.mode === "existing" &&
+    plan.answers.adapter === "drizzle" &&
+    !plan.answers.database
+  )
     errors.push("Drizzle adapter has no confirmed database export.");
   return errors;
 }

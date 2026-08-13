@@ -6,6 +6,7 @@ export interface PackageJson {
   dependencies?: Record<string, string>;
   devDependencies?: Record<string, string>;
   peerDependencies?: Record<string, string>;
+  chatpackStarter?: { framework?: string; authProvider?: string };
 }
 
 export function allDependencies(packageJson: PackageJson): Record<string, string> {

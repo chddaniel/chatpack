@@ -25,7 +25,7 @@ description: What shipped in v0, what's deliberately out of scope, and where Cha
 | Reactions + quote-replies                | ✅ Done (v0.next) |
 | Participant-scoped ranked message search | ✅ Done (v0.next) |
 | Post-persistence message mutation hook   | ✅ Done (v0.next) |
-| `@chatpack/cli init`                     | ✅ Done (v0.next) |
+| `@chatpack/cli init` + starter templates | ✅ Done (v1.next) |
 | Group chats: membership, roles, admin    | ✅ Done (v0.next) |
 | File attachments (`@chatpack/file`)      | ✅ Done (v0.next) |
 | Invite links + join requests             | ✅ Done (v0.next) |
@@ -53,7 +53,8 @@ description: What shipped in v0, what's deliberately out of scope, and where Cha
   [ADR 0022](/docs/concepts/architecture).
 - **Push notification providers** - applications can start their own delivery
   work from `afterMessageMutation`, but Chatpack does not ship providers.
-- **React UI components** - Chatpack is headless; bring your own frontend.
+- **Reusable React UI package** - Chatpack remains headless. `chatpack init`
+  generates editable application-owned UI source, not an `@chatpack/ui` package.
 - **Non-participant search access** - the initial search implementation scopes
   storage results to participant conversations; dynamic `canRead` access for
   support/admin users needs a separate design.

@@ -1,28 +1,42 @@
 # @chatpack/cli
 
-Initialize Chatpack in an existing application.
+Create a complete Chatpack starter in an empty repository, or add Chatpack to an existing application.
 
 ```sh
 npx @chatpack/cli init
 ```
 
-The CLI detects the project framework, package manager, language, aliases,
-existing Chatpack setup, database hints, and authentication hints. It asks for
-uncertain choices, prints a plan, and refuses conflicting file changes.
+## New starters
 
-## Non-interactive setup
+Run `init` in an empty repository. The CLI accepts only `.git`, `.gitignore`, README, and LICENSE files before generation. It preserves README and LICENSE files. If a README exists, starter instructions go to `CHATPACK_SETUP.md`.
 
-Supply every important decision when using `--yes`:
+A Next.js starter includes TypeScript, App Router, Tailwind, reviewed shadcn Radix Nova source, a responsive direct-message UI, Neon Postgres, Drizzle migrations, explicit polling for Vercel, health and profile routes, and one authentication provider:
 
 ```sh
 npx @chatpack/cli init \
   --framework next \
-  --adapter memory \
+  --auth-provider better-auth \
   --package-manager pnpm \
+  --name my-chat-app \
   --yes
 ```
 
-For Drizzle, also supply the database module and export:
+Authentication choices are `better-auth`, `authjs`, and `auth0`. Better Auth uses email and password without email verification. Enable verification before public launch. Auth.js uses GitHub OAuth. Auth0 uses Universal Login and synchronizes signed-in profiles.
+
+Hono and Express starters are backend-only:
+
+```sh
+npx @chatpack/cli init --framework hono --package-manager npm --yes
+npx @chatpack/cli init --framework express --package-manager bun --yes
+```
+
+They include Neon/Drizzle, a health route, and a Vercel entrypoint. Their generic auth resolver fails closed: health works, but Chatpack routes return 401 until the host application implements verified authentication.
+
+The CLI installs exact reviewed dependency versions. It does not run `shadcn@latest` during user setup.
+
+## Existing applications
+
+When `package.json` exists, current project detection and integration behavior remains available:
 
 ```sh
 npx @chatpack/cli init \
@@ -34,37 +48,16 @@ npx @chatpack/cli init \
   --yes
 ```
 
-Use `--dry-run` to inspect the plan without installing packages or changing
-files. The CLI never runs database migrations.
+The CLI detects the framework, package manager, language, aliases, existing Chatpack setup, database hints, and authentication hints. Next.js receives a catch-all route. Hono and Express receive focused handler integrations. Use `--client` to generate client wiring.
 
-## Generated setup
+## Safety
 
-Next.js projects receive one server instance and one catch-all route. Hono and
-Express projects receive a server module plus a framework integration. If the
-CLI cannot identify one safe application entrypoint, it generates the
-integration module and prints the mount snippet instead of editing user code.
+Use `--dry-run` to see exact actions without package installation or file changes. Existing files are never silently overwritten. Starter generation is retry-safe and reports conflicts before mutation.
 
-Chatpack does not own authentication. The generated resolver returns `null`
-until the application connects its own session or token verification. A
-confirmed resolver must accept a Web-standard `Request` and expose a user id.
+Generation does not provision Neon or an authentication account. It does not write secrets, run migrations, or deploy. Use the generated `db:generate`, `db:migrate`, and `setup:check` scripts after configuring the environment.
 
-With `--client`, Next.js projects import the React client entrypoint. Other
-frameworks import the framework-agnostic client. The generated client supports
-direct and group conversations, message search, reactions, and automatic
-polling when a realtime connection is unavailable. No polling option is needed
-for the default fallback.
-
-Memory storage is suitable for demos and tests only. Drizzle setup generates
-the Chatpack schema export, but migration remains under the application's
-normal Drizzle workflow.
-
-## Scope
-
-The v1 command is `init`. Client setup is optional with `--client`. Provider-
-specific authentication, custom storage adapters, migration execution, plugin
-generation, and diagnostics are deferred.
+The generated chat UI is application-owned source. It is not a reusable `@chatpack/ui` package.
 
 ## License
 
-[MIT](./LICENSE). The bundled TypeScript compiler is distributed under the
-[Apache License 2.0](./LICENSE.typescript).
+[MIT](./LICENSE). The bundled TypeScript compiler is distributed under the [Apache License 2.0](./LICENSE.typescript).

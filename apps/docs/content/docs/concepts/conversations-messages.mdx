@@ -63,7 +63,8 @@ Four entities, all stored through the adapter:
   type={{
     conversationId: { description: "The conversation this row belongs to.", type: "string" },
     userId: {
-      description: "Your user id - Chatpack never validates it against a users table.",
+      description:
+        "A host-owned user id. New participants can be checked by the optional userExists hook.",
       type: "string",
     },
     role: {

@@ -16,6 +16,7 @@ import {
   serverPath,
 } from "./generate";
 import { installCommand } from "./install";
+import { makeStarterPlan } from "./starter";
 import type { CliArgs } from "./args";
 import { confirm, prompt, select } from "./prompts";
 import type {
@@ -292,6 +293,10 @@ function planFrameworkActions(
 }
 
 export async function makePlan(inspection: ProjectInspection, args: CliArgs): Promise<SetupPlan> {
+  if (inspection.mode === "starter") return makeStarterPlan(inspection, args);
+  if (args.authProvider || args.name) {
+    throw new Error("--auth-provider and --name are only available for new starter projects.");
+  }
   const framework = await chooseFramework(inspection, args);
   const adapter = await chooseAdapter(inspection, args);
   const manager = await chooseManager(inspection, args);
