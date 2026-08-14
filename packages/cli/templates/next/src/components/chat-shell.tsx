@@ -63,7 +63,7 @@ export function ChatShell({ user }: { user: Viewer }) {
       body: JSON.stringify({ ids: missing }),
     }).then(async (response) => {
       if (!response.ok) return;
-      const resolved = (await response.json()) as PublicProfile[];
+      const { profiles: resolved } = (await response.json()) as { profiles: PublicProfile[] };
       setProfiles((current) => ({
         ...current,
         ...Object.fromEntries(resolved.map((profile) => [profile.id, profile])),

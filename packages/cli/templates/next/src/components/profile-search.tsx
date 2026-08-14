@@ -43,7 +43,10 @@ export function ProfileSearch({
         const response = await fetch(`/api/profiles?q=${encodeURIComponent(query)}`, {
           signal: controller.signal,
         });
-        if (response.ok) setProfiles((await response.json()) as PublicProfile[]);
+        if (response.ok) {
+          const body = (await response.json()) as { profiles: PublicProfile[] };
+          setProfiles(body.profiles);
+        }
       } catch {
         if (!controller.signal.aborted) setProfiles([]);
       }
