@@ -39,10 +39,14 @@ export function ProfileSearch({
     if (!open || query.trim().length < 2) return;
     const controller = new AbortController();
     const timer = window.setTimeout(async () => {
-      const response = await fetch(`/api/profiles?q=${encodeURIComponent(query)}`, {
-        signal: controller.signal,
-      });
-      if (response.ok) setProfiles((await response.json()) as PublicProfile[]);
+      try {
+        const response = await fetch(`/api/profiles?q=${encodeURIComponent(query)}`, {
+          signal: controller.signal,
+        });
+        if (response.ok) setProfiles((await response.json()) as PublicProfile[]);
+      } catch {
+        if (!controller.signal.aborted) setProfiles([]);
+      }
     }, 250);
     return () => {
       controller.abort();

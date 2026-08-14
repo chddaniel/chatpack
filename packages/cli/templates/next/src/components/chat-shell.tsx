@@ -213,20 +213,45 @@ export function ChatShell({ user }: { user: Viewer }) {
                 )}
                 {messages.isPending &&
                   [1, 2, 3].map((item) => <Skeleton key={item} className="h-16 w-3/4" />)}
-                {messages.data?.messages.toReversed().map((message) => (
-                  <div
-                    key={message.id}
-                    className={`max-w-[80%] rounded-2xl px-4 py-2 text-sm ${message.senderId === user.id ? "ml-auto bg-primary text-primary-foreground" : "bg-muted"}`}
-                  >
-                    <p className="whitespace-pre-wrap break-words">{message.body}</p>
-                    <time className="mt-1 block text-[10px] opacity-70">
-                      {new Date(message.createdAt).toLocaleTimeString([], {
-                        hour: "2-digit",
-                        minute: "2-digit",
-                      })}
-                    </time>
-                  </div>
-                ))}
+                {messages.data?.messages.toReversed().map((message) => {
+                  const isOwnMessage = message.senderId === user.id;
+                  const senderName = isOwnMessage
+                    ? "You"
+                    : (profiles[message.senderId]?.name ?? "Participant");
+
+                  return (
+                    <div
+                      key={message.id}
+                      className={`flex w-full items-end gap-2 ${isOwnMessage ? "justify-end" : "justify-start"}`}
+                      data-message-sender={isOwnMessage ? "self" : "other"}
+                    >
+                      {!isOwnMessage && (
+                        <Avatar className="size-8">
+                          <AvatarFallback>{senderName.slice(0, 2).toUpperCase()}</AvatarFallback>
+                        </Avatar>
+                      )}
+                      <div
+                        className={`max-w-[80%] rounded-2xl px-4 py-2 text-sm ${isOwnMessage ? "bg-primary text-primary-foreground" : "bg-muted text-foreground"}`}
+                      >
+                        <div className="mb-1 flex items-center gap-2 text-[10px] opacity-70">
+                          <span className="font-medium">{senderName}</span>
+                          <time>
+                            {new Date(message.createdAt).toLocaleTimeString([], {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </time>
+                        </div>
+                        <p className="whitespace-pre-wrap break-words">{message.body}</p>
+                      </div>
+                      {isOwnMessage && (
+                        <Avatar className="size-8">
+                          <AvatarFallback>{user.name.slice(0, 2).toUpperCase()}</AvatarFallback>
+                        </Avatar>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </ScrollArea>
             <form onSubmit={(event) => void send(event)} className="border-t p-4">

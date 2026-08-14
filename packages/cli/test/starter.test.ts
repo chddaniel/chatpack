@@ -108,8 +108,17 @@ describe("starter inspection and planning", () => {
         plan.actions.find((action) => action.path?.endsWith("profile-search.tsx"))?.content,
       ).toContain("setOpen(false)");
       expect(
+        plan.actions.find((action) => action.path?.endsWith("profile-search.tsx"))?.content,
+      ).toContain("controller.signal.aborted");
+      expect(
         plan.actions.find((action) => action.path?.endsWith("chat-shell.tsx"))?.content,
       ).toContain("messages.toReversed()");
+      expect(
+        plan.actions.find((action) => action.path?.endsWith("chat-shell.tsx"))?.content,
+      ).toContain('data-message-sender={isOwnMessage ? "self" : "other"}');
+      expect(
+        plan.actions.find((action) => action.path?.endsWith("chat-shell.tsx"))?.content,
+      ).toContain('isOwnMessage ? "justify-end" : "justify-start"');
       expect(
         plan.actions.find((action) => action.path?.endsWith("chat-shell.tsx"))?.content,
       ).toContain('aria-label="Open conversations"');
