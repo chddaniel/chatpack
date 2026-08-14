@@ -290,6 +290,19 @@ await chat.api.sendMessage({
   replyToMessageId: messages[0].id,
 });
 await chat.api.addReaction({ userId: "bob", messageId: messages[0].id, emoji: "👍" });
+
+// mention by id (Chatpack never parses the text), and forward into another thread
+await chat.api.sendMessage({
+  userId: "bob",
+  conversationId: conversation.id,
+  body: "@alice ship it",
+  mentions: ["alice"],
+});
+await chat.api.forwardMessage({
+  userId: "bob",
+  messageId: messages[0].id,
+  toConversationId: "conv_2", // any conversation bob can write to
+});
 ```
 
 That's it. Only the two participants can read or write - enforced by default,

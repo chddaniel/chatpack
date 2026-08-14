@@ -64,6 +64,13 @@ Starters also ship a `db:proxy` script for developing without a Neon account. Th
 
 The generated chat UI is application-owned source. It is not a reusable `@chatpack/ui` package.
 
+## Community
+
+- **[Discord](https://discord.gg/gY3GCTRv5Y)** — chat with the team and other developers
+- **[X](https://x.com/chatpackdev)** — releases and updates
+- **[Docs](https://docs.chatpack.dev)** — the full documentation site
+- **[GitHub Discussions](https://github.com/chddaniel/chatpack/discussions)** — questions, show-and-tell, and feedback
+
 ## License
 
 [MIT](./LICENSE). The bundled TypeScript compiler is distributed under the [Apache License 2.0](./LICENSE.typescript).

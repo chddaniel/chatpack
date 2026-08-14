@@ -28,10 +28,18 @@ const chat = chatpack({
     },
 
     // Runs AFTER persistence and the internal live broadcast.
-    afterMessageMutation: async ({ action, message, recipientIds }) => {
+    afterMessageMutation: async ({ action, message, recipientIds, mentions }) => {
       if (action !== "send") return;
       // recipientIds is everyone except the sender - one id in a DM, N in a group.
-      await Promise.all(recipientIds.map((id) => sendPushNotification(id, message)));
+      // mentions is the subset the message named, so a "mentions only" setting
+      // is a filter here, not a feature Chatpack has to own.
+      await Promise.all(
+        recipientIds.map((id) =>
+          sendPushNotification(id, message, {
+            loud: mentions.includes(id),
+          }),
+        ),
+      );
     },
   },
 });
@@ -40,7 +48,8 @@ const chat = chatpack({
 ## `beforeMessageSend` - the gate
 
 Receives the sender, the conversation (with `participantIds`), the submitted
-`body`, `metadata`, `role`, and `action`. Three outcomes:
+`body`, `metadata`, `role`, `mentions`, `forwardedFrom`, and `action`. Three
+outcomes:
 
 | You...                             | Chatpack does...                                                           |
 | ---------------------------------- | -------------------------------------------------------------------------- |
@@ -59,17 +68,41 @@ Two guard rails:
 - On **edits**, only a returned `body` applies; `metadata` rewrites are
   ignored (edits never change metadata).
 
+Two fields exist so content rules can see what the message is doing, not just
+what it says:
+
+- `mentions` is the **validated** id set - participation is already checked, so a
+  rule can cap how many people one message may name, or refuse a mention of an AI
+  participant. You cannot rewrite it; return `{ body }` / `{ metadata }` only.
+- `forwardedFrom` is `null` on an ordinary send and the source's three ids on a
+  forward. A forward runs this hook with `action: "send"` - it _is_ a send, so
+  every filter keeps applying without changes - and branching on `forwardedFrom`
+  is how you make something unforwardable:
+
+```ts
+beforeMessageSend: ({ body, forwardedFrom }) => {
+  if (forwardedFrom !== null && isConfidential(body)) {
+    throw new Error("This message can't be forwarded.");
+  }
+};
+```
+
 ## `afterMessageMutation` - post-persistence side-effects
 
 Receives the message **exactly as persisted** (rewritten body, assigned `id`
-and `seq`), the conversation, `recipientIds`, and the completed action. It runs
-after the storage write and the internal live broadcast. It cannot change the
+and `seq`), the conversation, `recipientIds`, `mentions`, and the completed
+action. It runs after the storage write and the internal live broadcast. It cannot change the
 message or fail the request. If it throws, Chatpack logs the error and the
 request still succeeds.
 
 `recipientIds` is **every participant except the sender** - one id in a DM, up
 to 255 in a group, and empty when the sender is the only member (a creator-only
 group). It's the field to notify from.
+
+`mentions` sits next to it as the **subset the message named** - Chatpack stores
+mentions and notifies nobody, so this is the only place a mention becomes a push.
+It's reported on `delete` too, because the mention rows outlive the tombstone and
+an integration may need to retract what it sent.
 
 <Callout type="warn">
   `otherParticipantId` is **deprecated** and removed at 1.0. It's single-valued, so in a group it

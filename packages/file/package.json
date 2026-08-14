@@ -1,6 +1,6 @@
 {
   "name": "@chatpack/file",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Chatpack integration for Filepack-backed attachments",
   "license": "MIT",
   "author": "Yeabsra Habtu <yeabsra.h@shipper.now> (https://github.com/Yeabsra-Habtu)",

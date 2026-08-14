@@ -68,6 +68,10 @@ const stubStorage = {
   async listReactionsByMessageIds() {
     return [];
   },
+  async setMessageMentions() {},
+  async listMentionsByMessageIds() {
+    return [];
+  },
   // Group writes (ADR 0017). This package only forwards routes, so the stub
   // never reaches them - but they are required contract methods, so the stub
   // has to declare them to still typecheck as a StorageAdapter.

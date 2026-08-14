@@ -1,6 +1,6 @@
 {
   "name": "@chatpack/next",
-  "version": "0.1.17",
+  "version": "0.1.18",
   "description": "Next.js App Router integration for Chatpack - mount the chat API on one route",
   "license": "MIT",
   "author": "Yeabsra Habtu <yeabsra.h@shipper.now> (https://github.com/Yeabsra-Habtu)",

@@ -31,6 +31,7 @@ import type {
   Conversation,
   ConversationInvite,
   ConversationWithUnread,
+  ForwardProvenance,
   InvitePreview,
   JoinRequest,
   JoinRequestStatus,
@@ -55,6 +56,16 @@ const MAX_LIMIT = 200;
 const MAX_EMOJI_LENGTH = 32;
 /** How much of a quoted parent body a reply preview carries (ADR 0013 §1). */
 const EXCERPT_LENGTH = 140;
+/**
+ * Max mentions on one message (ADR 0023 §2).
+ *
+ * Not really a policy limit - every mention must be a participant, and groups
+ * cap at {@link MAX_GROUP_PARTICIPANTS}, so membership is already the bound and
+ * an `@all` expansion of a full group fits. This exists so a hostile array is
+ * rejected before core starts issuing membership lookups, which is why it is
+ * checked before de-duplication.
+ */
+export const MAX_MENTIONS_PER_MESSAGE = 256;
 const MAX_MODERATION_REASON_LENGTH = 1000;
 const MAX_MODERATOR_NOTE_LENGTH = 2000;
 /**
@@ -234,6 +245,47 @@ export interface SendMessageInput {
    * render and send.
    */
   replyToMessageId?: string;
+  /**
+   * User ids to mark as mentioned (`docs/decisions/0023`). Every id must be a
+   * participant of this conversation, else `MENTION_NOT_PARTICIPANT`.
+   *
+   * Supplied, never parsed: core does not read `body` (ADR 0022) and cannot
+   * resolve a display name to a user id without a users table. The two may
+   * therefore disagree - keeping them in step is the app's job.
+   */
+  mentions?: string[];
+  metadata?: Metadata;
+}
+
+/** Input for {@link ChatpackApi.forwardMessage} (ADR 0024). */
+export interface ForwardMessageInput {
+  /**
+   * The forwarder. Needs `canRead` on the source conversation and `canWrite` on
+   * the target - forwarding is the one message operation that spans two.
+   */
+  userId: string;
+  /**
+   * The message to forward. Must be readable by `userId` and must not be a
+   * tombstone (`MESSAGE_DELETED`) - a forward's whole payload is the copied
+   * body.
+   */
+  messageId: string;
+  /**
+   * Where to forward it to. May be the same conversation the message is
+   * already in; nothing special happens if it is.
+   */
+  toConversationId: string;
+  /** Defaults to `"user"`. The source's role is deliberately not copied (ADR 0024 §4). */
+  role?: MessageRole;
+  /**
+   * Mentions for the **new** message, validated against the target
+   * conversation. The source's mentions never travel (ADR 0024 §6).
+   */
+  mentions?: string[];
+  /**
+   * Metadata for the new message. The source's metadata does not travel - it may
+   * hold app-private fields scoped to readers the target never had.
+   */
   metadata?: Metadata;
 }
 
@@ -273,6 +325,18 @@ export interface EditMessageInput {
   messageId: string;
   /** The new body. Must be non-empty. */
   body: string;
+  /**
+   * The **complete** new mention set, replacing what was stored
+   * (`docs/decisions/0023` §3). Pass `[]` to clear.
+   *
+   * **Omit it and the stored mentions are left alone** - a client that edits a
+   * body without knowing about mentions cannot silently erase them.
+   *
+   * Only ids that are *new* to this edit are membership-checked. Ones already
+   * stored are grandfathered, so fixing a typo in a message that mentioned
+   * someone who has since left still works.
+   */
+  mentions?: string[];
 }
 
 /** Input for {@link ChatpackApi.deleteMessage}. */
@@ -552,6 +616,18 @@ export interface ChatpackApi {
 
   /** Edit a message's body. Only the original sender may edit. */
   editMessage(input: EditMessageInput): Promise<MessageWithDetails>;
+
+  /**
+   * Copy a message into another conversation, keeping frozen provenance
+   * (`docs/decisions/0024`).
+   *
+   * The returned message is the **new** one in the target conversation: a real
+   * message with its own `seq`, sent by the forwarder, whose body is a verbatim
+   * copy. Needs `canRead` on the source and `canWrite` on the target. Nothing is
+   * published to the source - being forwarded is not an event it can act on, and
+   * saying so would leak that the target exists.
+   */
+  forwardMessage(input: ForwardMessageInput): Promise<MessageWithDetails>;
 
   /** Soft-delete a message. Only the original sender may delete. */
   deleteMessage(input: DeleteMessageInput): Promise<MessageWithDetails>;
@@ -1404,9 +1480,36 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
   }
 
   /**
-   * Decorate messages with `replyTo` previews and `reactions` (ADR 0013):
-   * exactly two batched storage calls for the whole page, and none at all for
-   * a page with no replies and no reactions.
+   * Assemble a forward's provenance from the stored columns (ADR 0024 §2).
+   *
+   * Pure - no storage call, nothing to go stale, and no permission question,
+   * because the three ids were frozen when the forward was written. The columns
+   * move together, so one being set is enough to treat the message as a forward;
+   * the guard is written over all three anyway so a half-written row from a
+   * hand-edited database degrades to `null` instead of a partial object.
+   */
+  function toForwardProvenance(message: Message): ForwardProvenance | null {
+    if (
+      message.forwardedFromMessageId === null ||
+      message.forwardedFromConversationId === null ||
+      message.forwardedFromSenderId === null
+    ) {
+      return null;
+    }
+    return {
+      messageId: message.forwardedFromMessageId,
+      conversationId: message.forwardedFromConversationId,
+      senderId: message.forwardedFromSenderId,
+    };
+  }
+
+  /**
+   * Decorate messages with `replyTo` previews, `reactions` and `mentions`
+   * (ADR 0013, ADR 0023 §4): at most three batched storage calls for the whole
+   * page, and none at all for a page with no replies, reactions or mentions.
+   *
+   * `forwardedFrom` is assembled inline rather than fetched - it is stored on the
+   * row, which is the whole point of ADR 0024 §2.
    */
   async function withDetails(messages: Message[]): Promise<MessageWithDetails[]> {
     if (messages.length === 0) return [];
@@ -1418,9 +1521,11 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
           .filter((id): id is string => id !== null),
       ),
     ];
-    const [parents, reactions] = await Promise.all([
+    const messageIds = messages.map((message) => message.id);
+    const [parents, reactions, mentions] = await Promise.all([
       parentIds.length === 0 ? Promise.resolve([]) : storage.getMessagesByIds(parentIds),
-      storage.listReactionsByMessageIds(messages.map((message) => message.id)),
+      storage.listReactionsByMessageIds(messageIds),
+      storage.listMentionsByMessageIds(messageIds),
     ]);
 
     const parentsById = new Map(parents.map((parent) => [parent.id, parent]));
@@ -1430,6 +1535,12 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
       if (list) list.push(reaction);
       else reactionsByMessage.set(reaction.messageId, [reaction]);
     }
+    const mentionsByMessage = new Map<string, string[]>();
+    for (const mention of mentions) {
+      const list = mentionsByMessage.get(mention.messageId);
+      if (list) list.push(mention.userId);
+      else mentionsByMessage.set(mention.messageId, [mention.userId]);
+    }
 
     return messages.map((message) => {
       const parent =
@@ -1438,8 +1549,57 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
         ...message,
         replyTo: parent === undefined ? null : toReference(parent),
         reactions: summarize(reactionsByMessage.get(message.id) ?? []),
+        mentions: mentionsByMessage.get(message.id) ?? [],
+        forwardedFrom: toForwardProvenance(message),
       };
     });
+  }
+
+  /**
+   * Validate a mention set against a conversation's membership (ADR 0023 §2).
+   *
+   * `grandfathered` holds ids already stored on the message, which are exempt:
+   * a mention is checked once, when it is claimed, and re-checking on every edit
+   * would make fixing a typo impossible once the mentioned person left (§3).
+   *
+   * Returns the de-duplicated set to store, keeping the first occurrence of a
+   * repeated id. That is the order handed to storage, not the order it reads
+   * back in: `listMentionsByMessageIds` sorts by `(createdAt, userId)`, and a
+   * set written in one call shares a timestamp. Mentions are a set.
+   */
+  function normalizeMentions(
+    value: string[],
+    conversation: Conversation,
+    grandfathered: ReadonlySet<string> = new Set(),
+  ): string[] {
+    if (!Array.isArray(value)) {
+      throw new ChatpackError("INVALID_INPUT", `"mentions" must be an array of user ids.`);
+    }
+    // Length-checked before de-duplication so a hostile array is rejected
+    // without core walking it (ADR 0023 §2).
+    if (value.length > MAX_MENTIONS_PER_MESSAGE) {
+      throw new ChatpackError(
+        "INVALID_INPUT",
+        `"mentions" must hold at most ${MAX_MENTIONS_PER_MESSAGE} user ids, got ${value.length}.`,
+      );
+    }
+
+    const participantIds = new Set(conversation.participants.map((p) => p.userId));
+    const seen = new Set<string>();
+    const mentions: string[] = [];
+    for (const [index, userId] of value.entries()) {
+      requireNonEmptyId(userId, `mentions[${index}]`);
+      if (seen.has(userId)) continue;
+      seen.add(userId);
+      if (!participantIds.has(userId) && !grandfathered.has(userId)) {
+        throw new ChatpackError(
+          "MENTION_NOT_PARTICIPANT",
+          `User "${userId}" is not a participant of conversation "${conversation.id}" and cannot be mentioned.`,
+        );
+      }
+      mentions.push(userId);
+    }
+    return mentions;
   }
 
   async function withDetailsOne(message: Message): Promise<MessageWithDetails> {
@@ -2129,6 +2289,11 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
         }
       }
 
+      // Validated before the hook runs so `beforeMessageSend` sees the final,
+      // de-duplicated set rather than whatever the client sent (ADR 0023 §2).
+      const mentions =
+        input.mentions === undefined ? [] : normalizeMentions(input.mentions, conversation);
+
       const hookConversation = {
         ...conversation,
         participantIds: conversation.participants.map((p) => p.userId),
@@ -2140,6 +2305,8 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
         metadata: input.metadata ?? {},
         role: input.role ?? "user",
         action: "send",
+        mentions,
+        forwardedFrom: null,
       });
 
       const message = await storage.addMessage({
@@ -2148,8 +2315,16 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
         body: accepted.body,
         role: input.role ?? "user",
         replyToMessageId: input.replyToMessageId ?? null,
+        forwardedFromMessageId: null,
+        forwardedFromConversationId: null,
+        forwardedFromSenderId: null,
         metadata: accepted.metadata,
       });
+      // After the insert - mentions key off the message id. Skipped entirely
+      // when there are none, so an app that never mentions pays no write.
+      if (mentions.length > 0) {
+        await storage.setMessageMentions({ messageId: message.id, userIds: mentions });
+      }
 
       telemetry.increment("messagesSent");
       const decorated = await withDetailsOne(message);
@@ -2159,6 +2334,97 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
         message,
         conversation: hookConversation,
         action: "send",
+        mentions,
+      });
+      return decorated;
+    },
+
+    async forwardMessage(input) {
+      requireNonEmptyId(input.userId, "userId");
+      await requireActiveUser(input.userId);
+      requireNonEmptyId(input.messageId, "messageId");
+      requireNonEmptyId(input.toConversationId, "toConversationId");
+
+      const source = await storage.getMessage(input.messageId);
+      if (!source) {
+        throw new ChatpackError("MESSAGE_NOT_FOUND", `Message "${input.messageId}" was not found.`);
+      }
+
+      // Read permission on the source: you may only forward what you can see.
+      // `requireRead` throws FORBIDDEN_READ, matching what a direct fetch of the
+      // source conversation would have said (ADR 0024 §3).
+      const sourceConversation = await requireConversation(source.conversationId);
+      await requireRead(input.userId, sourceConversation);
+
+      // A tombstone has an empty body, and a forward's whole payload is the copy.
+      // Unlike a quote-reply (ADR 0013 §1) there is nothing left to point at.
+      if (source.deletedAt !== null) {
+        throw new ChatpackError("MESSAGE_DELETED", "A deleted message cannot be forwarded.");
+      }
+
+      // Write permission on the target, plus the same block and ban checks an
+      // ordinary send makes - forwarding must not be a way around either.
+      const target = await requireConversation(input.toConversationId);
+      await requireWrite(input.userId, target);
+      await requireDirectInteractionAllowed(input.userId, target);
+
+      // The source's mentions never travel: their ids were checked against the
+      // source's membership (ADR 0024 §6). A fresh set is checked against the
+      // target, like any other send.
+      const mentions =
+        input.mentions === undefined ? [] : normalizeMentions(input.mentions, target);
+
+      const hookConversation = {
+        ...target,
+        participantIds: target.participants.map((p) => p.userId),
+      };
+      const provenance: ForwardProvenance = {
+        messageId: source.id,
+        conversationId: source.conversationId,
+        senderId: source.senderId,
+      };
+      // `action: "send"` deliberately, not a third action - a host filtering on
+      // "send" must keep covering forwards, or shipping this would silently
+      // exempt every existing content rule (ADR 0024 §5). Hosts that need to
+      // branch read `forwardedFrom` instead.
+      const accepted = await runBeforeMessageSend({
+        user: { id: input.userId },
+        conversation: hookConversation,
+        body: source.body,
+        metadata: input.metadata ?? {},
+        role: input.role ?? "user",
+        action: "send",
+        mentions,
+        forwardedFrom: provenance,
+      });
+
+      const message = await storage.addMessage({
+        conversationId: target.id,
+        senderId: input.userId,
+        body: accepted.body,
+        role: input.role ?? "user",
+        // Not a reply, and the source's parent is not in this conversation.
+        replyToMessageId: null,
+        forwardedFromMessageId: provenance.messageId,
+        forwardedFromConversationId: provenance.conversationId,
+        forwardedFromSenderId: provenance.senderId,
+        metadata: accepted.metadata,
+      });
+      if (mentions.length > 0) {
+        await storage.setMessageMentions({ messageId: message.id, userIds: mentions });
+      }
+
+      telemetry.increment("messagesSent");
+      const decorated = await withDetailsOne(message);
+      // Published to the target only. The source is told nothing: being
+      // forwarded is not an event it can act on, and saying so would leak that
+      // the target exists (ADR 0024).
+      publish("message.created", target, decorated);
+      await runAfterMessageMutation({
+        message,
+        conversation: hookConversation,
+        action: "send",
+        mentions,
       });
       return decorated;
     },
@@ -2243,6 +2509,16 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
       await requireWrite(input.userId, conversation);
       await requireDirectInteractionAllowed(input.userId, conversation);
 
+      // The stored set does double duty: it is what the hooks report when the
+      // caller left `mentions` out, and it is the grandfathered set that makes
+      // re-editing a message work after a mentioned person left (ADR 0023 §3).
+      const stored = await storage.listMentionsByMessageIds([existing.id]);
+      const storedIds = stored.map((mention) => mention.userId);
+      const mentions =
+        input.mentions === undefined
+          ? storedIds
+          : normalizeMentions(input.mentions, conversation, new Set(storedIds));
+
       // Content rules apply to edits too - otherwise a blocked word could be
       // sent clean and edited in afterwards (docs/decisions/0011).
       const hookConversation = {
@@ -2256,6 +2532,8 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
         metadata: existing.metadata,
         role: existing.role,
         action: "edit",
+        mentions,
+        forwardedFrom: toForwardProvenance(existing),
       });
 
       const updated = await storage.updateMessage({
@@ -2263,12 +2541,19 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
         body: accepted.body,
         editedAt: new Date(),
       });
+      // Only written when the caller actually passed the field: an edit that
+      // omits `mentions` must not erase what a mentions-unaware client did not
+      // send back.
+      if (input.mentions !== undefined) {
+        await storage.setMessageMentions({ messageId: existing.id, userIds: mentions });
+      }
       const decorated = await withDetailsOne(updated);
       publish("message.updated", conversation, decorated);
       await runAfterMessageMutation({
         message: updated,
         conversation: hookConversation,
         action: "edit",
+        mentions,
       });
       return decorated;
     },
@@ -2299,14 +2584,16 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
         body: "",
         deletedAt: new Date(),
       });
-      // Reactions on a deleted message are left alone: the tombstone still
-      // renders, and clearing them would be a second write for no gain.
+      // Reactions and mentions on a deleted message are left alone: the tombstone
+      // still renders, and clearing them would be a second write for no gain.
       const decorated = await withDetailsOne(updated);
       publish("message.deleted", conversation, decorated);
       await runAfterMessageMutation({
         message: updated,
         conversation: hookConversation,
         action: "delete",
+        // Already hydrated above, so reporting them costs nothing extra.
+        mentions: decorated.mentions,
       });
       return decorated;
     },

@@ -1,7 +1,7 @@
 /**
  * The Chatpack Postgres schema (MVP §8), defined with Drizzle ORM.
  *
- * Eleven tables carry the whole durable domain:
+ * Twelve tables carry the whole durable domain:
  *
  * - `chatpack_conversations` - one row per conversation. DMs are unique per
  *   `pair_key` (see `docs/decisions/0002-pair-key.md`); groups carry a null
@@ -13,12 +13,15 @@
  *   group; carries each member's `role` (ADR 0017) and durable read-state
  *   (`last_read_message_id`).
  * - `chatpack_messages` - messages with monotonic `seq`, soft-delete, the
- *   optional `reply_to_message_id` quote pointer (ADR 0013), and the
- *   `metadata` escape hatch.
+ *   optional `reply_to_message_id` quote pointer (ADR 0013), the frozen
+ *   `forwarded_from_*` provenance columns (ADR 0024), and the `metadata`
+ *   escape hatch.
  * - `chatpack_message_search_tokens` - canonical case-insensitive search
  *   tokens and occurrence counts maintained by the Drizzle adapter.
  * - `chatpack_message_reactions` - one row per (message, user, emoji), unique
  *   on the triple so reacting twice is idempotent (ADR 0013).
+ * - `chatpack_message_mentions` - one row per (message, user), unique on the
+ *   pair so a mention set is a set (ADR 0023).
  * - `chatpack_conversation_invites` - shareable invite links, keyed by their
  *   own secret `code`, with expiry and use limits (ADR 0019).
  * - `chatpack_join_requests` - pending/approved/denied requests to join a
@@ -158,9 +161,28 @@ export const messages = pgTable(
      * soft-deleted anyway.
      */
     replyToMessageId: text("reply_to_message_id"),
+    /**
+     * Forward provenance (ADR 0024) - all three null for an ordinary message,
+     * all three set on a forward. Frozen at write time and never re-resolved, so
+     * deleting the source or losing access to it changes nothing here. No
+     * foreign keys, for the same reason as `reply_to_message_id`, plus one more:
+     * the source conversation may be deleted while the forward must survive.
+     */
+    forwardedFromMessageId: text("forwarded_from_message_id"),
+    forwardedFromConversationId: text("forwarded_from_conversation_id"),
+    forwardedFromSenderId: text("forwarded_from_sender_id"),
     metadata: jsonb("metadata").notNull().default({}),
   },
-  (table) => [uniqueIndex("chatpack_messages_conv_seq_idx").on(table.conversationId, table.seq)],
+  (table) => [
+    uniqueIndex("chatpack_messages_conv_seq_idx").on(table.conversationId, table.seq),
+    // "What was forwarded from this message" - not a query core makes, but the
+    // one an app builds a "shared N times" affordance on. Partial, because a
+    // btree indexes nulls too and almost every row here is null - the same
+    // reason `pair_key`'s index is partial.
+    index("chatpack_messages_forwarded_from_idx")
+      .on(table.forwardedFromMessageId)
+      .where(sql`${table.forwardedFromMessageId} IS NOT NULL`),
+  ],
 );
 
 /** Canonical tokens used by the Postgres search implementation. */
@@ -204,6 +226,40 @@ export const messageReactions = pgTable(
     ),
     // Batched lookup of a whole message page's reactions, earliest-first.
     index("chatpack_reactions_message_idx").on(table.messageId, table.createdAt),
+  ],
+);
+
+/**
+ * `chatpack_message_mentions` - one row per (message, user) (ADR 0023 §4).
+ *
+ * Its own table rather than a `text[]` or a jsonb array on the message: the
+ * unique index is what makes a mention set a *set*, and "messages that mention
+ * me" is the query every app eventually writes, which an array column cannot
+ * serve without a GIN index that costs more than this table does.
+ *
+ * The ids here were validated against the conversation's membership at write
+ * time and are **not** re-validated on read: someone who has since left keeps
+ * their mention, because it was true when it was made (ADR 0023 §3).
+ */
+export const messageMentions = pgTable(
+  "chatpack_message_mentions",
+  {
+    messageId: text("message_id")
+      .notNull()
+      .references(() => messages.id, { onDelete: "cascade" }),
+    /** The mentioned user's id - never a foreign key (you own the users table). */
+    userId: text("user_id").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true, mode: "date" }).notNull(),
+  },
+  (table) => [
+    // The arbiter of "a mention set is a set": the upsert targets this.
+    uniqueIndex("chatpack_mentions_msg_user_idx").on(table.messageId, table.userId),
+    // Batched lookup of a whole message page's mentions, earliest-first.
+    index("chatpack_mentions_message_idx").on(table.messageId, table.createdAt),
+    // "Messages that mention me", newest-first - core does not query this (a
+    // mention inbox is out of scope, ADR 0023), but an app cannot build one
+    // without it and adding an index later means locking the table.
+    index("chatpack_mentions_user_idx").on(table.userId, table.createdAt),
   ],
 );
 
@@ -372,6 +428,7 @@ export const chatpackSchema = {
   messages,
   messageSearchTokens,
   messageReactions,
+  messageMentions,
   conversationInvites,
   joinRequests,
   userBlocks,
@@ -472,6 +529,9 @@ export const migrationStatements: readonly string[] = [
   "edited_at" timestamptz,
   "deleted_at" timestamptz,
   "reply_to_message_id" text,
+  "forwarded_from_message_id" text,
+  "forwarded_from_conversation_id" text,
+  "forwarded_from_sender_id" text,
   "metadata" jsonb NOT NULL DEFAULT '{}'
 )`,
   // Upgrade path for deployments created before ADR 0013: the CREATE TABLE
@@ -479,8 +539,20 @@ export const migrationStatements: readonly string[] = [
   // idempotent statement.
   `ALTER TABLE "chatpack_messages"
   ADD COLUMN IF NOT EXISTS "reply_to_message_id" text`,
+  // ADR 0024. Three nullable columns, no default and no backfill: every message
+  // that predates forwarding was not forwarded, which is what null says. Pure
+  // addition, so this is safe to run before deploying the new code.
+  `ALTER TABLE "chatpack_messages"
+  ADD COLUMN IF NOT EXISTS "forwarded_from_message_id" text`,
+  `ALTER TABLE "chatpack_messages"
+  ADD COLUMN IF NOT EXISTS "forwarded_from_conversation_id" text`,
+  `ALTER TABLE "chatpack_messages"
+  ADD COLUMN IF NOT EXISTS "forwarded_from_sender_id" text`,
   `CREATE UNIQUE INDEX IF NOT EXISTS "chatpack_messages_conv_seq_idx"
   ON "chatpack_messages" ("conversation_id", "seq")`,
+  `CREATE INDEX IF NOT EXISTS "chatpack_messages_forwarded_from_idx"
+  ON "chatpack_messages" ("forwarded_from_message_id")
+  WHERE "forwarded_from_message_id" IS NOT NULL`,
   `DROP INDEX IF EXISTS "chatpack_messages_body_search_idx"`,
   `CREATE TABLE IF NOT EXISTS "chatpack_message_search_tokens" (
   "message_id" text NOT NULL REFERENCES "chatpack_messages"("id") ON DELETE CASCADE,
@@ -500,6 +572,19 @@ export const migrationStatements: readonly string[] = [
   ON "chatpack_message_reactions" ("message_id", "user_id", "emoji")`,
   `CREATE INDEX IF NOT EXISTS "chatpack_reactions_message_idx"
   ON "chatpack_message_reactions" ("message_id", "created_at")`,
+  // ADR 0023. A pure table addition, like the 0019 tables - safe to run before
+  // deploying the new code.
+  `CREATE TABLE IF NOT EXISTS "chatpack_message_mentions" (
+  "message_id" text NOT NULL REFERENCES "chatpack_messages"("id") ON DELETE CASCADE,
+  "user_id" text NOT NULL,
+  "created_at" timestamptz NOT NULL
+)`,
+  `CREATE UNIQUE INDEX IF NOT EXISTS "chatpack_mentions_msg_user_idx"
+  ON "chatpack_message_mentions" ("message_id", "user_id")`,
+  `CREATE INDEX IF NOT EXISTS "chatpack_mentions_message_idx"
+  ON "chatpack_message_mentions" ("message_id", "created_at")`,
+  `CREATE INDEX IF NOT EXISTS "chatpack_mentions_user_idx"
+  ON "chatpack_message_mentions" ("user_id", "created_at")`,
   // ADR 0019. Unlike the 0017 migration these are pure table additions - no
   // column changes and no index swaps on existing tables - so running this
   // before deploying the new code is safe.

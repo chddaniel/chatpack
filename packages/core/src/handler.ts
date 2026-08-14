@@ -26,6 +26,7 @@
  * | DELETE | `/messages/:id`                   | soft-delete my message       |
  * | POST   | `/messages/:id/reactions`         | add my reaction              |
  * | DELETE | `/messages/:id/reactions`         | remove my reaction           |
+ * | POST   | `/messages/:id/forward`           | forward it to another convo  |
  * | POST   | `/conversations/:id/invites`      | mint an invite link          |
  * | GET    | `/conversations/:id/invites`      | list a group's invites       |
  * | DELETE | `/conversations/:id/invites/:code` | revoke an invite            |
@@ -136,6 +137,10 @@ const STATUS_BY_CODE: Record<ChatpackErrorCode, number> = {
   DIRECT_INTERACTION_BLOCKED: 403,
   REPORT_NOT_FOUND: 404,
   BAN_NOT_FOUND: 404,
+  // 400, not 403: the caller's own request is malformed - they named someone who
+  // is not in the room - rather than being denied something they asked for
+  // correctly (ADR 0023 §2).
+  MENTION_NOT_PARTICIPANT: 400,
 };
 
 function json(status: number, payload: unknown): Response {
@@ -935,12 +940,14 @@ export function createHandler(
         }
         const metadata = optionalMetadata(body["metadata"]);
         const replyToMessageId = optionalString(body["replyToMessageId"], "replyToMessageId");
+        const mentions = optionalStringArray(body["mentions"], "mentions");
         const message = await api.sendMessage({
           userId,
           conversationId: segments[1]!,
           body: requiredString(body["body"], "body"),
           ...(role !== undefined ? { role } : {}),
           ...(replyToMessageId !== undefined ? { replyToMessageId } : {}),
+          ...(mentions !== undefined ? { mentions } : {}),
           ...(metadata !== undefined ? { metadata } : {}),
         });
         return json(201, { message });
@@ -1036,6 +1043,38 @@ export function createHandler(
           emoji: requiredString(body["emoji"], "emoji"),
         });
         return json(200, { message });
+      }
+
+      // POST /messages/:id/forward - copy it into another conversation (ADR 0024)
+      //
+      // The `{ message }` returned is the NEW message in the target, not the
+      // source: the caller already had the source, and the forward is what they
+      // need to render. POST for the same Next.js re-export reason as above.
+      if (
+        method === "POST" &&
+        segments.length === 3 &&
+        segments[0] === "messages" &&
+        segments[2] === "forward"
+      ) {
+        const body = await readJsonBody(request);
+        const role = optionalString(body["role"], "role");
+        if (role !== undefined && role !== "user" && role !== "assistant" && role !== "system") {
+          throw new ChatpackError(
+            "INVALID_INPUT",
+            `"role" must be "user", "assistant", or "system".`,
+          );
+        }
+        const metadata = optionalMetadata(body["metadata"]);
+        const mentions = optionalStringArray(body["mentions"], "mentions");
+        const message = await api.forwardMessage({
+          userId,
+          messageId: segments[1]!,
+          toConversationId: requiredString(body["conversationId"], "conversationId"),
+          ...(role !== undefined ? { role } : {}),
+          ...(mentions !== undefined ? { mentions } : {}),
+          ...(metadata !== undefined ? { metadata } : {}),
+        });
+        return json(201, { message });
       }
 
       // POST /conversations/:id/invites - mint an invite link (ADR 0019)
@@ -1225,10 +1264,15 @@ export function createHandler(
       // PATCH /messages/:id - edit
       if (method === "PATCH" && segments.length === 2 && segments[0] === "messages") {
         const body = await readJsonBody(request);
+        // Omitting `mentions` leaves the stored set alone; sending `[]` clears it
+        // (ADR 0023 §3). `null` reads as "not supplied" here, same as everywhere
+        // else in this handler, so clearing needs the empty array.
+        const mentions = optionalStringArray(body["mentions"], "mentions");
         const message = await api.editMessage({
           userId,
           messageId: segments[1]!,
           body: requiredString(body["body"], "body"),
+          ...(mentions !== undefined ? { mentions } : {}),
         });
         return json(200, { message });
       }

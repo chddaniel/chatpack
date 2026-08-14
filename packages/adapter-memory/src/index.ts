@@ -37,6 +37,7 @@ import type {
   ListPublicConversationsInput,
   ListPublicConversationsResult,
   Message,
+  MessageMention,
   ModerationPage,
   ModerationStorage,
   ModerationReport,
@@ -50,6 +51,7 @@ import type {
   ResolveJoinRequestInput,
   SearchMessagesInput,
   SearchMessagesResult,
+  SetMessageMentionsInput,
   SetParticipantRoleInput,
   StorageAdapter,
   UpdateConversationInput,
@@ -145,6 +147,11 @@ export function memoryAdapter(): StorageAdapter {
    * aggregates into `ReactionSummary.userIds` (ADR 0013).
    */
   const reactionsByMessage = new Map<string, Reaction[]>();
+  /**
+   * Mentions per message, in insertion order - the order core assembles into
+   * `MessageWithDetails.mentions` (ADR 0023 §4).
+   */
+  const mentionsByMessage = new Map<string, MessageMention[]>();
   /** Invites by code - the code is both the identity and the secret (ADR 0019). */
   const invitesByCode = new Map<string, ConversationInvite>();
   /**
@@ -620,6 +627,10 @@ export function memoryAdapter(): StorageAdapter {
         editedAt: null,
         deletedAt: null,
         replyToMessageId: input.replyToMessageId,
+        // Frozen at write time, never re-resolved (ADR 0024 §2).
+        forwardedFromMessageId: input.forwardedFromMessageId,
+        forwardedFromConversationId: input.forwardedFromConversationId,
+        forwardedFromSenderId: input.forwardedFromSenderId,
         metadata: { ...input.metadata },
       };
 
@@ -803,6 +814,47 @@ export function memoryAdapter(): StorageAdapter {
         for (const reaction of reactionsByMessage.get(messageId) ?? []) {
           result.push({ ...reaction });
         }
+      }
+      return result;
+    },
+
+    async setMessageMentions(input: SetMessageMentionsInput): Promise<void> {
+      if (!messages.has(input.messageId)) {
+        throw new Error(`memoryAdapter: unknown message "${input.messageId}".`);
+      }
+      // Total replace (ADR 0023 §3): an empty set clears the row entirely, so a
+      // dropped id cannot survive. Surviving rows keep their original
+      // `createdAt` - re-stamping them on every edit would reorder mentions that
+      // did not change.
+      const existing = new Map(
+        (mentionsByMessage.get(input.messageId) ?? []).map((mention) => [mention.userId, mention]),
+      );
+      const now = new Date();
+      const next = input.userIds.map(
+        (userId) =>
+          existing.get(userId) ?? {
+            messageId: input.messageId,
+            userId,
+            createdAt: now,
+          },
+      );
+      if (next.length === 0) mentionsByMessage.delete(input.messageId);
+      else mentionsByMessage.set(input.messageId, next);
+    },
+
+    async listMentionsByMessageIds(messageIds: string[]): Promise<MessageMention[]> {
+      const result: MessageMention[] = [];
+      for (const messageId of messageIds) {
+        // (createdAt, userId) is the contract's canonical order. Sorting here
+        // rather than at write time is what keeps this identical to a SQL
+        // adapter's ORDER BY for a set written in one call, where every row
+        // shares a timestamp and insertion order is not a thing SQL preserves.
+        const mentions = [...(mentionsByMessage.get(messageId) ?? [])].sort(
+          (a, b) =>
+            a.createdAt.getTime() - b.createdAt.getTime() ||
+            (a.userId < b.userId ? -1 : a.userId === b.userId ? 0 : 1),
+        );
+        for (const mention of mentions) result.push({ ...mention });
       }
       return result;
     },

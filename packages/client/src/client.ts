@@ -260,6 +260,13 @@ export interface MessageSendInput {
    * conversation; replying to a deleted one is allowed.
    */
   replyToMessageId?: string;
+  /**
+   * User ids this message mentions (ADR 0023). Ids, not names: Chatpack has no
+   * users table to resolve a name against, and it never parses `body` for `@`
+   * (ADR 0022). Every id must be a participant of the conversation, or the send
+   * fails with `MENTION_NOT_PARTICIPANT`.
+   */
+  mentions?: string[];
   metadata?: Metadata;
 }
 
@@ -274,6 +281,27 @@ export interface MessageReactInput {
 export interface MessageEditInput {
   messageId: string;
   body: string;
+  /**
+   * Replacement mention set (ADR 0023 §3). **Omit it to leave the stored
+   * mentions alone**; pass `[]` to clear them. Ids already stored stay valid
+   * even if that person has since left the conversation, so fixing a typo in
+   * `body` never has to drop a mention that was legitimate when it was made.
+   */
+  mentions?: string[];
+}
+
+/** Input for forwarding a message into another conversation (ADR 0024). */
+export interface MessageForwardInput {
+  /** The message to forward. You must be able to read it, and it must not be deleted. */
+  messageId: string;
+  /** Where to forward it. You must be able to write there. */
+  toConversationId: string;
+  /** Defaults to `"user"`. The source message's role is not copied. */
+  role?: MessageRole;
+  /** Mentions for the new message, validated against the **target**. */
+  mentions?: string[];
+  /** Metadata for the new message. The source's metadata does not travel. */
+  metadata?: Metadata;
 }
 
 /** Input for deleting a message. */
@@ -467,6 +495,15 @@ export interface MessageActions {
   ): Promise<ChatClientResult<ClientMessage>>;
   delete(
     input: MessageDeleteInput,
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<ClientMessage>>;
+  /**
+   * Copy a message into another conversation, keeping frozen provenance
+   * (`forwardedFrom`) of where it came from. Resolves with the **new** message
+   * in the target conversation, not the source.
+   */
+  forward(
+    input: MessageForwardInput,
     options?: ChatClientRequestOptions,
   ): Promise<ChatClientResult<ClientMessage>>;
   /** Add one of your own reactions. Idempotent - reacting twice is one reaction. */
@@ -1050,7 +1087,13 @@ export function createChatClient<
         "/messages/" + encodeURIComponent(input.messageId),
         {
           method: "PATCH",
-          body: { body: input.body },
+          // `mentions` is only sent when the caller passed it: an absent field
+          // means "leave the stored set alone", which is what a mentions-unaware
+          // caller wants (ADR 0023 §3).
+          body: {
+            body: input.body,
+            ...(input.mentions === undefined ? {} : { mentions: input.mentions }),
+          },
           ...requestOptions(optionsForRequest),
         },
       );
@@ -1076,6 +1119,37 @@ export function createChatClient<
           conversationId: message.data.conversationId,
           message: message.data,
         });
+      }
+      return message;
+    },
+    async forward(input, optionsForRequest) {
+      const { messageId, toConversationId, ...rest } = input;
+      // The forward lands as an ordinary `message.created` in the target, so the
+      // local echo is the same one `send` writes - including marking the target
+      // thread as touched, since a forward is what makes it recently active.
+      touchThread(toConversationId);
+      const result = await requester.request<unknown>(
+        "/messages/" + encodeURIComponent(messageId) + "/forward",
+        {
+          method: "POST",
+          // `conversationId` on the wire, `toConversationId` in the input: the
+          // route already names the source in its path, so the body's plain
+          // `conversationId` can only mean the destination.
+          body: { conversationId: toConversationId, ...rest },
+          ...requestOptions(optionsForRequest),
+        },
+      );
+      const message = unwrapResult<ClientMessage>(result, "message");
+      if (message.error === null) {
+        viewerId ??= message.data.senderId;
+        cache.applyEvent(
+          {
+            type: "message.created",
+            conversationId: message.data.conversationId,
+            message: message.data,
+          },
+          { local: true },
+        );
       }
       return message;
     },

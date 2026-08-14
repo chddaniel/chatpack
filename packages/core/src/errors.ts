@@ -102,6 +102,17 @@ export type ChatpackErrorCode =
   | "REPORT_NOT_FOUND"
   /** A moderation ban was not found. */
   | "BAN_NOT_FOUND"
+  /**
+   * A message mentioned someone who is not a participant of its conversation
+   * (`docs/decisions/0023` §2).
+   *
+   * Rejected rather than silently dropped: a dropped mention is invisible, so
+   * the sender would assume a notification went out that never did. Only ids
+   * **new** to an edit are checked - a stored mention of someone who has since
+   * left keeps working, or fixing a typo would mean dropping a mention that was
+   * valid when it was made.
+   */
+  | "MENTION_NOT_PARTICIPANT"
   /** Invalid input (empty body, self-conversation, bad limit, ...). */
   | "INVALID_INPUT";
 

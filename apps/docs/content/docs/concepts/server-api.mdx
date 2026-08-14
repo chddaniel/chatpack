@@ -15,35 +15,36 @@ enforces the same permissions.
 
 ## Methods
 
-| Method                        | What it does                                                                                                                              |
-| ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| `api.getOrCreateConversation` | Find or create the 1:1 conversation for a user pair                                                                                       |
-| `api.createGroupConversation` | Create a group with the caller as its first admin - **always a new one**, never find-or-create                                            |
-| `api.listConversations`       | List a user's conversations (DMs and groups), most recent first                                                                           |
-| `api.getConversation`         | Fetch one conversation (read-permission checked)                                                                                          |
-| `api.updateConversation`      | Rename a group (or clear its name with `null`), and/or set its `visibility` / `joinPolicy` (admin only)                                   |
-| `api.addParticipants`         | Add members to a group as `member` (admin only); idempotent                                                                               |
-| `api.removeParticipant`       | Remove a member, or leave by passing your own id (admin, or self); idempotent                                                             |
-| `api.setParticipantRole`      | Promote to `admin` or demote to `member` (admin only)                                                                                     |
-| `api.sendMessage`             | Send a text message, optionally quote-replying to another (write-permission checked; [message hooks](/docs/concepts/message-hooks) apply) |
-| `api.listMessages`            | Paginate history, newest-first                                                                                                            |
-| `api.searchMessages`          | Search the caller's conversations, relevance-ranked (throws `SEARCH_UNSUPPORTED` when storage has no search capability)                   |
-| `api.editMessage`             | Edit your own message                                                                                                                     |
-| `api.deleteMessage`           | Soft-delete your own message                                                                                                              |
-| `api.addReaction`             | React as `userId` (write-permission checked); idempotent                                                                                  |
-| `api.removeReaction`          | Remove one of your own reactions; idempotent                                                                                              |
-| `api.markRead`                | Update durable read-state (`lastReadMessageId`); monotonic - marking an older message is a silent no-op                                   |
-| `api.listMessagesAfter`       | Messages after a `seq` (SSE reconnect gap-fill)                                                                                           |
-| `api.createInvite`            | Mint a shareable invite link for a group (`canInvite`, admin by default)                                                                  |
-| `api.listInvites`             | A group's invites, newest-first, spent ones included (admin only)                                                                         |
-| `api.revokeInvite`            | Delete an invite; revoking an unknown code is a silent no-op (admin only)                                                                 |
-| `api.getInvitePreview`        | What a link admits you to - an `InvitePreview`, **not** a conversation                                                                    |
-| `api.acceptInvite`            | Redeem a link: joins, or files a request when the link requires approval                                                                  |
-| `api.requestToJoin`           | Ask to join a group by id; no permission needed, but not if you're already in                                                             |
-| `api.listJoinRequests`        | The moderation queue, `pending` by default (admin only)                                                                                   |
-| `api.resolveJoinRequest`      | Approve or deny one user's request (admin only)                                                                                           |
-| `api.listPublicConversations` | Browse the public-channel directory as `ChannelPreview`s, most recently active first                                                      |
-| `api.joinConversation`        | Join a public channel by id: admitted instantly, or filed as a request                                                                    |
+| Method                        | What it does                                                                                                                                                         |
+| ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `api.getOrCreateConversation` | Find or create the 1:1 conversation for a user pair                                                                                                                  |
+| `api.createGroupConversation` | Create a group with the caller as its first admin - **always a new one**, never find-or-create                                                                       |
+| `api.listConversations`       | List a user's conversations (DMs and groups), most recent first                                                                                                      |
+| `api.getConversation`         | Fetch one conversation (read-permission checked)                                                                                                                     |
+| `api.updateConversation`      | Rename a group (or clear its name with `null`), and/or set its `visibility` / `joinPolicy` (admin only)                                                              |
+| `api.addParticipants`         | Add members to a group as `member` (admin only); idempotent                                                                                                          |
+| `api.removeParticipant`       | Remove a member, or leave by passing your own id (admin, or self); idempotent                                                                                        |
+| `api.setParticipantRole`      | Promote to `admin` or demote to `member` (admin only)                                                                                                                |
+| `api.sendMessage`             | Send a text message, optionally quote-replying to another or mentioning participants (write-permission checked; [message hooks](/docs/concepts/message-hooks) apply) |
+| `api.listMessages`            | Paginate history, newest-first                                                                                                                                       |
+| `api.searchMessages`          | Search the caller's conversations, relevance-ranked (throws `SEARCH_UNSUPPORTED` when storage has no search capability)                                              |
+| `api.editMessage`             | Edit your own message                                                                                                                                                |
+| `api.deleteMessage`           | Soft-delete your own message                                                                                                                                         |
+| `api.forwardMessage`          | Copy a message into another conversation (read on the source, write on the target); the copy is a new message, sent by you                                           |
+| `api.addReaction`             | React as `userId` (write-permission checked); idempotent                                                                                                             |
+| `api.removeReaction`          | Remove one of your own reactions; idempotent                                                                                                                         |
+| `api.markRead`                | Update durable read-state (`lastReadMessageId`); monotonic - marking an older message is a silent no-op                                                              |
+| `api.listMessagesAfter`       | Messages after a `seq` (SSE reconnect gap-fill)                                                                                                                      |
+| `api.createInvite`            | Mint a shareable invite link for a group (`canInvite`, admin by default)                                                                                             |
+| `api.listInvites`             | A group's invites, newest-first, spent ones included (admin only)                                                                                                    |
+| `api.revokeInvite`            | Delete an invite; revoking an unknown code is a silent no-op (admin only)                                                                                            |
+| `api.getInvitePreview`        | What a link admits you to - an `InvitePreview`, **not** a conversation                                                                                               |
+| `api.acceptInvite`            | Redeem a link: joins, or files a request when the link requires approval                                                                                             |
+| `api.requestToJoin`           | Ask to join a group by id; no permission needed, but not if you're already in                                                                                        |
+| `api.listJoinRequests`        | The moderation queue, `pending` by default (admin only)                                                                                                              |
+| `api.resolveJoinRequest`      | Approve or deny one user's request (admin only)                                                                                                                      |
+| `api.listPublicConversations` | Browse the public-channel directory as `ChannelPreview`s, most recently active first                                                                                 |
+| `api.joinConversation`        | Join a public channel by id: admitted instantly, or filed as a request                                                                                               |
 
 Moderation lives in its own namespace, `chat.api.moderation.*`:
 
@@ -107,6 +108,7 @@ from a browser or HTTP client:
 | Search messages                 | `searchMessages`                                    | `GET /search/messages?q=...`                               |
 | Send a message                  | `sendMessage`                                       | `POST /conversations/:id/messages`                         |
 | Edit / delete my message        | `editMessage`, `deleteMessage`                      | `PATCH` / `DELETE /messages/:id`                           |
+| Forward a message               | `forwardMessage`                                    | `POST /messages/:id/forward`                               |
 | React / un-react                | `addReaction`, `removeReaction`                     | `POST` / `DELETE /messages/:id/reactions`                  |
 | Mark a conversation read        | `markRead`                                          | `POST /conversations/:id/read`                             |
 | Mint an invite link             | `createInvite`                                      | `POST /conversations/:id/invites`                          |
@@ -158,6 +160,24 @@ const reacted = await chat.api.addReaction({
 });
 reacted.reactions; // [{ emoji: "👍", count: 1, userIds: ["bob"] }]
 await chat.api.removeReaction({ userId: "bob", messageId: message.id, emoji: "👍" });
+
+// mention participants - ids you supply, never parsed out of the body
+const mentioning = await chat.api.sendMessage({
+  userId: "alice",
+  conversationId: conversation.id,
+  body: "@bob can you look?",
+  mentions: ["bob"], // must be current participants, else MENTION_NOT_PARTICIPANT
+});
+mentioning.mentions; // ["bob"] - a set; treat the order as unspecified
+
+// forward it somewhere else - a COPY, with you as sender
+const forwarded = await chat.api.forwardMessage({
+  userId: "alice",
+  messageId: message.id,
+  toConversationId: "conv_7", // any conversation alice can write to
+});
+forwarded.forwardedFrom; // { messageId, conversationId, senderId } - frozen, three ids
+// Editing or deleting `message` now changes nothing about `forwarded`.
 
 // search participant conversations (case-insensitive, canonical token matching, ranked)
 const search = await chat.api.searchMessages({
@@ -397,12 +417,16 @@ their read-state, excluding their own). See
 
 Every message-returning method (`sendMessage`, `listMessages`, `searchMessages`,
 `editMessage`, `deleteMessage`, `addReaction`, `removeReaction`,
-`listMessagesAfter`) returns
-`MessageWithDetails` - the stored `Message` plus two per-request decorations:
-`replyTo` (the quoted parent's preview, or `null`) and `reactions` (grouped by
-emoji). Neither is stored: core computes them from batched adapter calls, one
-per page, which is why an edited parent's excerpt is never stale. Storage
-adapters and permission hooks only ever see the bare `Message`.
+`forwardMessage`, `listMessagesAfter`) returns
+`MessageWithDetails` - the stored `Message` plus decorations:
+`replyTo` (the quoted parent's preview, or `null`), `reactions` (grouped by
+emoji), `mentions` (the ids named in it), and `forwardedFrom` (three ids, or
+`null`). `replyTo` and `reactions` are not stored at all: core computes them from
+batched adapter calls, one per page, which is why an edited parent's excerpt is
+never stale. `mentions` comes from its own batched call over stored rows, and
+`forwardedFrom` is assembled from three columns on the message itself - both are
+durable, so unlike `replyTo` they cannot change after the fact. Storage adapters
+and permission hooks only ever see the bare `Message`.
 
 Timestamps are real `Date` instances on the server, ISO strings over HTTP.
 

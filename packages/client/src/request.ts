@@ -84,6 +84,7 @@ const serverErrorCodes = {
   DIRECT_INTERACTION_BLOCKED: true,
   REPORT_NOT_FOUND: true,
   BAN_NOT_FOUND: true,
+  MENTION_NOT_PARTICIPANT: true,
   INVALID_INPUT: true,
 } satisfies Record<ChatpackErrorCode, true>;
 

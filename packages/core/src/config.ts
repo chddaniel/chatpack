@@ -4,7 +4,7 @@
  * @module
  */
 
-import type { Conversation, Message, MessageRole, Metadata } from "./types";
+import type { Conversation, ForwardProvenance, Message, MessageRole, Metadata } from "./types";
 import type { ModerationAction } from "./moderation";
 import type { ChatpackPlugin } from "./plugin";
 import type { StorageAdapter } from "./storage";
@@ -132,8 +132,30 @@ export interface BeforeMessageSendContext {
   /**
    * `"send"` for new messages, `"edit"` when an existing message's body is
    * being rewritten - the same rules usually apply to both.
+   *
+   * Forwards report `"send"`, **not** a third action: a host filtering on
+   * `action === "send"` must keep covering them, and adding a `"forward"`
+   * member would have silently exempted every existing filter
+   * (`docs/decisions/0024` §5). Branch on {@link forwardedFrom} instead.
    */
   action: "send" | "edit";
+  /**
+   * The user ids this message mentions, already validated against the
+   * conversation's membership (`docs/decisions/0023`). Empty when none were
+   * supplied - and for an edit that left `mentions` alone, this is the set
+   * currently stored.
+   *
+   * Mentions are ids the caller supplied, never parsed out of `body`
+   * (`docs/decisions/0022`), so the two can legitimately disagree. The hook
+   * cannot rewrite them; return `{ body }` to reject or clean the text.
+   */
+  mentions: string[];
+  /**
+   * Where this message was forwarded from, or `null` for an ordinary send or
+   * edit (`docs/decisions/0024`). `body` is a verbatim copy of the source, so
+   * a content rule that passes the original will pass the forward.
+   */
+  forwardedFrom: ForwardProvenance | null;
 }
 
 /**
@@ -180,6 +202,17 @@ export interface AfterMessageMutationContext {
   otherParticipantId: string;
   /** The durable message mutation that completed. */
   action: MessageMutationAction;
+  /**
+   * The user ids this message mentions, as persisted
+   * (`docs/decisions/0023` §5). Sits alongside {@link recipientIds} so a push
+   * integration can tell "everyone in the room" from "the two people actually
+   * named" - the usual reason to send a louder notification.
+   *
+   * Always a subset of the conversation's participants at write time. On a
+   * delete this is the tombstone's surviving set: mention rows are left alone,
+   * like reactions.
+   */
+  mentions: string[];
 }
 
 /** Context passed to the deprecated {@link MessageHooks.afterMessageSend}. */

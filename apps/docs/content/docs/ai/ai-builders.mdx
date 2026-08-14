@@ -37,14 +37,14 @@ restating anywhere an agent might look:
 1. **Mount the ONE handler on a catch-all route. Never hand-write your own
    message/stream/API routes.** `chat.handler()` already serves every route -
    conversations, messages, read-state, typing, presence, AND the SSE stream.
-2. **These are the only server-side methods** on `chat.api`:
-   `getOrCreateConversation`, `listConversations`, `getConversation`,
-   `sendMessage`, `listMessages`, `searchMessages`, `editMessage`, `deleteMessage`,
-   `addReaction`, `removeReaction`, `markRead`,
-   `listMessagesAfter`. There is **no**
+2. **`chat.api` has a closed method list** - conversations, groups, messages
+   (including `forwardMessage`), reactions, read-state, invites, channels, and
+   `chat.api.moderation.*`. Read it from
+   [`llms.txt`](https://github.com/chddaniel/chatpack/blob/main/llms.txt) rather
+   than from memory; it's the source of truth and it grows. There is **no**
    `chat.api.getOrCreateDirectConversation` (that's a storage-adapter method -
-   never call the adapter directly). If a name is not in this list, it does
-   not exist.
+   never call the adapter directly). If a name is not in that list, it does
+   not exist - **do not invent one.**
 3. **Conversation ids are server-generated opaque strings** (e.g. `conv_1`).
    Never construct ids like `"alice-bob"` - the pair key is internal.
 4. **Create exactly ONE `chatpack()` instance**, guarded with `globalThis`

@@ -13,9 +13,9 @@
  * pinning a version that does not exist on npm yet.
  */
 export const chatpackVersions = {
-  CHATPACK_CORE_VERSION: "0.11.2",
-  CHATPACK_CLIENT_VERSION: "0.7.2",
-  CHATPACK_ADAPTER_DRIZZLE_VERSION: "0.8.2",
+  CHATPACK_CORE_VERSION: "0.12.0",
+  CHATPACK_CLIENT_VERSION: "0.8.0",
+  CHATPACK_ADAPTER_DRIZZLE_VERSION: "0.9.0",
 } as const;
 
 /** The workspace package each pin above is expected to track. */

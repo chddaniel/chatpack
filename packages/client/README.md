@@ -101,6 +101,7 @@ The framework-agnostic client mirrors the server routes from `@chatpack/core`:
 | `messages.send`          | `POST /conversations/:id/messages`                            |
 | `messages.edit`          | `PATCH /messages/:id`                                         |
 | `messages.delete`        | `DELETE /messages/:id`                                        |
+| `messages.forward`       | `POST /messages/:id/forward`                                  |
 | `messages.react`         | `POST /messages/:id/reactions`                                |
 | `messages.unreact`       | `DELETE /messages/:id/reactions`                              |
 | `invites`                | Invite creation, listing, preview, acceptance, and revocation |
@@ -135,8 +136,9 @@ Call `refetch()` after relevant message changes to recompute matches and rank.
 
 `messages.send` takes an optional `replyToMessageId`; every message comes back
 with `replyToMessageId`, a read-only `replyTo` preview
-(`{ id, senderId, excerpt, deleted }`) for the quote bar, and `reactions`
-(`[{ emoji, count, userIds }]`).
+(`{ id, senderId, excerpt, deleted }`) for the quote bar, `reactions`
+(`[{ emoji, count, userIds }]`), `mentions` (`string[]`), and `forwardedFrom`
+(`{ messageId, conversationId, senderId } | null`).
 
 ```ts
 const sent = await chatClient.messages.send({ conversationId, body: "Hello" });
@@ -159,6 +161,34 @@ string up to 32 characters - `""` or longer comes back as `INVALID_INPUT`, an
 unknown `messageId` as `MESSAGE_NOT_FOUND`, both as results rather than throws.
 These are quote-replies, not threads: a flat pointer at one earlier message in
 the same conversation.
+
+## Mentions and forwarding
+
+`messages.send` and `messages.edit` take a `mentions` array of **user ids you
+supply**. Chatpack never parses `body` for `@`, so populate your picker from
+`conversation.participants` - a non-participant id comes back as
+`MENTION_NOT_PARTICIPANT`, and the whole message is refused rather than the id
+quietly dropped. `mentions` reads back **sorted**, so treat it as a set.
+
+On edit the client preserves the absent-versus-empty distinction the API relies
+on: omit `mentions` and the stored set is untouched, pass `[]` and it is cleared.
+
+```ts
+await chatClient.messages.send({ conversationId, body: "@bob look", mentions: ["bob"] });
+await chatClient.messages.edit({ messageId, body: "typo fixed" }); // mentions untouched
+await chatClient.messages.edit({ messageId, body: "never mind", mentions: [] }); // cleared
+
+const forwarded = await chatClient.messages.forward({ messageId, toConversationId });
+forwarded.data?.forwardedFrom; // { messageId, conversationId, senderId } - frozen
+```
+
+`messages.forward` resolves with the **copy** in the target conversation - a new
+id, your id as sender, its own `seq` - and the cache treats it exactly like a
+send, so the copy lands in the target thread and that conversation moves to the
+front of the list. The destination is `toConversationId` in the input even though
+the wire field is a plain `conversationId`, because the route already names the
+source. Optional `role`, `mentions`, and `metadata` apply to the copy; nothing
+travels from the original, and `mentions` is checked against the target.
 
 ## Realtime cache updates
 
@@ -354,3 +384,10 @@ query cache; refetch after a mutation that should change what the user sees.
 - `src/plugin.ts` composes typed plugin actions and state.
 - `src/plugins/` contains first-party typing, presence, and receipts adapters.
 - `src/react/` exposes `useSyncExternalStore` hooks without a state dependency.
+
+## Community
+
+- **[Discord](https://discord.gg/gY3GCTRv5Y)** — chat with the team and other developers
+- **[X](https://x.com/chatpackdev)** — releases and updates
+- **[Docs](https://docs.chatpack.dev)** — the full documentation site
+- **[GitHub Discussions](https://github.com/chddaniel/chatpack/discussions)** — questions, show-and-tell, and feedback

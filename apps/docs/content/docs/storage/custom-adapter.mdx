@@ -20,7 +20,7 @@ AI-builder clouds.
 ## The contract
 
 Implement the `StorageAdapter` interface exported from `@chatpack/core` and
-pass it as `chatpack({ storage: yourAdapter() })`. Nineteen required async methods:
+pass it as `chatpack({ storage: yourAdapter() })`. Twenty-one required async methods:
 
 | Method                          | Contract                                                                         |
 | ------------------------------- | -------------------------------------------------------------------------------- |
@@ -43,6 +43,8 @@ pass it as `chatpack({ storage: yourAdapter() })`. Nineteen required async metho
 | `addReaction`                   | Idempotent insert; return the message's **full** reaction set (invariant 12)     |
 | `removeReaction`                | Idempotent delete; return the remaining set (invariant 12)                       |
 | `listReactionsByMessageIds`     | Batched reactions for a page, ascending `createdAt` (invariant 13)               |
+| `setMessageMentions`            | **Replace** one message's mention set; total, idempotent, returns nothing        |
+| `listMentionsByMessageIds`      | Batched mentions for a page, ascending `(createdAt, userId)` (invariant 20)      |
 
 Exact TypeScript signatures and per-method TSDoc ship in the package's
 `.d.ts` (`@chatpack/core`, `storage.ts` module).
@@ -52,6 +54,19 @@ a membership row either exists or it doesn't, so the semantics are identical on
 every backend and there's nothing for a platform to be unable to express. An
 adapter written before groups won't typecheck until it implements them - that's
 deliberate, because silently missing membership writes look like data loss.
+
+The two mention methods are required for the same reason, and an adapter written
+before them won't typecheck either - silently discarding a mention looks exactly
+like a notification that never fired. Forwarding adds **no** methods at all: it
+is `addMessage` plus three more nullable columns on the message.
+
+Two things to get right, both covered by
+[invariants 19 and 20](https://github.com/chddaniel/chatpack/blob/main/llms.txt):
+`setMessageMentions` is a **replace**, not an add (insert the given ids, delete
+every other mention row on that message, in one transaction - and an empty array
+means delete them all), and `listMentionsByMessageIds` sorts by `createdAt`
+**with `userId` as a tiebreak**, because a set written in one call shares a
+timestamp and would otherwise come back in whatever order the planner chose.
 
 ## Optional capabilities
 
@@ -91,7 +106,7 @@ ship a partial one.
 Why optional at all, when the five group methods above are required: a token row
 is just as backend-neutral as a participant row, so it passes the semantics test
 groups passed. It fails a different one - the required contract went fourteen →
-nineteen methods one release ago, and taking it to twenty-eight for a feature a
+nineteen → twenty-one methods over a few releases, and taking it to thirty for a feature a
 1:1-only app will never call turns "write an adapter" from an afternoon into a
 project. Groups reuse the participants table every DM already writes; invites
 need two genuinely new tables.

@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
+  - name: Chat on Discord
+    url: https://discord.gg/gY3GCTRv5Y
+    about: The fastest way to reach the team - ask, share what you built, tell us what broke.
   - name: Ask a question
     url: https://github.com/chddaniel/chatpack/discussions
     about: Questions, show-and-tell, and feedback belong in Discussions, not issues.

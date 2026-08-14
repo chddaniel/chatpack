@@ -11,9 +11,10 @@ deterministic tests.
 > has its own memory, so this adapter effectively stores nothing there.
 
 This package is also the **reference implementation** of the `StorageAdapter`
-contract - all nineteen required methods, including the five that groups added
+contract - all twenty-one required methods, including the five that groups added
 (`createGroupConversation`, `addParticipants`, `removeParticipant`,
-`setParticipantRole`, `updateConversation`) - plus **all four** optional
+`setParticipantRole`, `updateConversation`) and the two that mentions added
+(`setMessageMentions`, `listMentionsByMessageIds`) - plus **all four** optional
 capabilities: search, the nine-method `invites` namespace behind invite links and
 join requests, the one-method `channels` namespace behind the public channel
 directory, and the `moderation` namespace behind blocks, mutes, reports and
@@ -38,6 +39,13 @@ import { memoryAdapter } from "@chatpack/adapter-memory";
 
 const chat = chatpack({ storage: memoryAdapter() });
 ```
+
+## Community
+
+- **[Discord](https://discord.gg/gY3GCTRv5Y)** — chat with the team and other developers
+- **[X](https://x.com/chatpackdev)** — releases and updates
+- **[Docs](https://docs.chatpack.dev)** — the full documentation site
+- **[GitHub Discussions](https://github.com/chddaniel/chatpack/discussions)** — questions, show-and-tell, and feedback
 
 ## License
 
