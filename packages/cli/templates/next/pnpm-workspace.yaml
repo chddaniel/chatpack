@@ -1,0 +1,16 @@
+# pnpm refuses to run a dependency's install scripts until you approve it, and a
+# fresh `pnpm install` exits non-zero while any are unapproved. These three are
+# the ones this starter genuinely needs - esbuild for tsx and drizzle-kit, sharp
+# for Next's image optimizer, unrs-resolver for ESLint - so approve them here
+# rather than making every new clone answer the same prompt.
+#
+# Both spellings are present on purpose: pnpm 10 reads `onlyBuiltDependencies`,
+# pnpm 11 reads `allowBuilds`.
+onlyBuiltDependencies:
+  - esbuild
+  - sharp
+  - unrs-resolver
+allowBuilds:
+  esbuild: true
+  sharp: true
+  unrs-resolver: true

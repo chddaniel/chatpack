@@ -1,0 +1,11 @@
+# pnpm refuses to run a dependency's install scripts until you approve it, and a
+# fresh `pnpm install` exits non-zero while any are unapproved. esbuild is the
+# only one this starter needs (tsx and drizzle-kit are built on it), so approve
+# it here rather than making every new clone answer the same prompt.
+#
+# Both spellings are present on purpose: pnpm 10 reads `onlyBuiltDependencies`,
+# pnpm 11 reads `allowBuilds`.
+onlyBuiltDependencies:
+  - esbuild
+allowBuilds:
+  esbuild: true

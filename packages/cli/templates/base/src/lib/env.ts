@@ -1,6 +1,10 @@
-function required(name: "DATABASE_URL"): string {
+function required(name: string): string {
   const value = process.env[name];
-  if (!value) throw new Error(`Missing required environment variable: ${name}`);
+  if (!value) {
+    throw new Error(
+      `Missing required environment variable: ${name}. Copy .env.example, fill in the real value, then restart.`,
+    );
+  }
   return value;
 }
 

@@ -67,6 +67,24 @@ describe("starter inspection and planning", () => {
     expect(plan.actions.find((action) => action.path?.endsWith("README.md"))).toBeUndefined();
   });
 
+  // A `git init` on macOS, or a repo made from GitHub's web UI, already has
+  // several of these before any code exists. Treating them as conflicts made
+  // the starter unusable in exactly the situation it is meant for.
+  it("ignores editor, CI and OS clutter when deciding a repository is empty", async () => {
+    const cluttered = await emptyRepo({
+      ".DS_Store": "\u0000",
+      ".gitattributes": "* text=auto\n",
+      ".editorconfig": "root = true\n",
+      ".github/workflows/ci.yml": "name: ci\n",
+      ".vscode/settings.json": "{}\n",
+      "CONTRIBUTING.md": "# Contributing\n",
+    });
+    const inspection = inspectProject(cluttered);
+    expect(inspection.mode).toBe("starter");
+    expect(inspection.starterConflicts).toEqual([]);
+    expect((await makePlan(inspection, args(cluttered, "hono"))).errors).toEqual([]);
+  });
+
   it("reports unsafe pre-existing content before mutation", async () => {
     const root = await emptyRepo({
       "src/index.ts": "export {};\n",
@@ -145,6 +163,55 @@ describe("starter inspection and planning", () => {
       "/api/health",
     );
     expect(plan.actions.at(-1)?.command).toBe(`${manager} install`);
+  });
+
+  it("writes pnpm's build approvals only for pnpm projects", async () => {
+    // Without this file `pnpm install` exits non-zero on a fresh starter, and
+    // the CLI reports the whole setup as failed. Nothing else reads it, so an
+    // npm or Bun project must not be handed a stray pnpm config file.
+    const withPnpm = await emptyRepo();
+    const nextPlan = await makePlan(
+      inspectProject(withPnpm),
+      args(withPnpm, "next", "pnpm", "authjs"),
+    );
+    const nextConfig = nextPlan.actions.find((action) =>
+      action.path?.endsWith("pnpm-workspace.yaml"),
+    );
+    expect(nextConfig?.content).toContain("sharp: true");
+    expect(nextConfig?.content).toContain("onlyBuiltDependencies");
+
+    const apiRoot = await emptyRepo();
+    const apiPlan = await makePlan(inspectProject(apiRoot), args(apiRoot, "hono", "pnpm"));
+    const apiConfig = apiPlan.actions.find((action) =>
+      action.path?.endsWith("pnpm-workspace.yaml"),
+    );
+    expect(apiConfig?.content).toContain("esbuild: true");
+    expect(apiConfig?.content).not.toContain("sharp");
+
+    const npmRoot = await emptyRepo();
+    const npmPlan = await makePlan(inspectProject(npmRoot), args(npmRoot, "hono", "npm"));
+    expect(npmPlan.actions.some((action) => action.path?.endsWith("pnpm-workspace.yaml"))).toBe(
+      false,
+    );
+  });
+
+  it.each([
+    ["next", "better-auth"],
+    ["hono", undefined],
+  ] as const)("ships the local-Postgres escape hatch for %s", async (framework, provider) => {
+    // The proxy only helps if the script, the runner and the driver switch land
+    // together, and it must stay opt-in: with NEON_WS_PROXY unset an app has to
+    // reach Neon directly over TLS. Both frameworks are checked because Next
+    // overrides src/lib/db.ts, so editing only the base layer silently skips it.
+    const root = await emptyRepo();
+    const plan = await makePlan(inspectProject(root), args(root, framework, "pnpm", provider));
+    const find = (suffix: string) =>
+      plan.actions.find((action) => action.path?.endsWith(suffix))?.content;
+
+    expect(find("scripts/wsproxy.ts")).toContain("WebSocketServer");
+    expect(find("package.json")).toContain('"db:proxy": "tsx scripts/wsproxy.ts"');
+    expect(find("src/lib/db.ts")).toContain("if (process.env.NEON_WS_PROXY)");
+    expect(find(".env.example")).toContain("# NEON_WS_PROXY=127.0.0.1:5480");
   });
 
   it("requires all non-interactive starter decisions", async () => {

@@ -14,14 +14,14 @@
     "lint": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
+    "db:proxy": "tsx scripts/wsproxy.ts",
     "setup:check": "tsx scripts/setup-check.ts"
   },
   "dependencies": {
-    "@chatpack/adapter-drizzle": "0.8.1",
-    "@chatpack/core": "0.12.0",
+    "@chatpack/adapter-drizzle": "{{CHATPACK_ADAPTER_DRIZZLE_VERSION}}",
+    "@chatpack/core": "{{CHATPACK_CORE_VERSION}}",
     "@hono/node-server": "2.1.0",
     "@neondatabase/serverless": "1.1.0",
-    "@vercel/functions": "3.9.3",
     "drizzle-orm": "0.45.2",
     "hono": "4.13.1",
     "ws": "8.21.3"

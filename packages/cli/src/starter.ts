@@ -13,6 +13,7 @@ import type {
   SetupAnswers,
   SetupPlan,
 } from "./types";
+import { chatpackVersions } from "./versions";
 
 const templateRoot = resolve(__dirname, "../templates");
 
@@ -167,6 +168,45 @@ function mergeGitignore(path: string, generated: string): PlanAction {
   );
 }
 
+/**
+ * The one part of the generated README that genuinely differs per starter.
+ * Kept here rather than in three README variants so the shared setup steps stay
+ * in one file.
+ */
+function starterNotes(framework: StarterFramework, authProvider: AuthProvider | undefined): string {
+  if (framework !== "next") {
+    return [
+      "## Wire up your own authentication",
+      "",
+      "`src/lib/chatpack.ts` ships an auth hook that returns `null`, so **every request",
+      "answers 401 until you replace it** with your host application's verified session.",
+      "That is deliberate - a backend starter must not guess who the caller is.",
+    ].join("\n");
+  }
+  const notes = [
+    "## Authentication",
+    "",
+    `Sign-in is wired with ${authProvider ?? "your provider"}. \`src/lib/chatpack.server.ts\` passes the`,
+    "signed-in user id to Chatpack and validates ids against the `profiles` table, so a",
+    "conversation can never be opened with someone who does not exist.",
+  ];
+  if (authProvider === "better-auth") {
+    notes.push(
+      "",
+      "Email verification is **disabled** so the starter runs immediately. Turn it on in",
+      "`src/lib/auth.ts` before accepting untrusted public sign-ups.",
+    );
+  }
+  notes.push(
+    "",
+    "## Deploy to Vercel",
+    "",
+    "Import the repository, add the same environment variables, and deploy. The Neon Pool",
+    "is registered with the Vercel Functions lifecycle helper in `src/lib/db.ts`.",
+  );
+  return notes.join("\n");
+}
+
 export async function makeStarterPlan(
   inspection: ProjectInspection,
   args: CliArgs,
@@ -192,10 +232,19 @@ export async function makeStarterPlan(
   for (const layer of layers) {
     for (const file of filesInLayer(layer)) files.set(file.relativePath, file.content);
   }
+  // pnpm needs its install-script approvals on disk or `pnpm install` exits
+  // non-zero on a fresh clone. Nobody else reads the file, so an npm or Bun
+  // project should not be handed a stray pnpm config.
+  if (packageManager !== "pnpm") files.delete("pnpm-workspace.yaml");
+  const envFile = framework === "next" ? ".env.local" : ".env";
   const values = {
     PACKAGE_NAME: packageName,
     AUTH_PROVIDER: authProvider ?? "host",
     FRAMEWORK: framework,
+    PACKAGE_MANAGER: packageManager,
+    ENV_FILE: envFile,
+    STARTER_NOTES: starterNotes(framework, authProvider),
+    ...chatpackVersions,
   };
   const actions: PlanAction[] = [];
   for (const [templatePath, source] of [...files.entries()].sort(([left], [right]) =>
@@ -218,9 +267,14 @@ export async function makeStarterPlan(
     reason: "Install the pinned starter dependencies.",
   });
   const warnings = [
-    "Copy .env.example to .env.local (Next.js) or .env (Hono/Express), add real secrets, then run the migration commands.",
+    `Copy .env.example to ${envFile}, add real secrets, then run ${packageManager} run db:generate and ${packageManager} run db:migrate.`,
     "Generation does not provision Neon, write secrets, run migrations, or deploy the application.",
   ];
+  if (framework !== "next") {
+    warnings.push(
+      "src/lib/chatpack.ts returns null from its auth hook, so every request answers 401 until you wire it to your own session.",
+    );
+  }
   if (authProvider === "better-auth") {
     warnings.push(
       "Better Auth email verification is disabled by design in this starter. Enable verification before accepting untrusted public sign-ups.",
