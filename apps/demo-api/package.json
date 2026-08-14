@@ -12,8 +12,8 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@chatpack/adapter-memory": "0.7.0",
-    "@chatpack/core": "0.11.0",
+    "@chatpack/adapter-memory": "0.7.2",
+    "@chatpack/core": "0.11.2",
     "next": "16.2.12",
     "react": "^19.2.8",
     "react-dom": "^19.2.8"
