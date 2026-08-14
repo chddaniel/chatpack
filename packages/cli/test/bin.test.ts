@@ -101,8 +101,12 @@ describe("installed bin entrypoint", () => {
       expect(stdout).toContain("Framework: next");
       expect(stdout).toContain("Auth:      auth0");
       expect(stdout).toContain("Package:   packed-starter");
-      expect(stdout).not.toContain("src/components/ui/sidebar.tsx");
-      expect(stdout).not.toContain("src/proxy.ts");
+      // A dry run lists every file, which is also the strongest proof that the
+      // bundled artifact really found the template assets beside it: these two
+      // paths only exist in the auth0 overlay and the base layer.
+      expect(stdout).toContain("src/components/ui/sidebar.tsx");
+      expect(stdout).toContain("src/proxy.ts");
+      expect(stdout).toContain("Dry run complete.");
     }
   });
 });

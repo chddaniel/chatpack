@@ -3,7 +3,7 @@ import { installPackages, installProject } from "../install";
 import { applyFileAction } from "../modify";
 import { makePlan } from "../plan";
 import { printPlan, printResult } from "../output";
-import { startPromptSession } from "../prompts";
+import { confirm, startPromptSession } from "../prompts";
 import { validateApplied, validatePlan } from "../validate";
 import type { CliArgs } from "../args";
 
@@ -17,7 +17,7 @@ export async function runInit(args: CliArgs): Promise<number> {
   if (!args.yes) startPromptSession();
   const inspection = inspectProject(args.cwd);
   const plan = await makePlan(inspection, args);
-  printPlan(plan);
+  printPlan(plan, { verbose: args.dryRun });
   const errors = validatePlan(plan);
   if (errors.length > 0) {
     for (const error of errors) console.error(`Error: ${error}`);
@@ -25,6 +25,12 @@ export async function runInit(args: CliArgs): Promise<number> {
   }
   if (args.dryRun) {
     console.log("\nDry run complete. No packages installed and no files changed.");
+    return 0;
+  }
+  // Everything past here installs dependencies and writes files, in a directory
+  // that may already hold the developer's own code. --yes is the way to skip it.
+  if (!args.yes && !(await confirm("Apply this plan?", false))) {
+    console.log("Aborted. No packages installed and no files changed.");
     return 0;
   }
   const install = plan.actions.find((action) => action.kind === "install" && action.command);

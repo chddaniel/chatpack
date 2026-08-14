@@ -237,12 +237,35 @@ function routes(files: FileInfo[], framework: Framework | undefined): string[] {
     .map((file) => file.path);
 }
 
+/**
+ * Entries allowed to already exist in an "empty repository" without blocking
+ * starter generation. A `git init` on macOS, or a repo created from GitHub's
+ * web UI, routinely has several of these before a line of code is written -
+ * aborting on `.DS_Store` or `.github/` reads as a broken CLI, not a guard.
+ *
+ * Nothing the starter writes may be added here: an existing README is diverted
+ * to CHATPACK_SETUP.md and `.gitignore` is merged, both handled separately, and
+ * anything else must still surface as a conflict rather than be overwritten.
+ */
+const starterSafeEntries = [
+  /^\.git(?:ignore|attributes|modules|keep)?$/i,
+  /^\.github$/i,
+  /^\.(?:vscode|idea)$/i,
+  /^\.editorconfig$/i,
+  /^\.DS_Store$/i,
+  /^Thumbs\.db$/i,
+  /^(?:README|LICEN[CS]E|CHANGELOG|CONTRIBUTING|CODE_OF_CONDUCT|SECURITY)(?:\..*)?$/i,
+];
+
+function isStarterSafeEntry(name: string): boolean {
+  return starterSafeEntries.some((pattern) => pattern.test(name));
+}
+
 function starterInspection(cwd: string, generated = false): ProjectInspection {
   const root = resolve(cwd);
   const entries = readdirSync(root, { withFileTypes: true });
-  const safeName = /^(?:README(?:\..*)?|LICENSE(?:\..*)?|\.gitignore)$/i;
   const conflicts = entries
-    .filter((entry) => !generated && entry.name !== ".git" && !safeName.test(entry.name))
+    .filter((entry) => !generated && !isStarterSafeEntry(entry.name))
     .map((entry) => entry.name)
     .sort();
   const readme = entries.find((entry) => /^README(?:\..*)?$/i.test(entry.name));
