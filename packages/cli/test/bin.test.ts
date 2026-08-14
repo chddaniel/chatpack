@@ -97,9 +97,12 @@ describe("installed bin entrypoint", () => {
         "--yes",
         "--dry-run",
       ]);
-      expect(stdout).toContain("src/components/ui/sidebar.tsx");
-      expect(stdout).toContain("src/proxy.ts");
-      expect(stdout).toContain("pnpm install");
+      expect(stdout).toContain("Chatpack setup plan");
+      expect(stdout).toContain("Framework: next");
+      expect(stdout).toContain("Auth:      auth0");
+      expect(stdout).toContain("Package:   packed-starter");
+      expect(stdout).not.toContain("src/components/ui/sidebar.tsx");
+      expect(stdout).not.toContain("src/proxy.ts");
     }
   });
 });

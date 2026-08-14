@@ -74,7 +74,16 @@ async function chooseFramework(inspection: ProjectInspection, args: CliArgs): Pr
   if (supportedFramework(inspection.framework)) return inspection.framework;
   if (args.yes)
     throw new Error("Framework is unknown. Supply --framework next, hono, express, or web.");
-  return select("Framework", ["next", "hono", "express", "web"], "next");
+  return select(
+    "Choose your framework",
+    [
+      { value: "next", label: "Next.js", hint: "App Router route handler" },
+      { value: "hono", label: "Hono", hint: "Web-standard wildcard handler" },
+      { value: "express", label: "Express", hint: "Streaming bridge middleware" },
+      { value: "web", label: "Web standard", hint: "Framework-agnostic handler" },
+    ] as const,
+    "next",
+  );
 }
 
 async function chooseAdapter(inspection: ProjectInspection, args: CliArgs): Promise<Adapter> {
@@ -87,7 +96,14 @@ async function chooseAdapter(inspection: ProjectInspection, args: CliArgs): Prom
   }
   if (args.yes)
     throw new Error("Storage adapter is required. Supply --adapter memory or --adapter drizzle.");
-  return select("Storage adapter", ["memory", "drizzle"] as const);
+  return select(
+    "Choose a storage adapter",
+    [
+      { value: "drizzle", label: "Drizzle", hint: "Persistent database storage" },
+      { value: "memory", label: "Memory", hint: "Development and tests only" },
+    ] as const,
+    "drizzle",
+  );
 }
 
 async function chooseManager(
@@ -107,7 +123,14 @@ async function chooseManager(
         ),
     ),
   ];
-  if (detected.length > 1) return select("Multiple package managers detected", detected);
+  if (detected.length > 1)
+    return select(
+      "Choose a detected package manager",
+      detected.map((value) => ({
+        value,
+        label: value === "yarn" ? "Yarn" : value === "bun" ? "Bun" : value,
+      })),
+    );
   throw new Error(
     "No package manager lockfile found. Supply --package-manager npm, pnpm, yarn, or bun.",
   );

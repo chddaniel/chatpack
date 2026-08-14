@@ -60,9 +60,6 @@ export default function SignInPage() {
               Sign up
             </Link>
           </FieldDescription>
-          <FieldDescription>
-            Email verification is disabled in this starter. Enable it before public launch.
-          </FieldDescription>
         </FieldGroup>
       </form>
     </main>

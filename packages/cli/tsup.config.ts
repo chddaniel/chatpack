@@ -16,7 +16,7 @@ export default defineConfig({
   minify: true,
   sourcemap: false,
   target: "es2022",
-  noExternal: ["typescript"],
+  noExternal: [/.*/],
   banner: {
     js: "#!/usr/bin/env node",
   },

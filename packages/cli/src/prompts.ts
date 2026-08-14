@@ -1,35 +1,75 @@
-import { createInterface } from "node:readline/promises";
-import { stdin as input, stdout as output } from "node:process";
+import * as prompts from "@clack/prompts";
 
-export async function prompt(question: string, defaultValue?: string): Promise<string> {
-  const readline = createInterface({ input, output });
-  try {
-    const suffix = defaultValue === undefined ? "" : ` (${defaultValue})`;
-    const answer = (await readline.question(`${question}${suffix}: `)).trim();
-    return answer || defaultValue || "";
-  } finally {
-    readline.close();
+export class PromptCancelledError extends Error {
+  constructor() {
+    super("Setup cancelled.");
+    this.name = "PromptCancelledError";
   }
 }
 
+export interface SelectChoice<T extends string> {
+  value: T;
+  label: string;
+  hint?: string;
+}
+
+type TextValidator = (value: string) => string | undefined;
+
+function result<T>(value: T | symbol): T {
+  if (prompts.isCancel(value)) {
+    prompts.cancel("Setup cancelled.");
+    throw new PromptCancelledError();
+  }
+  return value;
+}
+
+export function startPromptSession(): void {
+  prompts.intro("Chatpack init");
+}
+
+export async function prompt(
+  question: string,
+  defaultValue?: string,
+  validate?: TextValidator,
+): Promise<string> {
+  return result(
+    await prompts.text({
+      message: question,
+      ...(defaultValue === undefined ? {} : { placeholder: defaultValue, defaultValue }),
+      ...(validate
+        ? { validate: (value: string | undefined) => validate(value || defaultValue || "") }
+        : {}),
+    }),
+  );
+}
+
 export async function confirm(question: string, defaultValue = false): Promise<boolean> {
-  const answer = (await prompt(`${question} [y/N]`, defaultValue ? "y" : "n")).toLowerCase();
-  return answer === "y" || answer === "yes";
+  return result(
+    await prompts.confirm({
+      message: question,
+      initialValue: defaultValue,
+    }),
+  );
 }
 
 export async function select<T extends string>(
   question: string,
-  choices: readonly T[],
+  choices: readonly (T | SelectChoice<T>)[],
   defaultValue?: T,
 ): Promise<T> {
-  const list = choices.map((choice, index) => `${index + 1}) ${choice}`).join("  ");
-  for (;;) {
-    const answer = await prompt(
-      `${question}\n${list}`,
-      defaultValue ? String(choices.indexOf(defaultValue) + 1) : "1",
-    );
-    const index = Number(answer) - 1;
-    if (Number.isInteger(index) && choices[index]) return choices[index];
-    console.log("Choose one listed option.");
-  }
+  return result(
+    await prompts.select<string>({
+      message: question,
+      options: choices.map((choice) =>
+        typeof choice === "string"
+          ? { value: choice, label: choice, hint: "" }
+          : {
+              value: choice.value,
+              label: choice.label,
+              hint: choice.hint ?? "",
+            },
+      ),
+      ...(defaultValue ? { initialValue: defaultValue } : {}),
+    }),
+  ) as T;
 }

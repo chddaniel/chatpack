@@ -70,9 +70,6 @@ export default function SignUpPage() {
               Sign in
             </Link>
           </FieldDescription>
-          <FieldDescription>
-            Email verification is disabled. Do not use this choice for high-trust identity flows.
-          </FieldDescription>
         </FieldGroup>
       </form>
     </main>

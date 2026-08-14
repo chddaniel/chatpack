@@ -14,9 +14,9 @@ import type {
   SetupPlan,
 } from "./types";
 
-const authProviders = ["better-auth", "authjs", "auth0"] as const;
-const starterFrameworks = ["next", "hono", "express"] as const;
 const templateRoot = resolve(__dirname, "../templates");
+
+type StarterFramework = Exclude<Framework, "web">;
 
 function requirePackageName(value: string): string {
   if (
@@ -28,20 +28,37 @@ function requirePackageName(value: string): string {
   return value;
 }
 
-async function chooseStarterFramework(args: CliArgs): Promise<(typeof starterFrameworks)[number]> {
+async function chooseStarterFramework(args: CliArgs): Promise<StarterFramework> {
   if (args.framework === "web") {
     throw new Error("The web framework target is only available for existing projects.");
   }
   if (args.framework) return args.framework;
   if (args.yes)
     throw new Error("Starter framework is required. Supply --framework next, hono, or express.");
-  return select("Starter framework", starterFrameworks, "next");
+  return select(
+    "Choose a starter",
+    [
+      { value: "next", label: "Next.js", hint: "Full chat app with UI and authentication" },
+      { value: "hono", label: "Hono", hint: "Backend API starter" },
+      { value: "express", label: "Express", hint: "Backend API starter" },
+    ] as const,
+    "next",
+  );
 }
 
 async function chooseStarterManager(args: CliArgs): Promise<PackageManager> {
   if (args.packageManager) return args.packageManager;
   if (args.yes) throw new Error("Package manager is required. Supply --package-manager.");
-  return select("Package manager", ["npm", "pnpm", "yarn", "bun"] as const, "pnpm");
+  return select(
+    "Choose a package manager",
+    [
+      { value: "pnpm", label: "pnpm", hint: "Recommended" },
+      { value: "npm", label: "npm" },
+      { value: "yarn", label: "Yarn" },
+      { value: "bun", label: "Bun" },
+    ] as const,
+    "pnpm",
+  );
 }
 
 async function chooseStarterAuth(
@@ -60,7 +77,15 @@ async function chooseStarterAuth(
       "Next.js starter auth provider is required. Supply --auth-provider better-auth, authjs, or auth0.",
     );
   }
-  return select("Authentication provider", authProviders, "better-auth");
+  return select(
+    "Choose an authentication provider",
+    [
+      { value: "better-auth", label: "Better Auth", hint: "Email and password" },
+      { value: "authjs", label: "Auth.js", hint: "GitHub OAuth" },
+      { value: "auth0", label: "Auth0", hint: "Universal Login" },
+    ] as const,
+    "better-auth",
+  );
 }
 
 async function chooseStarterName(inspection: ProjectInspection, args: CliArgs): Promise<string> {
@@ -69,7 +94,16 @@ async function chooseStarterName(inspection: ProjectInspection, args: CliArgs): 
     .replace(/[^a-z0-9._-]+/g, "-");
   if (args.name) return requirePackageName(args.name);
   if (args.yes) return requirePackageName(fallback);
-  return requirePackageName(await prompt("Package name", fallback));
+  return requirePackageName(
+    await prompt("Package name", fallback, (value) => {
+      try {
+        requirePackageName(value);
+        return undefined;
+      } catch (error) {
+        return error instanceof Error ? error.message : String(error);
+      }
+    }),
+  );
 }
 
 function assertStarterFlags(args: CliArgs): void {
