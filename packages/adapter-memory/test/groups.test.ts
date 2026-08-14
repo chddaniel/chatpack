@@ -132,6 +132,50 @@ describe("creating groups", () => {
     ).resolves.toMatchObject({ type: "group" });
   });
 
+  it("checks seeded members concurrently but still names the first missing one", async () => {
+    // A 30-member group must not cost 30 sequential round trips, so the checks
+    // overlap. Two ids are missing here and the error has to name the earlier
+    // one regardless of which query happened to settle first.
+    let inFlight = 0;
+    let peak = 0;
+    const seen: string[] = [];
+    const chat = createChat({
+      userExists: async (userId: string) => {
+        inFlight += 1;
+        peak = Math.max(peak, inFlight);
+        seen.push(userId);
+        // Make the later ghost resolve first, so a settle-order bug would show.
+        await new Promise((resolve) => setTimeout(resolve, userId === "ghost-b" ? 0 : 5));
+        inFlight -= 1;
+        return !userId.startsWith("ghost");
+      },
+    });
+    const userIds = Array.from({ length: 30 }, (_, index) => `u${index}`);
+    userIds[3] = "ghost-a";
+    userIds[5] = "ghost-b";
+
+    await expect(chat.api.createGroupConversation({ userId: "alice", userIds })).rejects.toThrow(
+      'User "ghost-a" was not found.',
+    );
+    expect(peak).toBeGreaterThan(1);
+    // Both ghosts are inside the first batch, so nothing past it is queried.
+    expect(seen).not.toContain("u20");
+  });
+
+  it("never asks the host about the same id twice, or about the creator", async () => {
+    // The hook is somebody's database query, so a duplicated id in the request
+    // must not become a duplicated round trip.
+    const userExists = vi.fn(async () => true);
+    const chat = createChat({ userExists });
+
+    await chat.api.createGroupConversation({
+      userId: "alice",
+      userIds: ["bob", "bob", "carol", "alice"],
+    });
+
+    expect(userExists.mock.calls.flat()).toEqual(["bob", "carol"]);
+  });
+
   it("trims the name and rejects an empty or oversized one", async () => {
     const chat = createChat();
 
