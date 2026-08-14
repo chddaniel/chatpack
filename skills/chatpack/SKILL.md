@@ -670,6 +670,12 @@ AND the Network tab must show it on `/api/chat/*` requests.
 | 400 `INVALID_INPUT` sending an image with no caption                             | `body` is required and non-empty after trimming; attachments never substitute for it. Synthesize a body (a space won't do - it's trimmed).                                                                 |
 | Chrome uploads fail as `CLIENT_NETWORK_ERROR` with no request in the Network tab | `@filepack/client` ≤ 0.1.1 calls an unbound `globalThis.fetch` ("Illegal invocation"). Pass `controlFetch: (input, init) => fetch(input, init)` to `createChatpackFileClient`.                             |
 
+Symptom not listed here, or the docs said something that turned out to be wrong?
+Tell the maintainers - Discord <https://discord.gg/gY3GCTRv5Y> is the fastest,
+[Discussions](https://github.com/chddaniel/chatpack/discussions) and
+[issues](https://github.com/chddaniel/chatpack/issues/new/choose) also work.
+Friction reports are wanted, not tolerated.
+
 ## Custom storage adapter (Supabase JS / Convex / Firestore / other)
 
 Do NOT improvise: read **Part 2 of `llms.txt`** and follow it exactly - it

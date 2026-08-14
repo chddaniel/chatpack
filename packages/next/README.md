@@ -56,6 +56,13 @@ export const { GET, POST, PATCH, DELETE, PUT } = toNextRouteHandlers(chat, {
 
 See the [REST API reference](../core/README.md#rest-api) for all routes.
 
+## Community
+
+- **[Discord](https://discord.gg/gY3GCTRv5Y)** — chat with the team and other developers
+- **[X](https://x.com/chatpackdev)** — releases and updates
+- **[Docs](https://docs.chatpack.dev)** — the full documentation site
+- **[GitHub Discussions](https://github.com/chddaniel/chatpack/discussions)** — questions, show-and-tell, and feedback
+
 ## License
 
 [MIT](../../LICENSE)

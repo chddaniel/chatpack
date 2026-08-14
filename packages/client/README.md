@@ -384,3 +384,10 @@ query cache; refetch after a mutation that should change what the user sees.
 - `src/plugin.ts` composes typed plugin actions and state.
 - `src/plugins/` contains first-party typing, presence, and receipts adapters.
 - `src/react/` exposes `useSyncExternalStore` hooks without a state dependency.
+
+## Community
+
+- **[Discord](https://discord.gg/gY3GCTRv5Y)** — chat with the team and other developers
+- **[X](https://x.com/chatpackdev)** — releases and updates
+- **[Docs](https://docs.chatpack.dev)** — the full documentation site
+- **[GitHub Discussions](https://github.com/chddaniel/chatpack/discussions)** — questions, show-and-tell, and feedback

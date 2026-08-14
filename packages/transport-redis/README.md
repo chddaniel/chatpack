@@ -115,4 +115,11 @@ change missed during an outage shows up on the next conversation refetch
 - [ADR 0012 - Redis transport](../../docs/decisions/0012-redis-transport.md)
 - [ADR 0006 - SSE gap-fill](../../docs/decisions/0006-sse-gap-fill.md)
 
+## Community
+
+- **[Discord](https://discord.gg/gY3GCTRv5Y)** — chat with the team and other developers
+- **[X](https://x.com/chatpackdev)** — releases and updates
+- **[Docs](https://docs.chatpack.dev)** — the full documentation site
+- **[GitHub Discussions](https://github.com/chddaniel/chatpack/discussions)** — questions, show-and-tell, and feedback
+
 MIT

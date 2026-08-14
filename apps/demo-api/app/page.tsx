@@ -101,7 +101,9 @@ export const currentUserId = "alice";`}</pre>
 
       <p style={{ marginTop: "2rem", color: "#52525b", fontSize: "0.9375rem" }}>
         Full API reference: <a href="https://docs.chatpack.dev">docs.chatpack.dev</a> ·{" "}
-        <a href="https://github.com/chddaniel/chatpack">GitHub</a>
+        <a href="https://github.com/chddaniel/chatpack">GitHub</a> ·{" "}
+        <a href="https://discord.gg/gY3GCTRv5Y">Discord</a> ·{" "}
+        <a href="https://x.com/chatpackdev">X</a>
       </p>
     </main>
   );

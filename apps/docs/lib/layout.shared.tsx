@@ -1,5 +1,5 @@
 import type { BaseLayoutProps } from "fumadocs-ui/layouts/shared";
-import { appName, gitConfig } from "./shared";
+import { appName, communityLinks, githubUrl } from "./shared";
 
 export function baseOptions(): BaseLayoutProps {
   return {
@@ -17,8 +17,13 @@ export function baseOptions(): BaseLayoutProps {
         url: "/docs",
         active: "nested-url",
       },
+      {
+        text: "Community",
+        url: communityLinks.discord,
+        external: true,
+      },
     ],
-    githubUrl: `https://github.com/${gitConfig.user}/${gitConfig.repo}`,
+    githubUrl,
   };
 }
 

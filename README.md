@@ -11,6 +11,8 @@ and real-time delivery - without rebuilding it from scratch.
 [![CI](https://github.com/chddaniel/chatpack/actions/workflows/ci.yml/badge.svg)](https://github.com/chddaniel/chatpack/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Discord](https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/gY3GCTRv5Y)
+[![X](https://img.shields.io/badge/X-@chatpackdev-000000?logo=x&logoColor=white)](https://x.com/chatpackdev)
+[![npm](https://img.shields.io/npm/v/@chatpack/core?logo=npm&color=CB3837&label=@chatpack/core)](https://www.npmjs.com/package/@chatpack/core)
 
 **[Documentation → docs.chatpack.dev](https://docs.chatpack.dev)** -
 quickstart, concepts, real-time, storage adapters, framework guides, and the
@@ -882,8 +884,11 @@ alive. Details in [docs/MVP.md §12](./docs/MVP.md).
 
 ## Community
 
+- **[Discord](https://discord.gg/gY3GCTRv5Y)** — chat with the team and other developers
 - **[GitHub Discussions](https://github.com/chddaniel/chatpack/discussions)** — questions, show-and-tell, and feedback
-- **[Discord](https://discord.gg/gY3GCTRv5Y)** — chat with the community
+- **[X](https://x.com/chatpackdev)** — releases and updates
+- **[Docs](https://docs.chatpack.dev)** — the full documentation site
+- **[npm](https://www.npmjs.com/package/@chatpack/core)** — every `@chatpack/*` package
 - **[Open an issue](https://github.com/chddaniel/chatpack/issues/new/choose)** — bugs and feature requests
 
 If you've built something with Chatpack, got stuck installing it, or have opinions about the API — we want to hear from you. The team reads everything.

@@ -224,6 +224,13 @@ The integration suite runs the full Chatpack engine against this adapter on
 [PGlite](https://pglite.dev) - real Postgres compiled to WASM - so
 `pnpm test` needs no Docker or external database, locally or in CI.
 
+## Community
+
+- **[Discord](https://discord.gg/gY3GCTRv5Y)** — chat with the team and other developers
+- **[X](https://x.com/chatpackdev)** — releases and updates
+- **[Docs](https://docs.chatpack.dev)** — the full documentation site
+- **[GitHub Discussions](https://github.com/chddaniel/chatpack/discussions)** — questions, show-and-tell, and feedback
+
 ## License
 
 [MIT](../../LICENSE)

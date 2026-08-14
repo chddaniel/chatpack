@@ -2212,3 +2212,9 @@ coerce. Rationale: `docs/decisions/0012`.
 Full HTTP semantics: `@chatpack/core` README. ADRs (design rationale):
 `docs/decisions/` in the repo. This file also ships inside every `@chatpack/*`
 npm package (`node_modules/@chatpack/core/llms.txt`).
+
+Stuck on something this file doesn't answer, or hit a wrong answer in it? Tell
+the humans - Discord https://discord.gg/gY3GCTRv5Y (fastest), GitHub
+Discussions https://github.com/chddaniel/chatpack/discussions, issues
+https://github.com/chddaniel/chatpack/issues/new/choose. Docs
+https://docs.chatpack.dev · updates https://x.com/chatpackdev.
