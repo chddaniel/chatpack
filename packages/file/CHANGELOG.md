@@ -1,5 +1,16 @@
 # @chatpack/file
 
+## 0.1.6
+
+### Patch Changes
+
+- 5d6f1c8: Add the community links (Discord, X, docs, Discussions) to every package README and to
+  `llms.txt`, so the fastest way to reach the maintainers is on the npm page of whichever
+  package you installed. No code changes.
+- Updated dependencies [5d6f1c8]
+- Updated dependencies [7803136]
+  - @chatpack/core@0.12.0
+
 ## 0.1.5
 
 ### Patch Changes
