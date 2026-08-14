@@ -33,12 +33,13 @@ export const chat = chatpack({
 
 ## Creating the tables
 
-Chatpack needs eleven tables (`chatpack_conversations`,
+Chatpack needs twelve tables (`chatpack_conversations`,
 `chatpack_conversation_participants`, `chatpack_messages`,
 `chatpack_message_search_tokens`, `chatpack_message_reactions`,
-`chatpack_conversation_invites`, `chatpack_join_requests`,
-`chatpack_user_blocks`, `chatpack_conversation_mutes`,
-`chatpack_moderation_reports`, `chatpack_user_bans`). Users are
+`chatpack_message_mentions`, `chatpack_conversation_invites`,
+`chatpack_join_requests`, `chatpack_user_blocks`,
+`chatpack_conversation_mutes`, `chatpack_moderation_reports`,
+`chatpack_user_bans`). Users are
 referenced **by id only** - there is no foreign key into your users table.
 
 <Callout type="warn">
@@ -62,6 +63,17 @@ referenced **by id only** - there is no foreign key into your users table.
   private, approval-gated one without a backfill - and old code that never selects the columns keeps
   working. It also adds `chatpack_conversations_public_idx`, a *partial* index (`WHERE visibility =
   'public'`) so the directory query doesn't index every private conversation you own.
+</Callout>
+
+<Callout type="info">
+  Mentions and forwarding are gentle too: `chatpack_message_mentions` is a pure table addition, and
+  forwarding adds three **nullable** columns (`forwarded_from_message_id`,
+  `forwarded_from_conversation_id`, `forwarded_from_sender_id`) to `chatpack_messages` with no
+  defaults to backfill - every existing message reads back as un-forwarded. The provenance columns
+  deliberately have **no foreign key**: a forward is a copy living in a conversation the source's
+  participants may have no part in, so a cascade from the source would delete their messages. Its
+  index is *partial* (`WHERE forwarded_from_message_id IS NOT NULL`), because a btree indexes NULLs
+  and almost every message is not a forward.
 </Callout>
 
 <Callout type="info">

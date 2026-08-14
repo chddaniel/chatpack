@@ -42,6 +42,7 @@ import {
   isNull,
   lt,
   ne,
+  notInArray,
   or,
   sql,
   type SQL,
@@ -72,6 +73,7 @@ import type {
   ListPublicConversationsInput,
   ListPublicConversationsResult,
   Message,
+  MessageMention,
   MessageRole,
   Metadata,
   ModerationPage,
@@ -86,6 +88,7 @@ import type {
   ResolveJoinRequestInput,
   SearchMessagesInput,
   SearchMessagesResult,
+  SetMessageMentionsInput,
   SetParticipantRoleInput,
   StorageAdapter,
   UpdateConversationInput,
@@ -100,6 +103,7 @@ import {
   conversationMutes,
   conversations,
   joinRequests,
+  messageMentions,
   messageReactions,
   messageSearchTokens,
   messages,
@@ -115,6 +119,7 @@ export {
   conversationMutes,
   conversations,
   joinRequests,
+  messageMentions,
   messageReactions,
   messageSearchTokens,
   messages,
@@ -135,6 +140,7 @@ type ConversationRow = typeof conversations.$inferSelect;
 type ParticipantRow = typeof conversationParticipants.$inferSelect;
 type MessageRow = typeof messages.$inferSelect;
 type ReactionRow = typeof messageReactions.$inferSelect;
+type MentionRow = typeof messageMentions.$inferSelect;
 type InviteRow = typeof conversationInvites.$inferSelect;
 type JoinRequestRow = typeof joinRequests.$inferSelect;
 type BlockRow = typeof userBlocks.$inferSelect;
@@ -223,6 +229,9 @@ function toMessage(row: MessageRow): Message {
     editedAt: row.editedAt,
     deletedAt: row.deletedAt,
     replyToMessageId: row.replyToMessageId,
+    forwardedFromMessageId: row.forwardedFromMessageId,
+    forwardedFromConversationId: row.forwardedFromConversationId,
+    forwardedFromSenderId: row.forwardedFromSenderId,
     metadata: (row.metadata ?? {}) as Metadata,
   };
 }
@@ -232,6 +241,14 @@ function toReaction(row: ReactionRow): Reaction {
     messageId: row.messageId,
     userId: row.userId,
     emoji: row.emoji,
+    createdAt: row.createdAt,
+  };
+}
+
+function toMention(row: MentionRow): MessageMention {
+  return {
+    messageId: row.messageId,
+    userId: row.userId,
     createdAt: row.createdAt,
   };
 }
@@ -966,6 +983,10 @@ export function drizzleAdapter(db: DrizzlePgDatabase): StorageAdapter {
             editedAt: null,
             deletedAt: null,
             replyToMessageId: input.replyToMessageId,
+            // Frozen at write time, never re-resolved (ADR 0024 §2).
+            forwardedFromMessageId: input.forwardedFromMessageId,
+            forwardedFromConversationId: input.forwardedFromConversationId,
+            forwardedFromSenderId: input.forwardedFromSenderId,
             metadata: input.metadata,
           })
           .returning();
@@ -1219,6 +1240,52 @@ export function drizzleAdapter(db: DrizzlePgDatabase): StorageAdapter {
         // Earliest-first, which is the order core aggregates `userIds` in.
         .orderBy(asc(messageReactions.createdAt));
       return rows.map(toReaction);
+    },
+
+    async setMessageMentions(input: SetMessageMentionsInput): Promise<void> {
+      // Upsert plus a delete of the complement, in one transaction: the pair is
+      // what makes this a *replace* rather than an accumulate, and neither half
+      // may be visible without the other. Surviving rows keep their original
+      // `createdAt` because the conflict path does nothing (ADR 0023 §3).
+      await db.transaction(async (tx) => {
+        if (input.userIds.length > 0) {
+          const now = new Date();
+          await tx
+            .insert(messageMentions)
+            .values(
+              input.userIds.map((userId) => ({
+                messageId: input.messageId,
+                userId,
+                createdAt: now,
+              })),
+            )
+            .onConflictDoNothing({
+              target: [messageMentions.messageId, messageMentions.userId],
+            });
+        }
+        await tx.delete(messageMentions).where(
+          and(
+            eq(messageMentions.messageId, input.messageId),
+            // An empty set means "delete them all", so the complement is
+            // everything - `notInArray` with no values is not valid SQL.
+            input.userIds.length === 0
+              ? undefined
+              : notInArray(messageMentions.userId, input.userIds),
+          ),
+        );
+      });
+    },
+
+    async listMentionsByMessageIds(messageIds: string[]): Promise<MessageMention[]> {
+      if (messageIds.length === 0) return [];
+      const rows = await db
+        .select()
+        .from(messageMentions)
+        .where(or(...messageIds.map((id) => eq(messageMentions.messageId, id))))
+        // The contract's canonical order: `userId` breaks the tie between rows
+        // written in one call, which all share a timestamp.
+        .orderBy(asc(messageMentions.createdAt), asc(messageMentions.userId));
+      return rows.map(toMention);
     },
 
     /**

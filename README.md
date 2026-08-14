@@ -27,7 +27,8 @@ A project by **[DanielCH](https://github.com/chddaniel)** and
 ---
 
 > **Status: `0.x` - v0 MVP + real-time plugins + unread counts + browser
-> client + reactions + search + group chats, live on npm.** The v0 MVP (core engine,
+> client + reactions + search + group chats + mentions + forwarding, live on
+> npm.** The v0 MVP (core engine,
 > HTTP handler, real-time SSE, Postgres adapter) plus the opt-in real-time
 > plugins - **`typing()`, `presence()`, and `receipts()`, all shipping today
 > inside `@chatpack/core` under the `@chatpack/core/plugins` subpath** (see
@@ -364,7 +365,9 @@ curl -X POST /api/chat/conversations/conv_1/messages \
     "metadata": {},
     "replyToMessageId": null,
     "replyTo": null,
-    "reactions": []
+    "reactions": [],
+    "mentions": [],
+    "forwardedFrom": null
   }
 }
 ```
@@ -389,6 +392,35 @@ message with its **complete** reaction set
 (`[{ emoji, count, userIds }]`). These are quote-replies, not threads, and a
 reaction is not a message: it has no `seq` and never reorders the conversation
 list.
+
+**Mentions** are ids you supply, not text Chatpack parses - it has no users table
+to resolve a name against, and `body` stays opaque. **Forwarding** copies a
+message into another conversation:
+
+```sh
+curl -X POST /api/chat/conversations/conv_2/messages \
+  -H 'content-type: application/json' \
+  -d '{"body": "@carol ship it", "mentions": ["carol"]}'
+
+curl -X POST /api/chat/messages/msg_1/forward \
+  -H 'content-type: application/json' \
+  -d '{"conversationId": "conv_2"}'
+```
+
+Every mentioned id must be a current participant, or the whole call is `400
+MENTION_NOT_PARTICIPANT` - never a silent drop, because a drop nobody sees looks
+exactly like a notification that fired. On edit, omitting `mentions` leaves the
+stored set alone and `[]` clears it. Chatpack notifies nobody and keeps no mention
+inbox: `afterMessageMutation` hands you `mentions` next to `recipientIds`, which is
+where a push integration belongs.
+
+A forward is a **copy**, never a live pointer: a new message in the target with
+your id as sender, its own `seq`, and `forwardedFrom`
+(`{ messageId, conversationId, senderId }`) frozen at forward time. Editing or
+deleting the original changes nothing about the copy. One hop, like replies -
+and deliberately no excerpt and no source conversation _name_, since whoever reads
+the copy may have no access to where it came from. Reactions, the reply pointer,
+mentions, metadata and `role` don't travel.
 
 List history (newest first, keyset-paginated):
 
@@ -502,6 +534,12 @@ return either a joined conversation or a pending request; expected HTTP failures
 remain structured client results. `chatClient.moderation` wraps all thirteen
 moderation calls the same way - note that none of them touch the query cache, so
 refetch the lists you show after a block or a mute.
+
+`messages.send` and `messages.edit` take `mentions`, and `messages.forward`
+copies a message into another conversation - resolving with the copy and echoing
+it into the target thread just like a send. The destination is
+`toConversationId` in the client input even though the wire field is a plain
+`conversationId`, because the route already names the source.
 
 See [`@chatpack/client`](./packages/client) for the framework-agnostic API,
 React hooks, the polling fallback, and client plugin usage.
@@ -772,6 +810,8 @@ Want to write your own plugin? The seam is public - see `ChatpackPlugin` in
 | Browser client + React hooks             | ✅ Done (v0.next) |
 | Client polling fallback                  | ✅ Done (v0.next) |
 | Reactions + quote-replies                | ✅ Done (v0.next) |
+| Mentions (validated, supplied ids)       | ✅ Done (v1.next) |
+| Message forwarding (copy + provenance)   | ✅ Done (v1.next) |
 | Participant-scoped message search        | ✅ Done (v0.next) |
 | Post-persistence message mutation hook   | ✅ Done (v0.next) |
 | `@chatpack/cli init`                     | ✅ Done (v0.next) |

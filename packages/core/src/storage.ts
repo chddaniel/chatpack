@@ -32,6 +32,7 @@ import type {
   JoinRequest,
   JoinRequestStatus,
   Message,
+  MessageMention,
   Metadata,
   MessageRole,
   ParticipantRole,
@@ -286,7 +287,31 @@ export interface AddMessageInput {
    * conversation - store it verbatim, no validation needed.
    */
   replyToMessageId: string | null;
+  /**
+   * Provenance for a forwarded message, or `null` on all three for an ordinary
+   * one (`docs/decisions/0024` §1). Core has already checked the source message
+   * exists, is not a tombstone, and is readable by the forwarder - store these
+   * verbatim, and store them as **columns**: they are never resolved on read,
+   * which is what keeps a forward from leaking the source's current body.
+   *
+   * The three move together. An adapter that drops them keeps compiling and
+   * loses provenance silently, so they are on the verification checklist.
+   */
+  forwardedFromMessageId: string | null;
+  forwardedFromConversationId: string | null;
+  forwardedFromSenderId: string | null;
   metadata: Metadata;
+}
+
+/** Input for {@link StorageAdapter.setMessageMentions} (`docs/decisions/0023`). */
+export interface SetMessageMentionsInput {
+  messageId: string;
+  /**
+   * The **complete** new mention set - replace, do not merge. Already
+   * de-duplicated and membership-checked by core; an empty array clears every
+   * mention on the message.
+   */
+  userIds: string[];
 }
 
 /** Input for {@link StorageAdapter.addReaction} and {@link StorageAdapter.removeReaction}. */
@@ -745,6 +770,40 @@ export interface StorageAdapter {
    * result; an empty input array returns an empty array.
    */
   listReactionsByMessageIds(messageIds: string[]): Promise<Reaction[]>;
+
+  /**
+   * Replace a message's mention set (`docs/decisions/0023` §4).
+   *
+   * **Idempotent and total**: writing the same set twice leaves the same rows,
+   * and an empty `userIds` clears them all. Implement it as an upsert plus a
+   * delete of the complement (or a delete-then-insert) so a replace cannot leave
+   * behind an id the caller dropped. Rows that survive a replace should keep
+   * their original `createdAt` - re-stamping them would reorder mentions that
+   * did not change.
+   *
+   * Returns nothing, unlike {@link StorageAdapter.addReaction}: core supplied
+   * the set and has no need to read it back, so an adapter should not pay for a
+   * post-write select.
+   *
+   * Called on send only when mentions were supplied, and on edit only when the
+   * caller passed the field - core never calls it to write an unchanged set.
+   * Mentions must not touch the conversation's activity ordering or `lastSeq`:
+   * the message already did that.
+   */
+  setMessageMentions(input: SetMessageMentionsInput): Promise<void>;
+
+  /**
+   * All mentions on a set of messages, batched - core uses this to decorate
+   * message pages, one call per page alongside the reactions and reply lookups.
+   *
+   * Sort ascending by `(createdAt, userId)`. `createdAt` is what puts a
+   * message's `mentions` array in the order the mentions were recorded; the
+   * `userId` tiebreak is what keeps two adapters from disagreeing about a set
+   * written in one call, where every row shares a timestamp. Messages with no
+   * mentions are simply absent from the result; an empty input array returns an
+   * empty array without touching the database.
+   */
+  listMentionsByMessageIds(messageIds: string[]): Promise<MessageMention[]>;
 
   /**
    * Invite links and join requests (`docs/decisions/0019`) - **optional**.

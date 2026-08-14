@@ -29,7 +29,8 @@ and Drizzle adapters, Redis event fan-out, typing/presence/receipts, reactions,
 quote-replies, participant-scoped search, `afterMessageMutation`, the browser
 client with React hooks and polling fallback, `@chatpack/cli init`,
 Filepack-backed file attachments via `@chatpack/file`, invite links with join
-requests, and public channels (a browsable directory of public groups).
+requests, public channels (a browsable directory of public groups), mentions,
+and message forwarding.
 
 True message threads, push notification providers, reusable React UI
 components, and multi-node presence have not shipped.
@@ -149,7 +150,15 @@ if (result.error !== null) console.error(result.error.code);
 await chatClient.messages.send({ conversationId, body: "agreed", replyToMessageId: result.data.id });
 await chatClient.messages.react({ messageId: result.data.id, emoji: "👍" });
 await chatClient.messages.unreact({ messageId: result.data.id, emoji: "👍" });
+
+// Mention by id (your UI renders the @name), and forward into another thread.
+await chatClient.messages.send({ conversationId, body: "@bob take a look", mentions: ["bob"] });
+await chatClient.messages.forward({ messageId: result.data.id, toConversationId: otherId });
 ```
+
+`messages.forward` names the destination `toConversationId` because the source
+is `messageId`; it resolves with the **new** message in the target, and the cache
+applies it there - the source conversation is untouched, exactly like the server.
 
 Search every conversation visible to the signed-in participant with
 `messages.search({ query, limit, cursor })`. React applications can use
@@ -265,6 +274,9 @@ the server's `canModerate` says otherwise, and every call returns
    `getConversation`, `updateConversation`, `addParticipants`,
    `removeParticipant`, `setParticipantRole`,
    `sendMessage`, `listMessages`, `editMessage`, `deleteMessage`,
+   `forwardMessage` (destination is `toConversationId`, not `conversationId` -
+   only the HTTP body calls it `conversationId`, because the route already
+   names the source),
    `searchMessages`, `addReaction`, `removeReaction`, `markRead`, `listMessagesAfter`,
    `createInvite`, `listInvites`, `revokeInvite`, `getInvitePreview`,
    `acceptInvite`, `requestToJoin`, `listJoinRequests`, `resolveJoinRequest`,
@@ -552,12 +564,13 @@ A complete plain-Node version lives in `examples/node-server` in the repo.
 | PATCH  | `/conversations/:id/join-requests` | `{ userId, decision }` - admin    | `{ joinRequest, conversation }`            |
 | GET    | `/channels`                   | `?limit=&cursor=`                      | `{ channels, nextCursor }` - previews      |
 | POST   | `/conversations/:id/join`     | `{ message? }`                         | `{ status, conversation, joinRequest }`    |
-| POST   | `/conversations/:id/messages` | `{ body, role?, replyToMessageId?, metadata? }` | `{ message }` (201)              |
+| POST   | `/conversations/:id/messages` | `{ body, role?, replyToMessageId?, mentions?, metadata? }` | `{ message }` (201)   |
 | GET    | `/conversations/:id/messages` | `?limit=&cursor=`                      | `{ messages, nextCursor }` - newest first |
 | GET    | `/search/messages`            | `?q=&limit=&cursor=`                   | `{ messages, nextCursor }` - ranked       |
 | POST   | `/conversations/:id/read`     | `{ messageId }`                        | `{ ok: true }`                            |
-| PATCH  | `/messages/:id`               | `{ body }`                             | `{ message }`                             |
+| PATCH  | `/messages/:id`               | `{ body, mentions? }`                  | `{ message }`                             |
 | DELETE | `/messages/:id`               | -                                      | `{ message }` (soft-deleted)              |
+| POST   | `/messages/:id/forward`       | `{ conversationId, role?, mentions?, metadata? }` | `{ message }` (201) - the copy  |
 | POST   | `/messages/:id/reactions`     | `{ emoji }`                            | `{ message }` (full reaction set)         |
 | DELETE | `/messages/:id/reactions`     | `{ emoji }`                            | `{ message }` (full reaction set)         |
 | GET    | `/stream`                     | SSE; auto `Last-Event-ID` on reconnect | `text/event-stream`                       |
@@ -720,6 +733,10 @@ Semantics that trip up generated clients:
   **non-empty string after trimming**, on send and on edit - whitespace-only is
   400 `INVALID_INPUT`. There is no such thing as a body-less message, so an
   attachment-only or sticker-only UI has to synthesize one.
+- Every message object carries `mentions: string[]` (the participants named in
+  it, empty when none) and `forwardedFrom: { messageId, conversationId,
+  senderId } | null`. Unlike `replyTo`, both come from stored rows: mentions
+  from their own table, provenance from three columns on the message.
 - Every message object carries `reactions` and reply fields:
   `reactions: [{ emoji, count, userIds }]` (grouped, `userIds` earliest-first,
   at most 2 entries per emoji in a DM, up to the participant count in a group)
@@ -747,6 +764,37 @@ Semantics that trip up generated clients:
   replies intact; a reply to a reply is still one hop; and the pointer is
   immutable (`PATCH /messages/:id` only ever changes the body). v0 still has
   **no threads** - no per-message reply lists, unread counts, or pagination.
+- **Mentions are ids you supply, never parsed from the text.** Send or edit with
+  `mentions: ["user_1", ...]`; core never parses `body` (ADR 0022 - text is
+  opaque, markdown and rendering are yours),
+  so `body` and `mentions` can legitimately disagree and **your app owns keeping
+  them in step** - it renders the `@name`, it tells Chatpack which ids that
+  means. Every id must be a **current participant** or the whole call is 400
+  `MENTION_NOT_PARTICIPANT` - a mention is never silently dropped, because an
+  invisible drop makes the sender believe a notification went out. Mentioning
+  yourself is allowed; at most 256 ids per message. On `PATCH /messages/:id`,
+  **omitting `mentions` leaves the stored set alone** (so a mentions-unaware
+  client cannot erase them) and `mentions: []` clears it. Ids already stored are
+  re-accepted even if that user has since left, so fixing a typo still works;
+  a *new* id must still be a participant. Treat the array as a **set** - it
+  reads back sorted, not in the order you sent it. A mention is not a message:
+  no `seq`, no `unreadCount`, no reordering, no SSE event of its own. Chatpack
+  does **not** notify anyone or keep a mention inbox - `afterMessageMutation`
+  gets `mentions` next to `recipientIds` so you can.
+- **Forwarding copies the message.** `POST /messages/:id/forward` with
+  `{ conversationId }` writes a **new** message in the target: your id as
+  sender, the body copied verbatim, a normal `seq`, and it counts toward the
+  target's unread. Nothing is a live pointer, so editing or deleting the
+  original never changes the copy - and the copy carries no excerpt of the
+  source, because the people reading it may have no access to that conversation.
+  You need **read** on the source and **write** on the target; forwarding a
+  tombstone is 409 `MESSAGE_DELETED`. `forwardedFrom` names the **immediate**
+  source (one hop, like replies), and holds three ids only - never the source
+  conversation's *name*. Reactions, the reply pointer, mentions, metadata, and
+  `role` do **not** travel; pass fresh `mentions`/`metadata`/`role` if you want
+  them, and `mentions` is validated against the **target**. `beforeMessageSend`
+  runs with `action: "send"` (**not** a third `"forward"` action, so existing
+  content filters keep covering it) and `forwardedFrom` set - branch on that.
 - `role` is `"user" | "assistant" | "system"` (default `"user"`) - a stored
   label; core never branches on it. Anything else is a 400.
 - `otherUserId` and group `userIds` are **not validated to exist** (Chatpack
@@ -758,6 +806,8 @@ Semantics that trip up generated clients:
   `NOT_CONVERSATION_ADMIN` (a group management call by a non-admin),
   403 `NOT_PUBLIC_CONVERSATION` (joining a group that is not a channel - a
   refusal, not a pretend 404),
+  400 `MENTION_NOT_PARTICIPANT` (a mention named someone outside the
+  conversation - 400 because the request is malformed, not denied),
   404 `*_NOT_FOUND`, 409 `MESSAGE_DELETED`, 409 `NOT_GROUP_CONVERSATION`
   (a group-only call on a DM), 409 `LAST_ADMIN_REMAINING`,
   409 `ALREADY_PARTICIPANT` (asking to join a group you are in),
@@ -905,7 +955,17 @@ curl -s 'localhost:3000/api/chat/channels?limit=10' -H 'cookie: demo_user=dave'
 curl -si -X POST localhost:3000/api/chat/conversations/GROUP_ID/join \
   -H 'cookie: demo_user=dave'
 
-# 7. live stream (expect ": connected", then events as messages are sent;
+# 7. mention a member, then forward the message into the DM
+#    (expect 201 with mentions ["carol"]; then 201 whose forwardedFrom names
+#    GROUP_ID and whose senderId is alice, NOT the original sender)
+curl -si -X POST localhost:3000/api/chat/conversations/GROUP_ID/messages \
+  -H 'cookie: demo_user=alice' -H 'content-type: application/json' \
+  -d '{"body":"@carol ship it","mentions":["carol"]}'
+curl -si -X POST localhost:3000/api/chat/messages/MSG_ID/forward \
+  -H 'cookie: demo_user=alice' -H 'content-type: application/json' \
+  -d '{"conversationId":"conv_1"}'
+
+# 8. live stream (expect ": connected", then events as messages are sent;
 #    reaction.* and participant.*/conversation.updated frames arrive with no
 #    `id:` line - that is correct)
 curl -sN localhost:3000/api/chat/stream -H 'cookie: demo_user=bob'
@@ -947,7 +1007,7 @@ chatpack({
     // AFTER persistence + broadcast - side-effects only. `action` is
     // "send" | "edit" | "delete"; filter it for push or queue work.
     afterMessageMutation: async ({
-      action, message, conversation, recipientIds,
+      action, message, conversation, recipientIds, mentions,
     }) => { ... },
   },
 })
@@ -957,8 +1017,17 @@ chatpack({
   `422 MESSAGE_REJECTED` with the thrown error's message. Throw a
   `ChatpackError` to use a different code.
 - `beforeMessageSend` returning `{ metadata }` applies on sends only.
+- `beforeMessageSend` also gets `mentions` (the validated set) and
+  `forwardedFrom` (`null` for an ordinary send). A **forward reports
+  `action: "send"`**, deliberately - a third `"forward"` action would have
+  silently exempted every filter already written against `"send"`. Branch on
+  `forwardedFrom` when a forward needs different treatment.
 - `afterMessageMutation` receives the raw persisted message, conversation,
-  `recipientIds`, and `action` (`send`, `edit`, or `delete`). Chatpack
+  `recipientIds`, `mentions`, and `action` (`send`, `edit`, or `delete`).
+  `mentions` sits next to `recipientIds` so a push integration can tell
+  "everyone in the room" from "the people actually named" - Chatpack itself
+  notifies nobody. It is reported on `delete` too (mention rows outlive a
+  tombstone, like reactions). Chatpack
   still emits its internal `message.created`, `message.updated`, and
   `message.deleted` events for UI clients.
 - **Notify `recipientIds`, not `otherParticipantId`.** `recipientIds` is every
@@ -992,7 +1061,7 @@ clouds, ...).
 ## The contract
 
 Implement the `StorageAdapter` interface exported from `@chatpack/core` and
-pass it as `chatpack({ storage: yourAdapter() })`. Nineteen required async
+pass it as `chatpack({ storage: yourAdapter() })`. Twenty-one required async
 methods:
 
 | Method                          | Contract                                                                  |
@@ -1016,9 +1085,17 @@ methods:
 | `addReaction`                   | Idempotent insert; return the message's **full** reaction set (inv. 12)   |
 | `removeReaction`                | Idempotent delete; return the remaining set (inv. 12)                     |
 | `listReactionsByMessageIds`     | Batched reactions for a page, ascending `createdAt` (invariant 13)        |
+| `setMessageMentions`            | **Replace** one message's mention set; total, idempotent, returns nothing  |
+| `listMentionsByMessageIds`      | Batched mentions for a page, ascending `(createdAt, userId)` (inv. 20)     |
 
 Exact TypeScript signatures and per-method TSDoc ship in the package's
 `.d.ts` (`@chatpack/core`, `storage.ts` module).
+
+The two mention methods are required for the same reason the group ones are: a
+mention row either exists or it doesn't. An adapter that predates ADR 0023 fails
+to typecheck until it implements both - deliberate, since silently discarding
+mentions looks exactly like a lost notification. Forwarding adds **no** methods:
+it is `addMessage` with three more nullable columns.
 
 The five group methods are **required, not optional** (unlike `searchMessages`):
 a membership row either exists or it doesn't, so the semantics are identical on
@@ -1122,9 +1199,15 @@ moderation calls then return `MODERATION_UNSUPPORTED`.
 - **Message**: `id`, `conversationId`, `senderId`, `body`, `role`
   (`"user" | "assistant" | "system"`), `seq: number`, `createdAt: Date`,
   `editedAt: Date | null`, `deletedAt: Date | null`,
-  `replyToMessageId: string | null`, `metadata`.
+  `replyToMessageId: string | null`, `forwardedFromMessageId`,
+  `forwardedFromConversationId`, `forwardedFromSenderId` (all
+  `string | null`, all three set or all three null), `metadata`.
 - **Reaction**: `messageId`, `userId`, `emoji`, `createdAt: Date`. Unique on
   the `(messageId, userId, emoji)` triple. Reactions have no id and no `seq`.
+- **MessageMention**: `messageId`, `userId`, `createdAt: Date`. Unique on the
+  `(messageId, userId)` pair. No id and no `seq`. `userId` was a participant
+  when the mention was made and is **not** re-checked, so it may name someone
+  who has since left.
 - **ConversationInvite** (optional capability): `code` (the primary key *and*
   the secret), `conversationId`, `createdBy`, `createdAt: Date`,
   `expiresAt: Date | null`, `maxUses: number | null`, `uses: number`,
@@ -1150,9 +1233,17 @@ moderation calls then return `MODERATION_UNSUPPORTED`.
   `revokedAt: Date | null`, `revokedByUserId: string | null`. Never deleted -
   revoked and expired rows are the audit history.
 
-Adapters store `replyToMessageId` verbatim (core already validated it) and
-never see the API-only decorations `replyTo` / `reactions` - core computes
-those per request from `getMessagesByIds` and `listReactionsByMessageIds`.
+Adapters store `replyToMessageId` and the three `forwardedFrom*` columns
+verbatim (core already validated them) and never see the API-only decorations
+`replyTo` / `reactions` / `mentions` / `forwardedFrom` - core computes those per
+request from `getMessagesByIds`, `listReactionsByMessageIds`,
+`listMentionsByMessageIds`, and (for `forwardedFrom`) the message's own columns.
+
+Give `forwardedFromMessageId` **no foreign key**, for the same reason
+`replyToMessageId` has none: a forward is a copy that must outlive its source,
+including a source conversation the reader was never party to. Do index it
+(partially, where non-null) - "what was forwarded from this" is the query an app
+builds a share count on, and adding the index later means locking the table.
 
 Users are opaque string ids. Chatpack never owns a users table - do not add
 foreign keys into the app's users table and do not validate user existence in
@@ -1298,6 +1389,25 @@ else is implementation detail.
     `listPublicConversations`, which must return `type: "group"` **and**
     `visibility: "public"` rows in `listConversations` order.
 
+19. **`setMessageMentions` replaces the whole set, and is total.** It is not an
+    add: after the call, the message's mentions are **exactly** the `userIds`
+    core handed you - insert the new, delete everything else for that message,
+    in one transaction. An empty array means delete them all (`NOT IN ()` is not
+    valid SQL, so drop the predicate rather than building an empty one). Rows
+    that survive a replace must keep their original `createdAt` - re-stamping
+    them reorders mentions that did not change. Enforce uniqueness on
+    `(messageId, userId)` in the database (insert-on-conflict-do-nothing), like
+    reactions, and return **nothing**: core supplied the set, so a post-write
+    select is pure cost. And as with reactions, never touch `lastSeq` or the
+    activity timestamp - a mention is not a message.
+
+20. **`listMentionsByMessageIds` is batched and ordered `(createdAt, userId)`.**
+    One query for a whole page, ascending by `createdAt` **with `userId` as the
+    tiebreak**. The tiebreak is not decoration: a set written in one call shares
+    a timestamp, so without it the row order is undefined and two adapters
+    return the same mentions in different orders. Empty input returns `[]`
+    without a query (invariant 13's rule again).
+
 ## Level 2 - reference realization (Postgres SQL)
 
 The official Postgres schema. If your store speaks SQL, use it as-is; if not,
@@ -1381,14 +1491,30 @@ CREATE TABLE IF NOT EXISTS "chatpack_messages" (
   "edited_at" timestamptz,
   "deleted_at" timestamptz,
   "reply_to_message_id" text,
+  -- Forward provenance (ADR 0024): three frozen ids, no foreign keys.
+  "forwarded_from_message_id" text,
+  "forwarded_from_conversation_id" text,
+  "forwarded_from_sender_id" text,
   "metadata" jsonb NOT NULL DEFAULT '{}'
 );
 -- Upgrade path: the CREATE TABLE above is a no-op on an existing table, so
--- the reply column needs its own idempotent statement.
+-- each added column needs its own idempotent statement.
 ALTER TABLE "chatpack_messages"
   ADD COLUMN IF NOT EXISTS "reply_to_message_id" text;
+ALTER TABLE "chatpack_messages"
+  ADD COLUMN IF NOT EXISTS "forwarded_from_message_id" text;
+ALTER TABLE "chatpack_messages"
+  ADD COLUMN IF NOT EXISTS "forwarded_from_conversation_id" text;
+ALTER TABLE "chatpack_messages"
+  ADD COLUMN IF NOT EXISTS "forwarded_from_sender_id" text;
 CREATE UNIQUE INDEX IF NOT EXISTS "chatpack_messages_conv_seq_idx"
   ON "chatpack_messages" ("conversation_id", "seq");
+-- "What was forwarded from this message" - not a query core makes, but the one
+-- an app builds a share count on. PARTIAL, because a btree indexes NULLs and
+-- almost every message is not a forward.
+CREATE INDEX IF NOT EXISTS "chatpack_messages_forwarded_from_idx"
+  ON "chatpack_messages" ("forwarded_from_message_id")
+  WHERE "forwarded_from_message_id" IS NOT NULL;
 
 -- Search index (optional capability). Superseded an earlier trigram index.
 DROP INDEX IF EXISTS "chatpack_messages_body_search_idx";
@@ -1411,6 +1537,23 @@ CREATE UNIQUE INDEX IF NOT EXISTS "chatpack_reactions_msg_user_emoji_idx"
   ON "chatpack_message_reactions" ("message_id", "user_id", "emoji");
 CREATE INDEX IF NOT EXISTS "chatpack_reactions_message_idx"
   ON "chatpack_message_reactions" ("message_id", "created_at");
+
+-- Mentions (ADR 0023). Its own table rather than a text[] on the message: the
+-- unique index is what makes a mention set a set, and "messages that mention
+-- me" is the query every app eventually writes.
+CREATE TABLE IF NOT EXISTS "chatpack_message_mentions" (
+  "message_id" text NOT NULL REFERENCES "chatpack_messages"("id") ON DELETE CASCADE,
+  "user_id" text NOT NULL,                  -- never a FK: you own the users table
+  "created_at" timestamptz NOT NULL
+);
+CREATE UNIQUE INDEX IF NOT EXISTS "chatpack_mentions_msg_user_idx"
+  ON "chatpack_message_mentions" ("message_id", "user_id");
+CREATE INDEX IF NOT EXISTS "chatpack_mentions_message_idx"
+  ON "chatpack_message_mentions" ("message_id", "created_at");
+-- Core never runs this query - a mention inbox is out of scope - but adding the
+-- index after the table is large means locking it, so it ships now.
+CREATE INDEX IF NOT EXISTS "chatpack_mentions_user_idx"
+  ON "chatpack_message_mentions" ("user_id", "created_at");
 
 -- Optional invite capability (ADR 0019). Pure table additions: no column
 -- changes and no index swaps, so this is safe to run before deploying.
@@ -1504,7 +1647,11 @@ CREATE INDEX IF NOT EXISTS "chatpack_user_bans_created_idx"
 ```
 
 `reply_to_message_id` deliberately has **no foreign key**: a reply must outlive
-its parent, and messages are only ever soft-deleted anyway.
+its parent, and messages are only ever soft-deleted anyway. The three
+`forwarded_from_*` columns have none for a stronger version of the same reason -
+a forward is a **copy** living in a conversation that may have no overlap with
+the source's participants, so a cascade from the source would delete other
+people's messages.
 
 **Existing Postgres deployments must re-run the migration before upgrading** -
 every statement is `IF NOT EXISTS` / `ADD COLUMN IF NOT EXISTS`, so re-running
@@ -1692,6 +1839,8 @@ export function myAdapter(client: MyDbClient): StorageAdapter {
       // Atomically bump the conversation's seq counter and insert the
       // message with that seq (single transaction / RPC / mutation).
       // Store replyToMessageId verbatim - core already validated it.
+      // Same for the three forwardedFrom* fields (ADR 0024): copy them through
+      // as plain nullable columns; a forward is otherwise an ordinary message.
       // return message; // with adapter-generated id and real Date fields
     },
     async getMessage(messageId) {
@@ -1744,6 +1893,19 @@ export function myAdapter(client: MyDbClient): StorageAdapter {
       // One batched query for a whole page, ascending createdAt so core's
       // aggregated userIds come out earliest-first. [] in -> [] out.
       // return reactions;
+    },
+    async setMessageMentions({ messageId, userIds }) {
+      // REPLACE, not add (invariant 19): in ONE transaction, insert-on-
+      // conflict-do-nothing for userIds and delete every other mention row on
+      // this message. userIds: [] means delete them all. Do not re-stamp
+      // createdAt on rows that survive, and do not touch the conversation's
+      // seq counter or activity timestamp. Return nothing.
+    },
+    async listMentionsByMessageIds(messageIds) {
+      // One batched query, ascending (createdAt, userId) - the userId tiebreak
+      // matters because a set written in one call shares a timestamp
+      // (invariant 20). [] in -> [] out.
+      // return mentions;
     },
     // Optional capability (ADR 0019). Omit the WHOLE namespace or implement
     // all nine - core checks for `invites`, not for individual methods.
@@ -1874,6 +2036,25 @@ export function myAdapter(client: MyDbClient): StorageAdapter {
   `(lastActivityAt, id)`, and a client that mixes them will skip or repeat rows.
 - Leaving the public index **total** rather than partial - it works, but every
   directory page then sorts every DM in the table.
+- Treating `setMessageMentions` as an **add**. It is a replace: leftover rows
+  mean an edit that removes a mention silently keeps notifying that person
+  (invariant 19). The delete-the-complement half is not optional.
+- Building `NOT IN ()` for an empty `userIds` - not valid SQL. Drop the
+  predicate so the empty set deletes every row for that message.
+- Re-stamping `createdAt` on mentions that survive a replace, which reorders a
+  set that did not change - and, with the `(createdAt, userId)` read order, makes
+  the same message's `mentions` array shuffle on every unrelated edit.
+- Omitting the `userId` tiebreak from `listMentionsByMessageIds`. Every row in
+  one write shares a timestamp, so `ORDER BY created_at` alone leaves the order
+  to the planner and two adapters disagree (invariant 20).
+- Re-validating mentions in the adapter against current membership. Core
+  validated once, at claim time, and deliberately grandfathers a mention of
+  someone who has since left.
+- A foreign key on `forwarded_from_message_id`, or a cascade from the source
+  conversation. A forward is a copy in someone else's conversation; cascading
+  deletes their messages when the source is cleaned up.
+- Leaving `chatpack_messages_forwarded_from_idx` **total** rather than partial:
+  a btree indexes NULLs, and almost every message is not a forward.
 
 ## Verify your adapter
 
@@ -1979,6 +2160,27 @@ if any fails, the bug is in the adapter.
     Backdate `expires_at` - the ban stops enforcing but stays in history. Omit
     the `moderation` namespace and every moderation route must be a clean 501,
     not a crash.
+21. **Mentions replace, and survive an edit.** Send a message mentioning two
+    participants - both come back, sorted, exactly two rows. Edit the body
+    **without** sending `mentions`: both are still there. Edit with one of the
+    two: exactly one row survives and its `created_at` is **unchanged**. Edit
+    with `[]`: zero rows. Mention a non-participant: 400
+    `MENTION_NOT_PARTICIPANT` and nothing was written. Remove a mentioned
+    participant from the group, then re-edit the message with that same id -
+    still accepted (grandfathered); a *different* departed id is rejected.
+    Bonus: note the conversation's list position and `unreadCount` around all of
+    this - a mention changes neither, and the next message still gets the `seq`
+    it would have had.
+22. **Forwarding is a copy.** Forward a message from a conversation the target's
+    other participant is not in: the copy has your id as sender, the body
+    verbatim, its own `seq`, and `forwardedFrom` with three ids. Now edit **and**
+    delete the original - refetch the copy: byte-identical, `deletedAt: null`.
+    Hard-delete the source conversation row: the copy still reads back with its
+    provenance intact (proves no foreign key). Forward a tombstone: 409
+    `MESSAGE_DELETED`. Forward as someone who cannot read the source:
+    `FORBIDDEN_READ`; as someone who cannot write the target: `FORBIDDEN_WRITE`.
+    Check that reactions, the reply pointer, mentions, metadata, and a
+    non-default `role` on the source did **not** travel.
 
 ## Real-time plugins and custom adapters
 

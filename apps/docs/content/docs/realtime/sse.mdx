@@ -64,6 +64,19 @@ events.onerror = () => {
 };
 ```
 
+## Mentions and forwards need no new event
+
+Neither feature adds an event type. A mention rides along inside the message
+snapshot every `message.created` / `message.updated` frame already carries, so a
+client reads `message.mentions` and highlights the thread - there is no
+`mention.added`, and nothing to subscribe to.
+
+A forward is an ordinary send in the **target** conversation: one
+`message.created`, delivered to the target's participants only, with a `seq` and
+therefore an `id:` line, so it gap-fills like any other message. The source
+conversation emits nothing at all - the original was not touched, and telling its
+participants that someone quoted them elsewhere would leak the destination.
+
 ## Reaction events are a third category
 
 `reaction.added` / `reaction.removed` are durable-backed - they are not

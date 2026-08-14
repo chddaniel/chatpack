@@ -58,9 +58,24 @@ const room = await chat.api.createGroupConversation({
 It joins as a `member`, so it can send and read but not manage membership. Give
 it `role: "admin"` only if your backend needs it to add or remove people. Since
 every participant receives the group's messages, decide when the assistant should
-answer - replying to every message in a busy room is rarely what you want. Your
-`afterMessageMutation` hook sees `recipientIds`, so gate on a mention, a command
-prefix, or a direct address before calling the model.
+answer - replying to every message in a busy room is rarely what you want.
+
+The cleanest gate is a **mention**. Your composer passes the assistant's id in
+`mentions` when the user @-picks it, and `afterMessageMutation` hands you the
+validated set, so the check is an id comparison rather than a regex over the body:
+
+```ts
+afterMessageMutation: async ({ action, message, mentions }) => {
+  if (action !== "send" || !mentions.includes(ASSISTANT_ID)) return;
+  await queueAssistantReply(message);
+};
+```
+
+Chatpack won't help you find `@assistant` in the text - it never parses `body`
+([ADR 0022](/docs/concepts/architecture)) - but it does guarantee the id is a real
+participant, so an id in `mentions` means the assistant is actually in the room. A
+command prefix or a direct address works too; `recipientIds` is there when you want
+every participant instead.
 
 ## The `role` field
 

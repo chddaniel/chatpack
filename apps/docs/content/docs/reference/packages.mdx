@@ -10,12 +10,14 @@ The current package set covers direct and group conversations, invite links and
 join requests, public channels with a browsable directory, text messages,
 permissions, read state and unread counts, SSE with gap-fill, memory and Drizzle
 storage, Redis event fan-out, typing/presence/receipts, reactions, quote-replies,
-participant-scoped search, the post-persistence mutation hook, the browser client
-with React hooks and polling fallback, Filepack-backed file attachments, and
-project setup with `@chatpack/cli init`.
+validated mentions, message forwarding, participant-scoped search, the
+post-persistence mutation hook, the browser client with React hooks and polling
+fallback, Filepack-backed file attachments, and project setup with
+`@chatpack/cli init`.
 
-Push notification providers, reusable React UI components, true message
-threads, and multi-node presence have not shipped.
+Push notification providers, a mention inbox or mention notifications, reusable
+React UI components, true message threads, and multi-node presence have not
+shipped.
 
 ## `@chatpack/core`
 
@@ -76,6 +78,7 @@ cache queries.
 | `joinRequests`                   | Create, list, approve, and deny join requests                                                                       |
 | `channels`                       | List public-channel previews and join channels                                                                      |
 | `messages.react` / `unreact`     | Idempotent reaction writes; return the message's complete reaction set                                              |
+| `messages.forward`               | Copy a message into another conversation (`toConversationId`); resolves with the copy                               |
 | `messages.search`                | Participant-scoped, whole-token, relevance-ranked message search                                                    |
 | `realtime`                       | One lazy EventSource with durable deduplication                                                                     |
 | `realtime` config                | `mode: "auto" \| "sse" \| "poll"` - [polling fallback](/docs/client/realtime#polling-fallback) where SSE can't work |
@@ -86,9 +89,11 @@ cache queries.
 ## `@chatpack/adapter-memory`
 
 In-memory storage - zero-setup demos and fast, deterministic tests. The
-reference `StorageAdapter` implementation, including all three optional
-capabilities (search, the `invites` namespace behind invite links and join
-requests, and the `channels` namespace behind the public directory).
+reference `StorageAdapter` implementation - all twenty-one required methods,
+including the two that mentions added (`setMessageMentions`,
+`listMentionsByMessageIds`) - plus all four optional capabilities (search, the
+`invites` namespace behind invite links and join requests, the `channels`
+namespace behind the public directory, and the `moderation` namespace).
 
 | Export            | What it is                          |
 | ----------------- | ----------------------------------- |
@@ -101,14 +106,14 @@ requests, and the `channels` namespace behind the public directory).
 Drizzle ORM (Postgres) storage - real persistence for production. Peer
 dependency on `drizzle-orm`.
 
-| Export                                                                                                                                    | What it is                                                 |
-| ----------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
-| `drizzleAdapter(db)`                                                                                                                      | Create the adapter from any Drizzle Postgres instance      |
-| `chatpackSchema`                                                                                                                          | Drizzle table objects (for your `drizzle-kit` flow)        |
-| `conversations`, `conversationParticipants`, `messages`, `messageReactions`, `messageSearchTokens`, `conversationInvites`, `joinRequests` | The individual tables                                      |
-| `migrationSql`                                                                                                                            | Idempotent DDL as one string (no Drizzle needed to run it) |
-| `migrationStatements`                                                                                                                     | The same DDL split for one-statement-per-call drivers      |
-| `backfillMessageSearchTokens(db)`                                                                                                         | Index existing message bodies for search after an upgrade  |
+| Export                                                                                                                                                                                                                           | What it is                                                 |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
+| `drizzleAdapter(db)`                                                                                                                                                                                                             | Create the adapter from any Drizzle Postgres instance      |
+| `chatpackSchema`                                                                                                                                                                                                                 | Drizzle table objects (for your `drizzle-kit` flow)        |
+| `conversations`, `conversationParticipants`, `messages`, `messageReactions`, `messageMentions`, `messageSearchTokens`, `conversationInvites`, `joinRequests`, `userBlocks`, `conversationMutes`, `moderationReports`, `userBans` | The individual tables                                      |
+| `migrationSql`                                                                                                                                                                                                                   | Idempotent DDL as one string (no Drizzle needed to run it) |
+| `migrationStatements`                                                                                                                                                                                                            | The same DDL split for one-statement-per-call drivers      |
+| `backfillMessageSearchTokens(db)`                                                                                                                                                                                                | Index existing message bodies for search after an upgrade  |
 
 → [Drizzle / Postgres](/docs/storage/drizzle)
 

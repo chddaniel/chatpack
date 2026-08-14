@@ -27,6 +27,7 @@ export type {
   MessageActions,
   MessageDeleteInput,
   MessageEditInput,
+  MessageForwardInput,
   MessageListInput,
   MessageReactInput,
   MessageSearchInput,

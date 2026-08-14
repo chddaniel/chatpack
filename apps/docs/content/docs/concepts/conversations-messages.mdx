@@ -108,15 +108,31 @@ Four entities, all stored through the adapter:
         "Quote-reply pointer at another message in the same conversation, or null. Immutable - edits only change the body.",
       type: "string | null",
     },
+    forwardedFromMessageId: {
+      description:
+        "Set on a forwarded copy: the message it was copied from. Frozen at forward time, and no foreign key - the source may be hard-deleted.",
+      type: "string | null",
+    },
+    forwardedFromConversationId: {
+      description: "Set on a forwarded copy: the conversation it was copied out of.",
+      type: "string | null",
+    },
+    forwardedFromSenderId: {
+      description: "Set on a forwarded copy: who sent the original.",
+      type: "string | null",
+    },
     metadata: { description: "Arbitrary JSON object. Default {}.", type: "Metadata" },
   }}
 />
 
-The API returns `MessageWithDetails` - the above plus two fields computed per
-request and never stored: `replyTo` (the quoted parent's preview) and
-`reactions` (grouped by emoji). See
-[Quote-replies](#quote-replies-a-pointer-not-a-thread) and
-[Reactions](#reactions).
+The API returns `MessageWithDetails` - the above plus four decorations core
+assembles on every read: `replyTo` (the quoted parent's preview) and `reactions`
+(grouped by emoji), neither of which is stored, plus `mentions` (the participant
+ids the message names) and `forwardedFrom` (three ids, or `null`), which _are_
+durable - mentions in their own table, provenance in the three columns above. See
+[Quote-replies](#quote-replies-a-pointer-not-a-thread),
+[Reactions](#reactions), [Mentions](#mentions-ids-you-supply-not-text-we-parse),
+and [Forwarding](#forwarding-a-copy-not-a-pointer).
 
 ## Message formatting
 
@@ -153,6 +169,26 @@ use the raw `body` value.
 
 Reactions are unique on the `(messageId, userId, emoji)` triple. They have no
 id and no `seq` - they are durable, but they are not messages.
+
+**MessageMention**
+
+<TypeTable
+  type={{
+    messageId: { description: "The message doing the mentioning.", type: "string" },
+    userId: {
+      description: "The mentioned user id. Opaque - Chatpack has no users table.",
+      type: "string",
+    },
+    createdAt: {
+      description:
+        "When the mention was made. Not re-checked afterwards, so it may name someone who has since left.",
+      type: "Date",
+    },
+  }}
+/>
+
+Mentions are unique on `(messageId, userId)`, have no id and no `seq`, and are
+read back sorted by `(createdAt, userId)` - a **set**, not a sequence.
 
 ## One conversation per pair
 
@@ -427,6 +463,111 @@ themselves.
   the conversation's activity time, and doesn't reorder the conversation list. One consequence on
   the wire: reaction events are not gap-filled on SSE reconnect - see
   [Real-time](/docs/realtime/sse).
+</Callout>
+
+## Mentions: ids you supply, not text we parse
+
+Pass the ids the message names alongside the body. Chatpack stores that set and
+returns it on every read:
+
+```ts
+const message = await chat.api.sendMessage({
+  userId: "alice",
+  conversationId,
+  body: "@bob @carol ship it",
+  mentions: ["bob", "carol"],
+});
+
+message.mentions; // ["bob", "carol"]
+```
+
+**Chatpack never reads `body` looking for `@`.** It has no users table to resolve
+a name against and text stays opaque ([ADR 0022](/docs/concepts/architecture)),
+so the ids come from your composer's picker. The consequence is worth stating
+plainly: `body` and `mentions` can legitimately disagree in both directions - text
+that says `@bob` with an empty array, or a mention of someone the text never names
+
+- and keeping them in step is your app's job, not a rule core enforces.
+
+What core does enforce is that a mention is **real**. Every id must be a current
+participant of the conversation, or the entire call fails with `400
+MENTION_NOT_PARTICIPANT` and nothing is written - not even the message. Chatpack
+will not quietly drop the bad id and store the rest, because a drop nobody sees
+looks exactly like a notification that fired.
+
+Semantics worth knowing:
+
+- **It's a set.** Duplicates collapse, and the array reads back sorted by
+  `(createdAt, userId)` - not in the order you passed it. Ids supplied in one call
+  share a timestamp, so they come back ordered by id. Nothing about a mention
+  depends on its position; that ordering is what makes two storage adapters return
+  the same array.
+- **Mentioning yourself is allowed.** Chatpack doesn't notify anyone, so there's
+  nothing to protect you from, and a "note to self" mention is a real pattern.
+- The cap is **256 per message**, matching the group participant cap. More is
+  `400 INVALID_INPUT`, as is a non-string entry or a blank one.
+- **On edit, omitting `mentions` leaves the stored set alone**; `mentions: []`
+  clears it. Those have to be different so a client written before mentions
+  existed can PATCH a body without erasing them.
+- **Ids already stored stay valid.** Only _new_ ids are checked against current
+  membership, so fixing a typo in a body months later doesn't fail because
+  someone has since left - the mention was legitimate when it was made.
+
+<Callout type="info">
+  **A mention is not a message, and not a notification.** It gets no `seq`, doesn't light the unread
+  badge, doesn't reorder the conversation list, and emits no event of its own - the
+  `message.created` frame carries it. Chatpack also keeps **no mention inbox**: there's no "mentions
+  of me" feed to query. `afterMessageMutation` hands you `mentions` next to `recipientIds`, which is
+  where a push or email integration belongs. See [Message hooks](/docs/concepts/message-hooks).
+</Callout>
+
+## Forwarding: a copy, not a pointer
+
+```ts
+const forwarded = await chat.api.forwardMessage({
+  userId: "alice",
+  messageId: "msg_1",
+  toConversationId: "conv_7", // any conversation alice can write to
+});
+
+forwarded.id; // a new id - this is a new message in conv_7
+forwarded.senderId; // "alice" - the forwarder, not the original author
+forwarded.seq; // conv_7's next seq
+forwarded.forwardedFrom; // { messageId: "msg_1", conversationId: "conv_1", senderId: "bob" }
+```
+
+Forwarding **copies**. The body is carried over verbatim into a brand-new message
+with its own id and its own `seq`, counting toward unread in the destination like
+anything else you send. Edit or delete the original afterwards and the copy is
+untouched - there is no live link, by design. If you want something that tracks
+the source, you want a quote-reply in the same conversation.
+
+The forwarder is the sender, because they are the one speaking in the destination.
+The original author lives in `forwardedFrom.senderId`; render "Forwarded from
+&hellip;" from there.
+
+Semantics worth knowing:
+
+- **Read the source, write the target.** Two separate checks: `403
+FORBIDDEN_READ` if you can't read the message, `403 FORBIDDEN_WRITE` if you
+  can't post in the destination. Forwarding a message back into its own
+  conversation is allowed - it's just a quote of a quote.
+- **Tombstones can't be forwarded** - `409 MESSAGE_DELETED`. Unlike replying to a
+  deleted message, there's no race worth accommodating: the whole point is to
+  reproduce content that no longer exists.
+- **One hop.** Forwarding a forward names the message you actually forwarded, not
+  the start of the chain. Same rule as replies, for the same reason: a chain of
+  provenance would leak a trail through conversations the reader was never in.
+- **Nothing else travels.** Reactions, the reply pointer, mentions, metadata, and
+  `role` all reset - `role` back to `"user"`. Pass fresh `mentions`, `metadata`,
+  or `role` in the forward if you want them, and `mentions` is validated against
+  the **target**.
+
+<Callout type="info">
+  `forwardedFrom` is three ids and nothing more - deliberately no excerpt and no source conversation
+  _name_. Whoever reads the copy may have no access to where it came from, so a name or a live
+  preview would let them watch a conversation they were never in. See [ADR
+  0024](/docs/concepts/architecture).
 </Callout>
 
 ## Metadata

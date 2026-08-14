@@ -11,9 +11,10 @@ deterministic tests.
 > has its own memory, so this adapter effectively stores nothing there.
 
 This package is also the **reference implementation** of the `StorageAdapter`
-contract - all nineteen required methods, including the five that groups added
+contract - all twenty-one required methods, including the five that groups added
 (`createGroupConversation`, `addParticipants`, `removeParticipant`,
-`setParticipantRole`, `updateConversation`) - plus **all four** optional
+`setParticipantRole`, `updateConversation`) and the two that mentions added
+(`setMessageMentions`, `listMentionsByMessageIds`) - plus **all four** optional
 capabilities: search, the nine-method `invites` namespace behind invite links and
 join requests, the one-method `channels` namespace behind the public channel
 directory, and the `moderation` namespace behind blocks, mutes, reports and

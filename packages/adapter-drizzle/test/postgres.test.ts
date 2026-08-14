@@ -1694,6 +1694,264 @@ describe("moderation on Postgres", () => {
   });
 });
 
+describe("mentions on Postgres (ADR 0023)", () => {
+  /** alice (admin) + bob + carol, so there is someone to mention. */
+  function group() {
+    return chat.api.createGroupConversation({
+      userId: "alice",
+      userIds: ["bob", "carol"],
+      name: "eng",
+    });
+  }
+
+  function mentionRows(messageId: string) {
+    return pglite.query<{ user_id: string; created_at: string }>(
+      `SELECT "user_id", "created_at"::text AS created_at
+       FROM "chatpack_message_mentions" WHERE "message_id" = $1
+       ORDER BY "created_at", "user_id"`,
+      [messageId],
+    );
+  }
+
+  it("round-trips a set and reads it back in (created_at, user_id) order", async () => {
+    const conversation = await group();
+    const message = await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "hey @carol @bob",
+      mentions: ["carol", "bob"],
+    });
+
+    // Written in one call, so both rows share a timestamp and the user_id
+    // tiebreak decides - which is exactly what the memory adapter's in-JS sort
+    // reproduces. Without the tiebreak these two adapters would disagree.
+    expect(message.mentions).toEqual(["bob", "carol"]);
+    const { messages } = await chat.api.listMessages({
+      userId: "carol",
+      conversationId: conversation.id,
+    });
+    expect(messages[0]!.mentions).toEqual(["bob", "carol"]);
+    expect((await mentionRows(message.id)).rows.map((row) => row.user_id)).toEqual([
+      "bob",
+      "carol",
+    ]);
+  });
+
+  it("replaces rather than accumulates, and leaves surviving rows' created_at alone", async () => {
+    const conversation = await group();
+    const message = await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "hey @bob @carol",
+      mentions: ["bob", "carol"],
+    });
+    const before = (await mentionRows(message.id)).rows;
+    expect(before).toHaveLength(2);
+
+    // A real gap, so a re-stamped row would be visible rather than hiding
+    // inside the same millisecond.
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const edited = await chat.api.editMessage({
+      userId: "alice",
+      messageId: message.id,
+      body: "hey @bob",
+      mentions: ["bob"],
+    });
+    expect(edited.mentions).toEqual(["bob"]);
+
+    const after = (await mentionRows(message.id)).rows;
+    // The delete-the-complement half of the replace ran: carol's row is gone,
+    // not merely absent from the returned array.
+    expect(after).toHaveLength(1);
+    expect(after[0]!.user_id).toBe("bob");
+    // And the ON CONFLICT DO NOTHING half did not re-stamp bob. Re-stamping
+    // would silently reorder a set that did not change.
+    expect(after[0]!.created_at).toBe(before.find((row) => row.user_id === "bob")!.created_at);
+  });
+
+  it("deletes every row when the set is emptied", async () => {
+    const conversation = await group();
+    const message = await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "hey @bob @carol",
+      mentions: ["bob", "carol"],
+    });
+
+    // The complement of an empty set is everything, and `NOT IN ()` is not
+    // valid SQL - so this path drops the predicate instead of building one.
+    await chat.api.editMessage({
+      userId: "alice",
+      messageId: message.id,
+      body: "never mind",
+      mentions: [],
+    });
+    expect((await mentionRows(message.id)).rows).toEqual([]);
+  });
+
+  it("the unique index collapses concurrent identical writes to one row", async () => {
+    const storage = drizzleAdapter(db);
+    const conversation = await group();
+    const message = await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "hey @bob",
+      mentions: ["bob"],
+    });
+
+    await Promise.all(
+      Array.from({ length: 5 }, () =>
+        storage.setMessageMentions({ messageId: message.id, userIds: ["bob", "carol"] }),
+      ),
+    );
+    // The index is the arbiter, not a read-then-write check in the adapter.
+    expect((await mentionRows(message.id)).rows.map((row) => row.user_id)).toEqual([
+      "bob",
+      "carol",
+    ]);
+  });
+
+  it("cascades when a message row is hard-deleted", async () => {
+    const conversation = await group();
+    const message = await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "hey @bob",
+      mentions: ["bob"],
+    });
+
+    // Chatpack itself only ever soft-deletes, so this stands in for the host's
+    // own data-retention job. The FK is what keeps mention rows from outliving
+    // the message they annotate.
+    await pglite.query(`DELETE FROM "chatpack_messages" WHERE "id" = $1`, [message.id]);
+    expect((await mentionRows(message.id)).rows).toEqual([]);
+  });
+});
+
+describe("message forwarding on Postgres (ADR 0024)", () => {
+  async function seedForward() {
+    const source = await chat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "bob",
+    });
+    const target = await chat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "carol",
+    });
+    const message = await chat.api.sendMessage({
+      userId: "bob",
+      conversationId: source.id,
+      body: "the original",
+    });
+    return { source, target, message };
+  }
+
+  it("stores provenance in three plain columns and allocates a normal seq", async () => {
+    const { source, target, message } = await seedForward();
+    await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: target.id,
+      body: "first in the target",
+    });
+
+    const forwarded = await chat.api.forwardMessage({
+      userId: "alice",
+      messageId: message.id,
+      toConversationId: target.id,
+    });
+    // An ordinary message as far as the seq counter is concerned - the forward
+    // goes through the same atomic UPDATE ... RETURNING as a send.
+    expect(forwarded.seq).toBe(2);
+    expect(forwarded.senderId).toBe("alice");
+
+    const rows = await pglite.query<{
+      forwarded_from_message_id: string | null;
+      forwarded_from_conversation_id: string | null;
+      forwarded_from_sender_id: string | null;
+    }>(
+      `SELECT "forwarded_from_message_id", "forwarded_from_conversation_id",
+              "forwarded_from_sender_id"
+       FROM "chatpack_messages" WHERE "id" = $1`,
+      [forwarded.id],
+    );
+    expect(rows.rows[0]).toEqual({
+      forwarded_from_message_id: message.id,
+      forwarded_from_conversation_id: source.id,
+      forwarded_from_sender_id: "bob",
+    });
+
+    // Read back through a fresh query: provenance is assembled from those
+    // columns, not hydrated by a join the way `replyTo` is.
+    const { messages } = await chat.api.listMessages({
+      userId: "carol",
+      conversationId: target.id,
+    });
+    expect(messages[0]!.forwardedFrom).toEqual({
+      messageId: message.id,
+      conversationId: source.id,
+      senderId: "bob",
+    });
+    expect(messages[1]!.forwardedFrom).toBeNull();
+
+    // The copied body is indexed in the target like any other text, so the
+    // forward is findable by the people who can actually see it.
+    const found = await chat.api.searchMessages({ userId: "carol", query: "original" });
+    expect(found.messages.map((entry) => entry.id)).toEqual([forwarded.id]);
+  });
+
+  it("survives a hard delete of the source row: provenance is not a foreign key", async () => {
+    const { source, target, message } = await seedForward();
+    const forwarded = await chat.api.forwardMessage({
+      userId: "alice",
+      messageId: message.id,
+      toConversationId: target.id,
+    });
+
+    // Deliberately no FK on the three columns. A retention job that removes the
+    // source conversation must not reach into a conversation whose participants
+    // were never party to it - the copy is theirs now (ADR 0024 §2).
+    await pglite.query(`DELETE FROM "chatpack_conversations" WHERE "id" = $1`, [source.id]);
+
+    const { messages } = await chat.api.listMessages({
+      userId: "carol",
+      conversationId: target.id,
+    });
+    expect(messages[0]).toMatchObject({
+      id: forwarded.id,
+      body: "the original",
+      forwardedFrom: { messageId: message.id, conversationId: source.id, senderId: "bob" },
+    });
+  });
+
+  it("indexes forwarded_from_message_id partially", async () => {
+    const { target, message } = await seedForward();
+    await chat.api.forwardMessage({
+      userId: "alice",
+      messageId: message.id,
+      toConversationId: target.id,
+    });
+
+    const indexes = await pglite.query<{ indexdef: string }>(
+      `SELECT indexdef FROM pg_indexes
+       WHERE tablename = 'chatpack_messages'
+         AND indexname = 'chatpack_messages_forwarded_from_idx'`,
+    );
+    // A total btree would index a NULL for every ordinary message - which is
+    // almost all of them. The predicate is what keeps this index small, the
+    // same reason `pair_key`'s unique index is partial.
+    expect(indexes.rows[0]!.indexdef).toContain("WHERE (forwarded_from_message_id IS NOT NULL)");
+
+    // And the query the index exists for - "what was forwarded from this?" -
+    // works, even though core never asks it.
+    const copies = await pglite.query<{ count: number }>(
+      `SELECT count(*)::int AS count FROM "chatpack_messages"
+       WHERE "forwarded_from_message_id" = $1`,
+      [message.id],
+    );
+    expect(copies.rows[0]!.count).toBe(1);
+  });
+});
+
 describe("upgrading a pre-ADR-0013 database", () => {
   it("adds reply_to_message_id and the reactions table to an existing schema", async () => {
     const legacy = new PGlite();
@@ -1841,6 +2099,28 @@ describe("upgrading a pre-ADR-0013 database", () => {
       expect(published).toMatchObject({ visibility: "public", joinPolicy: "open" });
       const { channels } = await upgraded.api.listPublicConversations({ userId: "carol" });
       expect(channels.map((c) => c.conversationId)).toEqual([group.id]);
+
+      // ADR 0023/0024: the mentions table and the three provenance columns are
+      // pure additions, so a row written before the upgrade reads back as an
+      // un-forwarded message that mentions nobody - not as undefined.
+      expect(legacyMessage.mentions).toEqual([]);
+      expect(legacyMessage.forwardedFrom).toBeNull();
+
+      // And both features work on the upgraded schema, which is what proves the
+      // ALTER TABLE / CREATE TABLE statements ran rather than just parsed.
+      const mentioning = await upgraded.api.sendMessage({
+        userId: "alice",
+        conversationId: group.id,
+        body: "hey @bob",
+        mentions: ["bob"],
+      });
+      expect(mentioning.mentions).toEqual(["bob"]);
+      const forwarded = await upgraded.api.forwardMessage({
+        userId: "alice",
+        messageId: "legacy_1",
+        toConversationId: group.id,
+      });
+      expect(forwarded.forwardedFrom).toMatchObject({ messageId: "legacy_1" });
 
       // And the migration stays idempotent when run a third time.
       await legacy.exec(migrationSql);
