@@ -31,7 +31,9 @@ npx @chatpack/cli init \
 Choose `better-auth`, `authjs`, or `auth0`. The generated application includes
 Neon Postgres, Drizzle migrations, App Router, Tailwind, reviewed shadcn Radix
 Nova source, profile search, direct conversations, paged history, unread state,
-mobile navigation, and explicit polling for Vercel.
+and mobile navigation. The chat client runs in `realtime: { mode: "auto" }`, so
+it opens the SSE stream and falls back to polling on its own - which is what
+lets the same code work on a long-lived server and on Vercel functions.
 
 Better Auth enables email and password without email verification. This is a
 deliberate starter choice, not a safe public identity policy. Enable verification
@@ -109,7 +111,30 @@ Existing files are never silently overwritten. If an application entrypoint is
 ambiguous, the CLI generates a focused integration module and prints the exact
 mount snippet instead of editing the entrypoint.
 
-In starter mode, only `.git`, `.gitignore`, README, and LICENSE files are safe
-pre-existing content. README and LICENSE files are preserved. If README exists,
-the generated instructions use `CHATPACK_SETUP.md`. Generated UI files belong
-to the application; Chatpack does not publish a reusable `@chatpack/ui` package.
+In starter mode, safe pre-existing content is Git metadata, README, LICENSE,
+CHANGELOG/CONTRIBUTING-style docs, and editor, CI or OS clutter (`.github/`,
+`.vscode/`, `.editorconfig`, `.DS_Store`). Anything else - a `src/` directory,
+a stray config file - is reported instead of being merged into. README and
+LICENSE files are preserved; if a README exists, the generated instructions land
+in `CHATPACK_SETUP.md`. Generated UI files belong to the application; Chatpack
+does not publish a reusable `@chatpack/ui` package.
+
+For pnpm projects the starter also writes `pnpm-workspace.yaml` pre-approving
+the install scripts it needs (esbuild, plus sharp and unrs-resolver for
+Next.js). Without it, pnpm 10+ leaves those builds unapproved and exits
+non-zero, which reads as a failed setup. npm, Yarn and Bun projects do not get
+that file.
+
+A generated app's `run build` needs its environment variables to be **set**, because
+`src/lib/env.ts` validates them on first import. It does not need a reachable
+database - nothing connects at build time - so a placeholder value is enough in
+CI.
+
+For local development without a Neon account, every starter ships a `db:proxy`
+script. Neon's driver speaks Postgres over a WebSocket that Neon's edge
+terminates, so a plain Postgres has nothing listening for it; `db:proxy` runs a
+small local bridge in front of port 5432, and setting `NEON_WS_PROXY` points the
+driver at it. Unset that variable and the code path does not run, so production
+is unaffected. Apply migrations with `psql` in that mode - drizzle-kit opens its
+own Neon connection and ignores `NEON_WS_PROXY`. The generated README has the
+exact commands.

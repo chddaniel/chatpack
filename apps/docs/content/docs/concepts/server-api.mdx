@@ -335,6 +335,52 @@ term occurrence count determines relevance before `createdAt` and message id
 tie-breaks. Tombstones are excluded. Core still applies `canRead` after the
 participant scope, so non-participant dynamic access is not supported yet.
 
+## Validating that a user exists
+
+Chatpack never owns a users table, so by default `otherUserId` and group
+`userIds` are opaque strings it stores without question. That is usually what
+you want - until a typo or a stale id creates a conversation with somebody who
+does not exist, which nobody can ever open.
+
+Pass `userExists` to close that gap without handing Chatpack your identity
+data:
+
+```ts
+export const chat = chatpack({
+  storage,
+  auth,
+  // Your identity store, your query. Return false for "no such user".
+  userExists: async (userId) =>
+    Boolean(
+      await db.query.users.findFirst({
+        where: eq(users.id, userId),
+      }),
+    ),
+});
+```
+
+Core calls it before creating a direct conversation, before seeding a group,
+and before adding participants. A `false` answer throws `USER_NOT_FOUND`
+(HTTP 404). Omit the option and nothing changes from previous versions.
+
+Three things are worth knowing, because they decide how hard this hits your
+database:
+
+- **The acting user is never checked.** Your `auth` hook already vouched for
+  them; re-querying would be a second lookup for an answer you have.
+- **Ids are deduplicated first**, and the acting user's own id is dropped from
+  a group's member list, so a repeated id is never a repeated query.
+- **Checks run in bounded batches**, not one after another. Seeding a
+  50-member group costs a handful of round trips rather than 50, and a
+  256-member group still cannot open 256 simultaneous connections. If you want
+  one query for many ids, do the batching inside your own hook.
+
+<Callout type="warn">
+  This validates *existence*, not *permission*. "Bob exists" and "Alice is allowed to message Bob"
+  are separate questions - the second one belongs to [permissions and
+  moderation](/docs/concepts/permissions).
+</Callout>
+
 ## Return shapes: bare objects, no envelopes
 
 Server-side methods return the bare object (`Conversation`, `Message`, ...).

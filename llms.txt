@@ -19,7 +19,7 @@ Packages (all on npm):
 | `@chatpack/adapter-drizzle`| Postgres storage via Drizzle - production              |
 | `@chatpack/next`           | Next.js App Router mount helper (`toNextRouteHandlers`)|
 | `@chatpack/client`         | Framework-agnostic REST + SSE client (+ React hooks)   |
-| `@chatpack/cli`            | Safe project setup CLI (`chatpack init`)              |
+| `@chatpack/cli`            | Setup CLI: wires an existing app, or generates a starter|
 | `@chatpack/transport-redis`| Redis pub/sub transport - multi-node SSE fan-out       |
 | `@chatpack/file`           | Filepack-backed message attachments (uploads, media)   |
 
@@ -27,7 +27,8 @@ Current releases include direct and group conversations, text messages,
 permissions, read state and unread counts, SSE with reconnect gap-fill, memory
 and Drizzle adapters, Redis event fan-out, typing/presence/receipts, reactions,
 quote-replies, participant-scoped search, `afterMessageMutation`, the browser
-client with React hooks and polling fallback, `@chatpack/cli init`,
+client with React hooks and polling fallback, `@chatpack/cli init` (wires an
+existing app, or generates a Next.js/Hono/Express starter),
 Filepack-backed file attachments via `@chatpack/file`, invite links with join
 requests, and public channels (a browsable directory of public groups).
 
@@ -106,21 +107,54 @@ Rules:
 
 ## Chatpack CLI
 
-Run `npx @chatpack/cli init` to inspect a project and generate a Chatpack
-server instance plus framework integration. The v1 CLI supports Next.js App
-Router, Hono, and Express. It asks before changing files, supports `--dry-run`,
-and never runs database migrations or guesses authentication provider APIs.
+`npx @chatpack/cli init` has **two modes, chosen by whether `package.json`
+exists in the target directory** - you do not select the mode with a flag.
 
-Non-interactive setup must provide important decisions:
+**Existing project** (a `package.json` is present): the CLI inspects the
+project and adds focused wiring - one `chatpack()` instance plus the framework
+mount. Supports Next.js App Router, Hono, Express, and `web` (a plain
+`Request → Response` handler for everything else). It asks before changing
+files, supports `--dry-run`, never overwrites a file you own without saying so,
+and never runs database migrations or guesses an auth provider's API.
 
 ```sh
 npx @chatpack/cli init --framework next --adapter memory --package-manager pnpm --yes
 ```
 
-The generated server must keep one `chatpack()` instance, use an official
-adapter, and connect an application-owned auth resolver returning `{ id }` or
-`null`. A missing resolver is generated as a visible placeholder returning
-`null`, so it must be replaced before use.
+**Starter** (no `package.json`): the CLI generates a whole application. Only
+Git metadata, `.gitignore`, README/LICENSE and editor/CI/OS clutter may exist
+beforehand; anything else is refused rather than merged into. README and LICENSE
+files are preserved (a generated readme lands as `CHATPACK_SETUP.md` instead).
+
+```sh
+npx @chatpack/cli init --framework next --auth-provider better-auth --package-manager pnpm --yes
+```
+
+- `--framework next` - full chat app: application-owned UI, Neon Postgres +
+  Drizzle, and one of `--auth-provider better-auth | authjs | auth0`.
+- `--framework hono` / `express` - backend-only API starters. No auth provider:
+  their auth hook returns `null` on purpose, so **every request answers 401
+  until you wire it to your own session**. That is fail-closed by design.
+- `--framework web` is existing-project only; starters need a real runtime.
+- Starters require Drizzle storage; `--adapter memory` is refused because a
+  starter is meant to be production-shaped.
+
+Starter templates are reviewed assets published inside the CLI tarball. They
+pin `@chatpack/*` versions that are known to work together (core and
+`adapter-drizzle` must move as a pair - core's required adapter contract grows
+across minors). They use the transaction-capable Neon **WebSocket `Pool`** with
+`drizzle-orm/neon-serverless`; do not swap in the Neon HTTP driver, because
+Chatpack's message-ordering writes need transactions.
+
+Generation stops at files and dependencies. It does **not** provision a Neon
+database, write secrets, run migrations, or deploy - copy `.env.example` to
+`.env.local` (`.env` for hono/express), fill it in, then run the generated
+`db:generate` and `db:migrate` scripts.
+
+Whatever the mode, the generated server keeps one `chatpack()` instance, uses an
+official adapter, and gets its user id from an application-owned auth resolver
+returning `{ id }` or `null`. A resolver the CLI could not wire is generated as
+a visible placeholder returning `null`, so it must be replaced before use.
 
 # Part 1 - Integrating Chatpack
 
@@ -749,8 +783,16 @@ Semantics that trip up generated clients:
   **no threads** - no per-message reply lists, unread counts, or pagination.
 - `role` is `"user" | "assistant" | "system"` (default `"user"`) - a stored
   label; core never branches on it. Anything else is a 400.
-- `otherUserId` and group `userIds` are **not validated to exist** (Chatpack
-  never owns a users table) - validate recipients in your app.
+- `otherUserId` and group `userIds` are **not validated to exist by default**
+  (Chatpack never owns a users table). Pass the optional
+  `userExists: (userId) => boolean | Promise<boolean>` option to `chatpack()`
+  and core will ask *your* identity store before creating a DM, seeding a
+  group, or adding participants; a `false` answer is 404 `USER_NOT_FOUND`.
+  Without the hook, ids stay fully opaque and unchecked - validate recipients
+  in your app instead. The hook is never asked about the acting user (the
+  `auth` hook already vouched for them), never asked twice about the same id,
+  and is called in bounded batches, so seeding a 50-member group is a handful
+  of round trips rather than 50.
 - Timestamps are `Date` in server-side calls, ISO strings over HTTP.
 - Errors: `{ "error": { "code", "message" } }` - 401 `UNAUTHENTICATED`
   (the message says *why*: bad hook return shape vs. missing cookie vs.
@@ -758,7 +800,8 @@ Semantics that trip up generated clients:
   `NOT_CONVERSATION_ADMIN` (a group management call by a non-admin),
   403 `NOT_PUBLIC_CONVERSATION` (joining a group that is not a channel - a
   refusal, not a pretend 404),
-  404 `*_NOT_FOUND`, 409 `MESSAGE_DELETED`, 409 `NOT_GROUP_CONVERSATION`
+  404 `*_NOT_FOUND` (including `USER_NOT_FOUND`, only possible when the app
+  configured `userExists`), 409 `MESSAGE_DELETED`, 409 `NOT_GROUP_CONVERSATION`
   (a group-only call on a DM), 409 `LAST_ADMIN_REMAINING`,
   409 `ALREADY_PARTICIPANT` (asking to join a group you are in),
   410 `INVITE_EXPIRED` (the link existed and is spent - ask for a new one),
@@ -1156,7 +1199,10 @@ those per request from `getMessagesByIds` and `listReactionsByMessageIds`.
 
 Users are opaque string ids. Chatpack never owns a users table - do not add
 foreign keys into the app's users table and do not validate user existence in
-the adapter.
+the adapter. That last rule is unchanged by the `userExists` option: existence
+checks are core's job, run against the *host's* identity store through a hook
+the app supplies, before core ever calls you. Your adapter still stores
+whatever ids it is handed.
 
 ## Level 1 - invariants (database-agnostic; these are the contract)
 
