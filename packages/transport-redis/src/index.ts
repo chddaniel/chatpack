@@ -13,7 +13,7 @@
  * ```ts
  * import { chatpack } from "@chatpack/core";
  * import { redisTransport } from "@chatpack/transport-redis";
- * import Redis from "ioredis";
+ * import { Redis } from "ioredis";
  *
  * // Two connections: a Redis client in subscriber mode cannot issue PUBLISH.
  * const transport = redisTransport({
@@ -54,6 +54,30 @@ export interface RedisPublisher {
 }
 
 /**
+ * How a driver's `subscribe` is called - a **union of the two real shapes**, not
+ * one permissive signature.
+ *
+ * That distinction is load-bearing, and getting it wrong is not theoretical:
+ * this type used to be the single signature `subscribe(channel, listener?)`,
+ * which is satisfied by *neither* driver this package documents. node-redis
+ * rejects it on arity (its listener is required, so it cannot be passed to a
+ * caller that may omit one), and ioredis rejects it on type (its optional second
+ * argument is a Node-style `(err, count)` completion callback, so a message
+ * listener is not assignable to it). Anything written against the README needed
+ * a cast to compile.
+ *
+ * A union has no such problem: a client only has to match one arm.
+ */
+export type RedisSubscribeMethod =
+  /** `ioredis`: the channel only - messages arrive on the `"message"` event. */
+  | ((channel: string) => Promise<unknown> | unknown)
+  /** `node-redis` v4+: the message listener is passed inline. */
+  | ((
+      channel: string,
+      listener: (payload: string, channel: string) => void,
+    ) => Promise<unknown> | unknown);
+
+/**
  * The subscribe half of a Redis client. This must be a **separate connection**
  * from the publisher: once a Redis connection subscribes it enters subscriber
  * mode and rejects `PUBLISH`.
@@ -78,10 +102,7 @@ export interface RedisPublisher {
  * Exactly one delivery path is ever wired, so no event is handled twice.
  */
 export interface RedisSubscriber {
-  subscribe(
-    channel: string,
-    listener?: (payload: string, channel: string) => void,
-  ): Promise<unknown> | unknown;
+  subscribe: RedisSubscribeMethod;
   unsubscribe?(channel: string): Promise<unknown> | unknown;
   on?(event: "message", listener: (channel: string, payload: string) => void): unknown;
   off?(event: "message", listener: (channel: string, payload: string) => void): unknown;
@@ -225,13 +246,23 @@ export function redisTransport(options: RedisTransportOptions): RedisTransport {
     handleInbound(payload);
   };
 
+  // A union of signatures cannot be called generically, and narrowing it here
+  // would only re-ask the question the driver check above just answered. Widened
+  // once, next to that check, so the shape we call and the shape we detected
+  // cannot drift apart. `.call` keeps the driver as the receiver - these are
+  // methods, and ioredis needs its `this`.
+  const subscribe = subscriber.subscribe as (
+    channel: string,
+    listener?: (payload: string, channel: string) => void,
+  ) => Promise<unknown> | unknown;
+
   try {
     let subscribed: Promise<unknown> | unknown;
     if (useEmitter) {
       subscriber.on?.("message", emitterListener);
-      subscribed = subscriber.subscribe(channel);
+      subscribed = subscribe.call(subscriber, channel);
     } else {
-      subscribed = subscriber.subscribe(channel, (payload) => handleInbound(payload));
+      subscribed = subscribe.call(subscriber, channel, (payload) => handleInbound(payload));
     }
     if (subscribed instanceof Promise) {
       subscribed.catch((err: unknown) => reportError(err, "subscribe"));

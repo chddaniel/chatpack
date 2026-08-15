@@ -34,7 +34,7 @@ dependency of its own.
 import { chatpack } from "@chatpack/core";
 import { drizzleAdapter } from "@chatpack/adapter-drizzle";
 import { redisTransport } from "@chatpack/transport-redis";
-import Redis from "ioredis";
+import { Redis } from "ioredis";
 
 export const chat = chatpack({
   storage: drizzleAdapter(db),
@@ -53,6 +53,13 @@ route, event, and client stays identical.
   **Two separate connections are required.** A Redis connection that has issued `SUBSCRIBE` enters
   subscriber mode and refuses `PUBLISH`. Passing the same client as both `publisher` and
   `subscriber` throws at startup rather than failing on the first message.
+</Callout>
+
+<Callout>
+  **Import the named `Redis`**, as above - not the default export. They are the same class at
+  runtime, but ioredis is CommonJS, so in an ESM package on `"module": "nodenext"` TypeScript types
+  the default export as the module object and `new Redis(url)` fails to compile. The named import
+  works in every module setting.
 </Callout>
 
 ### With node-redis

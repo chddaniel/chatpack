@@ -58,6 +58,23 @@ Note `ioredis`'s optional second argument to `subscribe` is a Node-style
 `(err, count)` completion callback, **not** a message listener - treating it as
 one is a silent no-op, so the ioredis test double deliberately refuses it.
 
+**Amended (0.1.10).** "Both drivers satisfy the interfaces" was true of the
+runtime and false of the types. `RedisSubscriber.subscribe` was one permissive
+signature, `subscribe(channel, listener?)`, and **neither** driver is assignable
+to it: `node-redis` fails on arity (its listener is required, so it cannot stand
+in for a signature that may omit one) and `ioredis` fails on type (that second
+parameter is the completion callback above). The snippet in this package's own
+README therefore did not compile without a cast, and no test noticed - a test
+double is written against our interface and so agrees with it by construction.
+`subscribe` is now a **union of the two real signatures**, so a client only has
+to match one arm, and the implementation widens it once beside the runtime driver
+check that decides which arm to call.
+`packages/transport-redis/test/driver-types.ts` holds that in place using the
+real `ioredis` and `node-redis` types (dev dependencies, type-checked, never
+run), so an edit that breaks a documented driver fails `typecheck` instead of a
+user's build. The runtime contract, the discriminator, and the two-connection
+rule are unchanged.
+
 **3. Two connections are required, and enforced.**
 
 A Redis connection in subscriber mode rejects `PUBLISH`. Passing the same client

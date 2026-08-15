@@ -931,7 +931,7 @@ one line, no other API change:
 
 ```ts
 import { redisTransport } from "@chatpack/transport-redis";
-import Redis from "ioredis";
+import { Redis } from "ioredis";
 
 // Two connections: a client in subscriber mode cannot PUBLISH.
 export const chat = chatpack({
@@ -951,6 +951,10 @@ Hard rules for the Redis transport:
 - Bring your own client - `ioredis` or `node-redis` v4+ both work; Chatpack has
   no Redis dependency. Options: `channel` (default `chatpack:events`), `nodeId`,
   `onError`.
+- Import ioredis as `import { Redis } from "ioredis"` - the **named** export.
+  Its default export is the same class at runtime, but ioredis is CommonJS, so
+  on `"module": "nodenext"` the default is typed as the module object and
+  `new Redis(url)` does not compile.
 - Messages, typing, and receipts go multi-node. **`presence()` does not** - it
   counts connections in a per-process Map, so `GET /presence` still answers for
   locally-connected users only.
