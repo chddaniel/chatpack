@@ -9,7 +9,7 @@ import { applyFileAction } from "../src/modify";
 import { makePlan } from "../src/plan";
 import { inspectProject } from "../src/project/inspect";
 import type { AuthProvider, CliArgs, Framework, PackageManager } from "../src/types";
-import { validatePlan } from "../src/validate";
+import { validateApplied, validatePlan } from "../src/validate";
 
 const roots: string[] = [];
 
@@ -122,32 +122,155 @@ describe("starter inspection and planning", () => {
       expect(plan.actions.some((action) => action.path?.includes("api/profiles/route.ts"))).toBe(
         true,
       );
-      expect(
-        plan.actions.find((action) => action.path?.endsWith("profile-search.tsx"))?.content,
-      ).toContain("setOpen(false)");
-      expect(
-        plan.actions.find((action) => action.path?.endsWith("profile-search.tsx"))?.content,
-      ).toContain("controller.signal.aborted");
-      expect(
-        plan.actions.find((action) => action.path?.endsWith("chat-shell.tsx"))?.content,
-      ).toContain("messages.toReversed()");
-      expect(
-        plan.actions.find((action) => action.path?.endsWith("chat-shell.tsx"))?.content,
-      ).toContain('data-message-sender={isOwnMessage ? "self" : "other"}');
-      expect(
-        plan.actions.find((action) => action.path?.endsWith("chat-shell.tsx"))?.content,
-      ).toContain('isOwnMessage ? "justify-end" : "justify-start"');
-      expect(
-        plan.actions.find((action) => action.path?.endsWith("chat-shell.tsx"))?.content,
-      ).toContain('aria-label="Open conversations"');
+      const find = (suffix: string) =>
+        plan.actions.find((action) => action.path?.endsWith(suffix))?.content;
+      expect(find("profile-search.tsx")).toContain("setOpen(false)");
+      expect(find("profile-search.tsx")).toContain("controller.signal.aborted");
+      // Newest-first over the wire, oldest-first on screen.
+      expect(find("message-list.tsx")).toContain("toReversed()");
+      expect(find("message-row.tsx")).toContain('data-message-sender={isOwn ? "self" : "other"}');
+      expect(find("message-row.tsx")).toContain('isOwn ? "justify-end" : "justify-start"');
+      expect(find("conversation-header.tsx")).toContain('aria-label="Show conversations"');
       if (provider === "better-auth") {
-        expect(
-          plan.actions.find((action) => action.path?.endsWith("src/lib/auth.ts"))?.content,
-        ).toContain("user: users");
+        expect(find("src/lib/auth.ts")).toContain("user: users");
       }
       expect(plan.actions.at(-1)?.command).toBe("pnpm install");
     },
   );
+
+  // The starter's job is to show the library, not a demo subset of it: the first
+  // version shipped directs and send/list only, and a reader reasonably concluded
+  // the rest did not exist. One assertion per feature, so removing a call site
+  // fails here rather than quietly shrinking what the starter teaches.
+  it("wires every Chatpack feature into the Next starter", async () => {
+    const root = await emptyRepo();
+    const plan = await makePlan(inspectProject(root), args(root, "next", "pnpm", "better-auth"));
+    const find = (suffix: string) =>
+      plan.actions.find((action) => action.path?.endsWith(suffix))?.content ?? "";
+
+    const server = find("src/lib/chatpack.server.ts");
+    for (const wiring of [
+      "typing()",
+      "presence()",
+      "receipts()",
+      "createApplicationFilepack",
+      "createApplicationTransport",
+      "canInvite",
+      "canModerate",
+      "beforeMessageSend",
+    ]) {
+      expect(server, `chatpack.server.ts is missing ${wiring}`).toContain(wiring);
+    }
+
+    const callSites: Array<[string, string]> = [
+      ["conversation-sidebar.tsx", "client.useRealtimeStatus"],
+      ["new-group-dialog.tsx", "client.conversations.createGroup"],
+      ["message-list.tsx", "client.conversations.markRead"],
+      ["message-list.tsx", "client.useTyping"],
+      ["message-list.tsx", "client.useReceipts"],
+      ["message-composer.tsx", "client.typing.start"],
+      ["message-composer.tsx", "files.upload"],
+      ["message-composer.tsx", "{ mentions }"],
+      ["message-row.tsx", "client.messages.react"],
+      ["message-row.tsx", "client.messages.edit"],
+      ["message-row.tsx", "client.messages.delete"],
+      ["forward-dialog.tsx", "client.messages.forward"],
+      ["search-dialog.tsx", "client.useMessageSearch"],
+      ["report-dialog.tsx", "client.moderation.report"],
+      ["members-panel.tsx", "client.conversations.setParticipantRole"],
+      ["members-panel.tsx", "client.invites.create"],
+      ["members-panel.tsx", "client.joinRequests.resolve"],
+      ["conversation-header.tsx", "client.conversations.update"],
+      ["chat-shell.tsx", "client.moderation.muteConversation"],
+      ["chat-shell.tsx", "client.moderation.blockUser"],
+      ["chat-shell.tsx", "client.presence.get"],
+      ["channel-directory.tsx", "client.channels.list"],
+      ["channel-directory.tsx", "client.channels.join"],
+      ["invite-accept.tsx", "client.invites.preview"],
+      ["moderation-console.tsx", "client.moderation.listReports"],
+      ["moderation-console.tsx", "client.moderation.banUser"],
+    ];
+    for (const [file, call] of callSites) {
+      expect(find(file), `${file} is missing ${call}`).toContain(call);
+    }
+
+    for (const page of ["app/channels/page.tsx", "app/moderation/page.tsx", "app/invite"]) {
+      expect(
+        plan.actions.some((action) => action.path?.includes(page)),
+        page,
+      ).toBe(true);
+    }
+
+    // "Are you a moderator?" has no client-side answer - the console asks for the
+    // queue and reads the refusal. NOT_MODERATOR (403) is that refusal; FORBIDDEN
+    // is a different error and would leave the page stuck on a toast.
+    expect(find("moderation-console.tsx")).toContain('"NOT_MODERATOR"');
+  });
+
+  it.each([
+    ["next", "better-auth"],
+    ["hono", undefined],
+  ] as const)(
+    "keeps attachments, moderators and Redis opt-in for %s",
+    async (framework, provider) => {
+      // A fresh clone has to run with no bucket, no Redis and no moderator list, so
+      // these three live in .env.example only. Putting any of them in env.ts (which
+      // throws on a missing value at import time) would break the first `dev`.
+      const root = await emptyRepo();
+      const plan = await makePlan(inspectProject(root), args(root, framework, "pnpm", provider));
+      const find = (suffix: string) =>
+        plan.actions.find((action) => action.path?.endsWith(suffix))?.content ?? "";
+
+      const example = find(".env.example");
+      for (const name of [
+        "MODERATOR_EMAILS",
+        "MODERATOR_USER_IDS",
+        "FILE_STORAGE_DIRECTORY",
+        "S3_BUCKET",
+        "S3_ACCESS_KEY_ID",
+        "REDIS_URL",
+      ]) {
+        expect(example, `.env.example is missing ${name}`).toContain(`# ${name}=`);
+        expect(find("src/lib/env.ts"), `env.ts must not require ${name}`).not.toContain(name);
+      }
+
+      // Uploads land here by default, and a committed .chatpack-files directory is
+      // both noise and a leak.
+      expect(find(".gitignore")).toContain(".chatpack-files");
+
+      const readme = find("README.md");
+      expect(readme).toContain("## Optional features");
+      expect(readme).toContain("## What is wired up");
+      expect(plan.warnings.join("\n")).toContain("REDIS_URL");
+      expect(plan.warnings.join("\n")).toContain("S3_BUCKET");
+    },
+  );
+
+  // pnpm 11 appends a `minimumReleaseAgeExclude` entry to pnpm-workspace.yaml for
+  // every recent version it accepted, and it does that during the install `init`
+  // itself runs. Treating that file as ours to the byte made every pnpm starter
+  // report "written content differs from plan" - a green setup called a failure -
+  // and made a rerun report a hand-edit conflict.
+  it("lets pnpm edit its own workspace file after install", async () => {
+    const root = await emptyRepo();
+    const plan = await makePlan(inspectProject(root), args(root, "hono", "pnpm"));
+    for (const action of plan.actions) {
+      if (action.kind === "create" || action.kind === "modify") applyFileAction(action);
+    }
+    const workspace = join(root, "pnpm-workspace.yaml");
+    await writeFile(
+      workspace,
+      `${await readFile(workspace, "utf8")}minimumReleaseAgeExclude:\n  - '@chatpack/core@0.12.0'\n`,
+    );
+
+    expect(validateApplied(plan)).toEqual([]);
+
+    const retry = await makePlan(inspectProject(root), args(root, "hono", "pnpm"));
+    expect(validatePlan(retry)).toEqual([]);
+    expect(
+      retry.actions.find((action) => action.path?.endsWith("pnpm-workspace.yaml")),
+    ).toMatchObject({ kind: "skip" });
+  });
 
   it.each([
     ["hono", "npm"],
@@ -164,6 +287,44 @@ describe("starter inspection and planning", () => {
     );
     expect(plan.actions.at(-1)?.command).toBe(`${manager} install`);
   });
+
+  it.each(["hono", "express"] as const)(
+    "loads the .env file %s is told to create",
+    async (framework) => {
+      // The backend starters are run by `tsx src/index.ts`, and neither Node nor
+      // tsx reads a .env file on its own - only `next dev`/`next build` do. So
+      // until src/lib/env.ts loaded one itself, following the generated README
+      // exactly (copy .env.example to .env, then `dev`) threw
+      // "Missing required environment variable: DATABASE_URL" with the file
+      // sitting right there. `build` masked it: the CI recipe exports the
+      // variables, so nothing ever read the file during the checks.
+      const root = await emptyRepo();
+      const plan = await makePlan(inspectProject(root), args(root, framework, "npm"));
+      const find = (suffix: string) =>
+        plan.actions.find((action) => action.path?.endsWith(suffix))?.content ?? "";
+
+      const env = find("src/lib/env.ts");
+      expect(env, "env.ts must load the file before validating it").toContain(
+        "process.loadEnvFile(file)",
+      );
+      expect(env.indexOf("loadEnvFile")).toBeLessThan(env.indexOf("export const env"));
+      // Both names work, in the order the scripts use them, because the README
+      // says .env while drizzle.config.ts and scripts/ prefer .env.local.
+      expect(env).toContain('[".env.local", ".env"]');
+      expect(find("README.md")).toContain("Copy `.env.example` to `.env`");
+
+      // Next loads .env* itself, so its env.ts (one per auth provider) has no copy
+      // of this. Asserted so a later "let's share it" edit has to be deliberate.
+      const nextRoot = await emptyRepo();
+      const nextPlan = await makePlan(
+        inspectProject(nextRoot),
+        args(nextRoot, "next", "npm", "better-auth"),
+      );
+      expect(
+        nextPlan.actions.find((action) => action.path?.endsWith("src/lib/env.ts"))?.content,
+      ).not.toContain("loadEnvFile");
+    },
+  );
 
   it("writes pnpm's build approvals only for pnpm projects", async () => {
     // Without this file `pnpm install` exits non-zero on a fresh starter, and
@@ -213,6 +374,52 @@ describe("starter inspection and planning", () => {
     expect(find("src/lib/db.ts")).toContain("if (process.env.NEON_WS_PROXY)");
     expect(find(".env.example")).toContain("# NEON_WS_PROXY=127.0.0.1:5480");
   });
+
+  it.each([
+    ["next", "better-auth"],
+    ["hono", undefined],
+    ["express", undefined],
+  ] as const)(
+    "keeps Filepack's tables out of drizzle-kit's schema for %s",
+    async (framework, provider) => {
+      // drizzle-kit loads src/db/schema.ts through CJS, and
+      // `@filepack/adapter-drizzle` is ESM-only - its `exports` map has no
+      // `require` condition and there is no `main`. Re-exporting its tables from
+      // that file therefore makes drizzle-kit fail to read the schema and emit **no
+      // migration at all**, while still exiting 0 - so `db:generate` reports
+      // success and the app has no tables. Filepack publishes its own DDL instead,
+      // which `db:migrate` applies after drizzle-kit. All three frameworks are
+      // checked because each ships its own schema file.
+      const root = await emptyRepo();
+      const plan = await makePlan(inspectProject(root), args(root, framework, "pnpm", provider));
+      const find = (suffix: string) =>
+        plan.actions.find((action) => action.path?.endsWith(suffix))?.content ?? "";
+
+      expect(find("src/db/schema.ts")).toContain('from "@chatpack/adapter-drizzle"');
+      expect(
+        find("src/db/schema.ts"),
+        "schema.ts must not import @filepack/adapter-drizzle - drizzle-kit cannot load it",
+      ).not.toContain('from "@filepack/adapter-drizzle"');
+      expect(find("scripts/filepack-migrate.ts")).toContain("migrationStatements");
+      expect(find("package.json")).toContain(
+        '"db:migrate": "drizzle-kit migrate && tsx scripts/filepack-migrate.ts"',
+      );
+
+      // The other half of that decision. Filepack's record store takes a Drizzle
+      // instance whose schema **is** its four tables, so the application `db` -
+      // built from the schema.ts above, which does not have them - cannot be
+      // passed to it. Filepack gets its own instance over the same pool instead.
+      // Handing it `db` typechecks nowhere but fails only in a generated app, so
+      // it is asserted here.
+      expect(find("src/lib/filepack.ts")).toContain(
+        "drizzleAdapter(drizzle({ client: options.pool, schema: filepackRecordsSchema }))",
+      );
+      const server = find(framework === "next" ? "chatpack.server.ts" : "src/lib/chatpack.ts");
+      expect(server, `${framework} must hand Filepack the pool, not db`).toContain(
+        "createApplicationFilepack({\n  pool,",
+      );
+    },
+  );
 
   it("requires all non-interactive starter decisions", async () => {
     const root = await emptyRepo();

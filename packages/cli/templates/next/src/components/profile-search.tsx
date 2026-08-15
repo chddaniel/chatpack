@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Search } from "lucide-react";
+import { MessageSquarePlus } from "lucide-react";
+
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
@@ -19,13 +20,14 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { initialsOf, searchProfiles, type PublicProfile } from "@/lib/profiles";
 
-export interface PublicProfile {
-  id: string;
-  name: string;
-  image: string | null;
-}
-
+/**
+ * Picks a person from *your* users table to start a direct message with.
+ *
+ * Chatpack has no users table to search - it only ever stores ids - so this hits
+ * `/api/profiles`, which is your own route over your own schema.
+ */
 export function ProfileSearch({
   onSelect,
 }: {
@@ -38,18 +40,16 @@ export function ProfileSearch({
   useEffect(() => {
     if (!open || query.trim().length < 2) return;
     const controller = new AbortController();
-    const timer = window.setTimeout(async () => {
-      try {
-        const response = await fetch(`/api/profiles?q=${encodeURIComponent(query)}`, {
-          signal: controller.signal,
-        });
-        if (response.ok) {
-          const body = (await response.json()) as { profiles: PublicProfile[] };
-          setProfiles(body.profiles);
-        }
-      } catch {
-        if (!controller.signal.aborted) setProfiles([]);
-      }
+    const timer = window.setTimeout(() => {
+      void searchProfiles(query, controller.signal)
+        // A response for a query the user has already changed must not overwrite
+        // the current list, even if it arrived just before the abort landed.
+        .then((found) => {
+          if (!controller.signal.aborted) setProfiles(found);
+        })
+        // Aborting is how this effect cancels an in-flight search, so the
+        // rejection it causes is the intended outcome, not an error to report.
+        .catch(() => undefined);
     }, 250);
     return () => {
       controller.abort();
@@ -60,8 +60,8 @@ export function ProfileSearch({
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
-        <Button size="icon" variant="outline" aria-label="New conversation">
-          <Search />
+        <Button size="icon" variant="outline" aria-label="New direct message">
+          <MessageSquarePlus />
         </Button>
       </DialogTrigger>
       <DialogContent>
@@ -92,7 +92,7 @@ export function ProfileSearch({
                 >
                   <Avatar>
                     <AvatarImage src={profile.image ?? undefined} />
-                    <AvatarFallback>{profile.name.slice(0, 2).toUpperCase()}</AvatarFallback>
+                    <AvatarFallback>{initialsOf(profile.name)}</AvatarFallback>
                   </Avatar>
                   <span>{profile.name}</span>
                 </CommandItem>

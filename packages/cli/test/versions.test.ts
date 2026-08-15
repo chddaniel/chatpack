@@ -33,6 +33,28 @@ describe("starter dependency pins", () => {
     },
   );
 
+  // `s3Adapter` accepts an already-constructed `S3Client`, so the starter's copy
+  // of the AWS SDK has to be the copy `@filepack/storage-s3` itself depends on.
+  // Two resolved copies are structurally identical and nominally different, and
+  // the generated app fails to typecheck with "S3Client is not assignable to
+  // S3Client". One exact version, spelled the same way in every template.
+  it("pins one exact @aws-sdk/client-s3 across every template", async () => {
+    const pins = await Promise.all(
+      templatePackageJsons.map(async (relative) => {
+        const manifest = await readJson(join(templateRoot, relative));
+        const dependencies = (manifest.dependencies ?? {}) as Record<string, string>;
+        return [relative, dependencies["@aws-sdk/client-s3"]] as const;
+      }),
+    );
+    const expected = pins[0]?.[1];
+    for (const [relative, pin] of pins) {
+      expect(pin, `${relative} must pin @aws-sdk/client-s3 exactly`).toMatch(/^\d+\.\d+\.\d+$/);
+      expect(pin, `${relative} disagrees with ${pins[0]?.[0] ?? "the first template"}`).toBe(
+        expected,
+      );
+    }
+  });
+
   it.each(templatePackageJsons)(
     "%s pins @chatpack/* by token, never literally",
     async (relative) => {

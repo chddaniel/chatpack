@@ -132,7 +132,12 @@ npx @chatpack/cli init --framework next --auth-provider better-auth --package-ma
 ```
 
 - `--framework next` - full chat app: application-owned UI, Neon Postgres +
-  Drizzle, and one of `--auth-provider better-auth | authjs | auth0`.
+  Drizzle, and one of `--auth-provider better-auth | authjs | auth0`. It covers
+  the whole library rather than a demo subset - directs, groups and public
+  channels, reactions, quote-replies, edits, soft deletes, mentions, forwarding,
+  search, attachments, typing/presence/receipts, unread counts, roles and member
+  management, invite links, join requests, mute, blocks and the moderation queue
+  - across four pages: `/`, `/channels`, `/invite/[code]`, `/moderation`.
 - `--framework hono` / `express` - backend-only API starters. No auth provider:
   their auth hook returns `null` on purpose, so **every request answers 401
   until you wire it to your own session**. That is fail-closed by design.
@@ -147,10 +152,42 @@ across minors). They use the transaction-capable Neon **WebSocket `Pool`** with
 `drizzle-orm/neon-serverless`; do not swap in the Neon HTTP driver, because
 Chatpack's message-ordering writes need transactions.
 
+Three starter features stay **off until an environment variable turns them on**,
+so a fresh clone runs with no extra services. All three are listed, commented
+out, in the generated `.env.example`:
+
+| Variable                                    | Unset                                                                                                      | Set                                                                                                                              |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `MODERATOR_EMAILS` / `MODERATOR_USER_IDS`   | nobody passes `moderation.canModerate`, so the queue answers `NOT_MODERATOR` (reporting and blocking still work) | those users may review reports and ban                                                                                      |
+| `S3_BUCKET` (+ `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_ENDPOINT`) | attachments are written to `.chatpack-files` on local disk                      | attachments go to any S3-compatible bucket - required on serverless, where the filesystem does not outlive one invocation |
+| `REDIS_URL`                                 | in-process fan-out, correct for exactly one server process                                                  | `@chatpack/transport-redis` fan-out across nodes (presence stays single-node either way - ADR 0008)                              |
+
 Generation stops at files and dependencies. It does **not** provision a Neon
 database, write secrets, run migrations, or deploy - copy `.env.example` to
 `.env.local` (`.env` for hono/express), fill it in, then run the generated
 `db:generate` and `db:migrate` scripts.
+
+Either filename works, because the starter's own `src/lib/env.ts` reads
+`.env.local` then `.env` (only `.env` under `NODE_ENV=production`) before it
+validates anything, and real environment variables win over both. That belongs in
+the module that validates, not in the entrypoint: `next dev` loads `.env*` for the
+Next starter, but the hono and express starters run under `tsx`, which - like
+`node` itself - reads no env file, and ESM evaluates imports before the importing
+module's own statements, so a `dotenv` call in `src/index.ts` would run after
+`env.ts` had already thrown.
+
+`db:migrate` is `drizzle-kit migrate` followed by `scripts/filepack-migrate.ts`.
+Filepack's four attachment tables are **not** in the starter's
+`src/db/schema.ts`: drizzle-kit loads that file through CJS,
+`@filepack/adapter-drizzle` is ESM-only, and the failure mode is a printed stack
+trace plus exit `0` - a `db:generate` that looks fine and emits nothing. Filepack
+publishes idempotent DDL (`migrationStatements`) for hosts to apply, so that
+script applies it and `db:filepack` runs it alone. Consequently the generated
+`src/lib/filepack.ts` gives Filepack its own Drizzle instance over the shared
+`pool`, built from the `filepackRecordsSchema` the adapter exports, because its
+record store is typed against exactly that schema and the application's `db` is
+not it. An adapter author copying this pattern for another ESM-only Drizzle
+package should do the same - do not import it from a drizzle-kit schema file.
 
 Whatever the mode, the generated server keeps one `chatpack()` instance, uses an
 official adapter, and gets its user id from an application-owned auth resolver

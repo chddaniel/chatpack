@@ -13,16 +13,26 @@
     "typecheck": "tsc --noEmit",
     "lint": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
+    "db:migrate": "drizzle-kit migrate && tsx scripts/filepack-migrate.ts",
+    "db:filepack": "tsx scripts/filepack-migrate.ts",
     "db:proxy": "tsx scripts/wsproxy.ts",
     "setup:check": "tsx scripts/setup-check.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "3.1097.0",
     "@chatpack/adapter-drizzle": "{{CHATPACK_ADAPTER_DRIZZLE_VERSION}}",
     "@chatpack/core": "{{CHATPACK_CORE_VERSION}}",
+    "@chatpack/file": "{{CHATPACK_FILE_VERSION}}",
+    "@chatpack/transport-redis": "{{CHATPACK_TRANSPORT_REDIS_VERSION}}",
+    "@filepack/adapter-drizzle": "0.1.1",
+    "@filepack/client": "0.1.1",
+    "@filepack/core": "0.1.1",
+    "@filepack/storage-local": "0.1.1",
+    "@filepack/storage-s3": "0.1.1",
     "@neondatabase/serverless": "1.1.0",
     "drizzle-orm": "0.45.2",
     "express": "5.2.1",
+    "ioredis": "5.11.1",
     "ws": "8.21.3"
   },
   "devDependencies": {

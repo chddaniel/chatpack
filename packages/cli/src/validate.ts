@@ -1,9 +1,22 @@
 import { existsSync, readFileSync } from "node:fs";
+import { basename } from "node:path";
 
 import ts from "typescript";
 
 import { parseSource } from "./project/inspect";
 import type { SetupPlan } from "./types";
+
+/**
+ * Files a package manager owns and rewrites during its own `install`.
+ *
+ * {@link validateApplied} runs *after* that install, so comparing these byte for
+ * byte asks the wrong question: pnpm 11 records a `minimumReleaseAgeExclude`
+ * entry in `pnpm-workspace.yaml` for every recently published version it
+ * accepted, which made a perfectly good starter report "written content differs
+ * from plan". A package manager updating its own config is not a failed write.
+ * The file still has to exist.
+ */
+const packageManagerOwned = new Set(["pnpm-workspace.yaml"]);
 
 export function validatePlan(plan: SetupPlan): string[] {
   const errors = [...plan.errors];
@@ -47,8 +60,12 @@ export function validateApplied(plan: SetupPlan): string[] {
   const errors: string[] = [];
   for (const action of plan.actions) {
     if (!action.path || action.content === undefined || action.conflict) continue;
-    if (!existsSync(action.path)) errors.push(`${action.path}: expected file was not written.`);
-    else if (readFileSync(action.path, "utf8") !== action.content)
+    if (!existsSync(action.path)) {
+      errors.push(`${action.path}: expected file was not written.`);
+      continue;
+    }
+    if (packageManagerOwned.has(basename(action.path))) continue;
+    if (readFileSync(action.path, "utf8") !== action.content)
       errors.push(`${action.path}: written content differs from plan.`);
   }
   return errors;

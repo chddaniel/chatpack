@@ -8,6 +8,7 @@ A production-oriented Chatpack {{FRAMEWORK}} starter with Neon Postgres, Drizzle
 2. Copy `.env.example` to `{{ENV_FILE}}`.
 3. Add the required secrets described in the environment example.
 4. Run `{{PACKAGE_MANAGER}} run db:generate`, `{{PACKAGE_MANAGER}} run db:migrate`, and `{{PACKAGE_MANAGER}} run setup:check`.
+   `db:migrate` runs drizzle-kit and then `scripts/filepack-migrate.ts`, which creates the four attachment tables Filepack owns. Those are not in `src/db/schema.ts` on purpose - the comment there says why - so drizzle-kit alone leaves them out.
 5. Run `{{PACKAGE_MANAGER}} run dev`.
 
 The generated source is application-owned. Edit it to fit your product. It is not a reusable `@chatpack/ui` package.
@@ -35,7 +36,10 @@ Create the tables with `psql` instead of `db:migrate`, because drizzle-kit opens
 ```sh
 {{PACKAGE_MANAGER}} run db:generate
 docker exec -i chat-pg psql -U postgres -d postgres < drizzle/0000_*.sql
+{{PACKAGE_MANAGER}} run db:filepack
 ```
+
+The last line is the attachment tables. It is a plain script rather than drizzle-kit, so it goes through `src/lib/db.ts` and does honour the proxy - no `psql` needed. If you would rather apply everything by hand, `{{PACKAGE_MANAGER}} run db:filepack -- --print` writes that SQL to stdout instead of running it.
 
 The proxy reads `{{ENV_FILE}}` as well, so if your Postgres is not on 5432 put `WSPROXY_PG_PORT` there rather than on the command line.
 

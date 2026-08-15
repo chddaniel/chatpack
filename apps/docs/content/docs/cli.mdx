@@ -30,10 +30,23 @@ npx @chatpack/cli init \
 
 Choose `better-auth`, `authjs`, or `auth0`. The generated application includes
 Neon Postgres, Drizzle migrations, App Router, Tailwind, reviewed shadcn Radix
-Nova source, profile search, direct conversations, paged history, unread state,
-and mobile navigation. The chat client runs in `realtime: { mode: "auto" }`, so
-it opens the SSE stream and falls back to polling on its own - which is what
-lets the same code work on a long-lived server and on Vercel functions.
+Nova source, profile search, paged history, unread state, and mobile navigation.
+The chat client runs in `realtime: { mode: "auto" }`, so it opens the SSE stream
+and falls back to polling on its own - which is what lets the same code work on
+a long-lived server and on Vercel functions.
+
+It covers the whole library rather than a demo subset:
+
+| Page             | Features                                                                                                                                                                                                             |
+| ---------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `/`              | directs, groups and channels; reactions, quote-replies, edit, delete, forward, report; mentions, attachments, typing signals, presence dots, unread counts, members and roles, invites, the join queue, mute, search |
+| `/channels`      | the public channel directory, with open joins and approval requests                                                                                                                                                  |
+| `/invite/[code]` | invite-link preview and accept                                                                                                                                                                                       |
+| `/moderation`    | the report queue, bans, and the people you have blocked                                                                                                                                                              |
+
+`src/lib/chatpack.server.ts` is the one file that decides anything: permissions,
+who counts as a moderator, the message-length cap, the file plugin and the
+transport all live there.
 
 Better Auth enables email and password without email verification. This is a
 deliberate starter choice, not a safe public identity policy. Enable verification
@@ -47,8 +60,29 @@ npx @chatpack/cli init --framework express --package-manager bun --yes
 ```
 
 These starters include Neon/Drizzle, migrations, setup checks, a health route,
-and a Vercel entrypoint. Chatpack routes return 401 until the host implements
-the fail-closed authentication resolver.
+and a Vercel entrypoint. They mount the same complete route surface as the
+Next.js starter - groups, channels, invites, moderation, attachments, the
+realtime plugins - they simply ship no UI. Chatpack routes return 401 until the
+host implements the fail-closed authentication resolver.
+
+## Optional features
+
+Three starter features stay off until an environment variable turns them on, so
+a fresh clone runs with no extra services. All three are listed, commented out,
+in the generated `.env.example`.
+
+| Variable                                                                            | Unset                                                                                                                                | Set                                                             |
+| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------- |
+| `MODERATOR_EMAILS` / `MODERATOR_USER_IDS`                                           | nobody passes `moderation.canModerate`, so the report queue answers `NOT_MODERATOR`. Reporting and blocking still work for everyone. | those users may review reports and ban                          |
+| `S3_BUCKET`, `S3_REGION`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY`, `S3_ENDPOINT` | attachments are written to `.chatpack-files` on local disk                                                                           | attachments go to any S3-compatible bucket (AWS, R2, B2, MinIO) |
+| `REDIS_URL`                                                                         | in-process fan-out, correct for exactly one server process                                                                           | `@chatpack/transport-redis` fan-out across nodes                |
+
+Set `S3_BUCKET` before deploying to a serverless platform: that filesystem is
+not shared between invocations and does not outlive one, so local-disk uploads
+disappear. Set `REDIS_URL` before running more than one server process, or a
+message sent on one will not reach listeners on another. Presence is the
+exception - its snapshot only knows about the streams open on the node that
+answers it, so it stays single-node either way.
 
 ## Existing applications
 
@@ -100,6 +134,19 @@ Starters use the transaction-capable Neon WebSocket Pool with
 the Neon HTTP driver is not compatible. The CLI does not provision Neon, write
 secrets, connect to the database, run migrations, or deploy.
 
+`db:migrate` runs two steps: `drizzle-kit migrate` for Chatpack's and your auth
+provider's tables, then `scripts/filepack-migrate.ts` for the four attachment
+tables Filepack owns. Those four are deliberately absent from
+`src/db/schema.ts`, because drizzle-kit loads that file through CJS and
+`@filepack/adapter-drizzle` is ESM-only: importing it there makes drizzle-kit
+fail to read the schema while still exiting `0`, emitting no migration at all.
+Filepack publishes its own ordered, idempotent DDL for hosts to apply, which is
+what that script does; run it alone with `db:filepack`, or
+`db:filepack -- --print` to get the SQL on stdout. For the same reason the
+generated `src/lib/filepack.ts` builds Filepack a second Drizzle instance over
+the shared pool from the `filepackRecordsSchema` it exports, rather than reusing
+the application's `db`.
+
 ## Supported frameworks
 
 - Next.js App Router: generated catch-all route.
@@ -130,11 +177,20 @@ A generated app's `run build` needs its environment variables to be **set**, bec
 database - nothing connects at build time - so a placeholder value is enough in
 CI.
 
+Locally that file is also the one that loads them: it reads `.env.local` and then
+`.env` (only `.env` when `NODE_ENV=production`), and a real environment variable
+always wins over both, so either filename works and a deployment platform is
+unaffected. Next.js would not need this - `next dev` loads `.env*` itself - but
+the hono and express starters run under `tsx`, which reads no env file, and an
+entrypoint cannot do it for them: ESM evaluates every import before the importing
+module's own statements, so the validation would already have thrown.
+
 For local development without a Neon account, every starter ships a `db:proxy`
 script. Neon's driver speaks Postgres over a WebSocket that Neon's edge
 terminates, so a plain Postgres has nothing listening for it; `db:proxy` runs a
 small local bridge in front of port 5432, and setting `NEON_WS_PROXY` points the
 driver at it. Unset that variable and the code path does not run, so production
 is unaffected. Apply migrations with `psql` in that mode - drizzle-kit opens its
-own Neon connection and ignores `NEON_WS_PROXY`. The generated README has the
-exact commands.
+own Neon connection and ignores `NEON_WS_PROXY`. `db:filepack` is exempt: it goes
+through `src/lib/db.ts` like the rest of the app, so it honours the proxy and
+needs no `psql`. The generated README has the exact commands.

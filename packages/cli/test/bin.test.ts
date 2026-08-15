@@ -59,54 +59,63 @@ describe("installed bin entrypoint", () => {
     }
   });
 
-  it("loads published starter assets from bundled ESM and CJS artifacts", async () => {
-    const root = await mkdtemp(join("/tmp", "chatpack-cli-starter-bin-"));
-    temporaryRoots.push(root);
-    const packageRoot = fileURLToPath(new URL("../", import.meta.url));
-    const isolatedPackage = join(root, "package");
-    await mkdir(join(isolatedPackage, "dist"), { recursive: true });
-    await cp(join(packageRoot, "templates"), join(isolatedPackage, "templates"), {
-      recursive: true,
-    });
-    await copyFile(
-      join(packageRoot, "dist", "index.js"),
-      join(isolatedPackage, "dist", "index.js"),
-    );
-    await copyFile(
-      join(packageRoot, "dist", "index.cjs"),
-      join(isolatedPackage, "dist", "index.cjs"),
-    );
-    await writeFile(join(isolatedPackage, "package.json"), '{"type":"module"}\n');
+  // 20s rather than vitest's 5s default: this copies all 118 template files into
+  // an isolated package and then spawns the CLI twice. It sat under a second when
+  // the starter was a handful of files, but it grew with the starter and now
+  // exceeds 5s whenever the machine is busy - which under `turbo run` it always
+  // is. The work is real I/O, so the budget is what was wrong, not the test.
+  it(
+    "loads published starter assets from bundled ESM and CJS artifacts",
+    { timeout: 20_000 },
+    async () => {
+      const root = await mkdtemp(join("/tmp", "chatpack-cli-starter-bin-"));
+      temporaryRoots.push(root);
+      const packageRoot = fileURLToPath(new URL("../", import.meta.url));
+      const isolatedPackage = join(root, "package");
+      await mkdir(join(isolatedPackage, "dist"), { recursive: true });
+      await cp(join(packageRoot, "templates"), join(isolatedPackage, "templates"), {
+        recursive: true,
+      });
+      await copyFile(
+        join(packageRoot, "dist", "index.js"),
+        join(isolatedPackage, "dist", "index.js"),
+      );
+      await copyFile(
+        join(packageRoot, "dist", "index.cjs"),
+        join(isolatedPackage, "dist", "index.cjs"),
+      );
+      await writeFile(join(isolatedPackage, "package.json"), '{"type":"module"}\n');
 
-    for (const artifact of ["index.js", "index.cjs"]) {
-      const fixture = join(root, artifact.replace(".", "-"));
-      await mkdir(join(fixture, ".git"), { recursive: true });
-      const { stdout } = await execFileAsync(process.execPath, [
-        join(isolatedPackage, "dist", artifact),
-        "init",
-        "--cwd",
-        fixture,
-        "--framework",
-        "next",
-        "--auth-provider",
-        "auth0",
-        "--package-manager",
-        "pnpm",
-        "--name",
-        "packed-starter",
-        "--yes",
-        "--dry-run",
-      ]);
-      expect(stdout).toContain("Chatpack setup plan");
-      expect(stdout).toContain("Framework: next");
-      expect(stdout).toContain("Auth:      auth0");
-      expect(stdout).toContain("Package:   packed-starter");
-      // A dry run lists every file, which is also the strongest proof that the
-      // bundled artifact really found the template assets beside it: these two
-      // paths only exist in the auth0 overlay and the base layer.
-      expect(stdout).toContain("src/components/ui/sidebar.tsx");
-      expect(stdout).toContain("src/proxy.ts");
-      expect(stdout).toContain("Dry run complete.");
-    }
-  });
+      for (const artifact of ["index.js", "index.cjs"]) {
+        const fixture = join(root, artifact.replace(".", "-"));
+        await mkdir(join(fixture, ".git"), { recursive: true });
+        const { stdout } = await execFileAsync(process.execPath, [
+          join(isolatedPackage, "dist", artifact),
+          "init",
+          "--cwd",
+          fixture,
+          "--framework",
+          "next",
+          "--auth-provider",
+          "auth0",
+          "--package-manager",
+          "pnpm",
+          "--name",
+          "packed-starter",
+          "--yes",
+          "--dry-run",
+        ]);
+        expect(stdout).toContain("Chatpack setup plan");
+        expect(stdout).toContain("Framework: next");
+        expect(stdout).toContain("Auth:      auth0");
+        expect(stdout).toContain("Package:   packed-starter");
+        // A dry run lists every file, which is also the strongest proof that the
+        // bundled artifact really found the template assets beside it: these two
+        // paths only exist in the auth0 overlay and the base layer.
+        expect(stdout).toContain("src/components/ui/sidebar.tsx");
+        expect(stdout).toContain("src/proxy.ts");
+        expect(stdout).toContain("Dry run complete.");
+      }
+    },
+  );
 });

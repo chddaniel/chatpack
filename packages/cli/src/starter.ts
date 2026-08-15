@@ -169,41 +169,149 @@ function mergeGitignore(path: string, generated: string): PlanAction {
 }
 
 /**
+ * `pnpm-workspace.yaml` is pnpm's file; the starter only seeds the build
+ * approvals a fresh clone needs. pnpm then edits it during `install` - pnpm 11
+ * appends a `minimumReleaseAgeExclude` entry for every recent version it
+ * accepted - so a rerun of `init` must not read those additions as a hand-edited
+ * file it is about to clobber. If our keys are already there, there is nothing
+ * left to do.
+ */
+function mergePnpmWorkspace(path: string, generated: string): PlanAction {
+  const reason = "Pre-approve the install scripts the starter needs.";
+  if (!existsSync(path)) return actionForFile(path, generated, reason);
+  const current = readFileSync(path, "utf8");
+  if (current === generated) {
+    return { kind: "skip", path, reason: `${reason} (already current)` };
+  }
+  // Both spellings, because pnpm 10 reads one and pnpm 11 the other.
+  const missing = ["onlyBuiltDependencies:", "allowBuilds:"].filter(
+    (key) => !current.includes(key),
+  );
+  if (missing.length === 0) {
+    return { kind: "skip", path, reason: "pnpm build approvals are already present." };
+  }
+  const separator = current.length === 0 || current.endsWith("\n") ? "" : "\n";
+  return actionForFile(
+    path,
+    `${current}${separator}${generated}`,
+    "Add the starter's pnpm build approvals while preserving existing settings.",
+    "modify",
+  );
+}
+
+/**
+ * Where every Chatpack feature lives in the generated app. The starter wires all
+ * of them up, so the README has to say where to look - a reader who cannot find
+ * the moderation queue assumes it was left out.
+ */
+function featureTour(framework: StarterFramework): string[] {
+  if (framework !== "next") {
+    return [
+      "## What is wired up",
+      "",
+      "`src/lib/chatpack.ts` mounts the whole Chatpack HTTP surface on one catch-all",
+      "route: directs, groups and public channels, messages with reactions,",
+      "quote-replies, edits, soft deletes, mentions and forwarding, invite links and",
+      "join requests, search, read receipts, the moderation routes, file attachments,",
+      "and the `/stream` SSE endpoint. There is no second handler to add later.",
+      "",
+      "It is also the only file that decides anything: permissions, who counts as a",
+      "moderator, the message-length cap, the file plugin and the transport all live",
+      "there. Read it before you read anything else.",
+    ];
+  }
+  return [
+    "## What is wired up",
+    "",
+    "Every Chatpack feature is in this app, not just the ones a demo needs:",
+    "",
+    "| Page | Features |",
+    "| ---- | -------- |",
+    "| `/` | directs, groups and channels; reactions, quote-replies, edit, delete, forward, report; mentions, attachments, typing signals, presence dots, unread counts, members and roles, invites, the join queue, mute, search |",
+    "| `/channels` | the public channel directory, with open joins and approval requests |",
+    "| `/invite/[code]` | invite-link preview and accept |",
+    "| `/moderation` | the report queue, bans, and the people you have blocked |",
+    "",
+    "`src/lib/chatpack.server.ts` is the only file that decides anything: permissions,",
+    "who counts as a moderator, the message-length cap, the file plugin and the",
+    "transport all live there, and one handler on a catch-all route serves every route",
+    "above plus `/stream`. Read the server file first.",
+    "",
+    "The UI is application-owned React. Nothing under `src/components` is a Chatpack",
+    "API - delete whatever your product does not need.",
+  ];
+}
+
+/**
+ * The features that stay off until an environment variable turns them on. A
+ * fresh clone has to run with no extra services, so the starter defaults to
+ * local disk and in-memory fan-out - and says so, rather than failing in
+ * production once there are two servers.
+ */
+function optionalFeatureNotes(framework: StarterFramework): string[] {
+  const moderationSurface = framework === "next" ? "`/moderation`" : "the moderation routes";
+  return [
+    "## Optional features",
+    "",
+    "Three things stay off until you set an environment variable (all of them are",
+    "listed, commented out, in `.env.example`):",
+    "",
+    "- **Moderation queue** - `MODERATOR_EMAILS` or `MODERATOR_USER_IDS`. With both",
+    `  empty nobody is a moderator, so ${moderationSurface} answers with a refusal.`,
+    "  Reporting and blocking need no configuration; reviewing reports and banning do.",
+    "- **File attachments** - uploads go to `.chatpack-files` on local disk. Set",
+    "  `S3_BUCKET` and the other `S3_*` values to store them in any S3-compatible",
+    "  bucket (AWS, R2, B2, MinIO) instead. Do that before you deploy: a serverless",
+    "  filesystem is not shared between invocations and does not outlive one.",
+    "- **Multi-node realtime** - `REDIS_URL`. A single process fans events out in",
+    "  memory. Two or more need Redis, or a message sent on server A never reaches a",
+    "  listener on server B. Presence is the exception: its snapshot only knows about",
+    "  the streams open on the node that answers, so it stays single-node either way",
+    "  (`docs/decisions/0008`).",
+  ];
+}
+
+/**
  * The one part of the generated README that genuinely differs per starter.
  * Kept here rather than in three README variants so the shared setup steps stay
  * in one file.
  */
 function starterNotes(framework: StarterFramework, authProvider: AuthProvider | undefined): string {
+  const notes = [...featureTour(framework), ""];
   if (framework !== "next") {
-    return [
+    notes.push(
       "## Wire up your own authentication",
       "",
       "`src/lib/chatpack.ts` ships an auth hook that returns `null`, so **every request",
       "answers 401 until you replace it** with your host application's verified session.",
       "That is deliberate - a backend starter must not guess who the caller is.",
-    ].join("\n");
+    );
+  } else {
+    notes.push(
+      "## Authentication",
+      "",
+      `Sign-in is wired with ${authProvider ?? "your provider"}. \`src/lib/chatpack.server.ts\` passes the`,
+      "signed-in user id to Chatpack and validates ids against the `profiles` table, so a",
+      "conversation can never be opened with someone who does not exist.",
+    );
+    if (authProvider === "better-auth") {
+      notes.push(
+        "",
+        "Email verification is **disabled** so the starter runs immediately. Turn it on in",
+        "`src/lib/auth.ts` before accepting untrusted public sign-ups.",
+      );
+    }
   }
-  const notes = [
-    "## Authentication",
-    "",
-    `Sign-in is wired with ${authProvider ?? "your provider"}. \`src/lib/chatpack.server.ts\` passes the`,
-    "signed-in user id to Chatpack and validates ids against the `profiles` table, so a",
-    "conversation can never be opened with someone who does not exist.",
-  ];
-  if (authProvider === "better-auth") {
+  notes.push("", ...optionalFeatureNotes(framework));
+  if (framework === "next") {
     notes.push(
       "",
-      "Email verification is **disabled** so the starter runs immediately. Turn it on in",
-      "`src/lib/auth.ts` before accepting untrusted public sign-ups.",
+      "## Deploy to Vercel",
+      "",
+      "Import the repository, add the same environment variables, and deploy. The Neon Pool",
+      "is registered with the Vercel Functions lifecycle helper in `src/lib/db.ts`.",
     );
   }
-  notes.push(
-    "",
-    "## Deploy to Vercel",
-    "",
-    "Import the repository, add the same environment variables, and deploy. The Neon Pool",
-    "is registered with the Vercel Functions lifecycle helper in `src/lib/db.ts`.",
-  );
   return notes.join("\n");
 }
 
@@ -255,11 +363,10 @@ export async function makeStarterPlan(
       relativePath = "CHATPACK_SETUP.md";
     const target = join(inspection.packageRoot, relativePath);
     const content = render(source, values);
-    actions.push(
-      relativePath === ".gitignore"
-        ? mergeGitignore(target, content)
-        : actionForFile(target, content, `Create ${framework} starter file.`),
-    );
+    if (relativePath === ".gitignore") actions.push(mergeGitignore(target, content));
+    else if (relativePath === "pnpm-workspace.yaml")
+      actions.push(mergePnpmWorkspace(target, content));
+    else actions.push(actionForFile(target, content, `Create ${framework} starter file.`));
   }
   actions.push({
     kind: "install",
@@ -269,6 +376,11 @@ export async function makeStarterPlan(
   const warnings = [
     `Copy .env.example to ${envFile}, add real secrets, then run ${packageManager} run db:generate and ${packageManager} run db:migrate.`,
     "Generation does not provision Neon, write secrets, run migrations, or deploy the application.",
+    // The three optional features, called out here because each one is silently
+    // fine in development and wrong in production if it is left alone.
+    "File attachments are stored on local disk (.chatpack-files) until you set S3_BUCKET. Set it before deploying to serverless - that filesystem does not outlive a single invocation.",
+    "Nobody is a moderator until you set MODERATOR_EMAILS or MODERATOR_USER_IDS. Reporting and blocking work without it; reviewing reports and banning do not.",
+    "Realtime fan-out is in-memory. Set REDIS_URL before running more than one server process, or a message sent on one will not reach listeners on another.",
   ];
   if (framework !== "next") {
     warnings.push(

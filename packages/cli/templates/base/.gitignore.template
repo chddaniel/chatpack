@@ -6,3 +6,4 @@ dist
 .env.local
 *.tsbuildinfo
 drizzle/meta
+.chatpack-files

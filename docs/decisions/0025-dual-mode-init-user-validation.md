@@ -18,11 +18,15 @@ When `package.json` exists, it keeps the existing-project behavior. When no pack
 
 Starter targets are:
 
-- Next.js: application-owned direct-message UI, Neon/Drizzle, and Better Auth, Auth.js, or Auth0.
+- Next.js: application-owned UI, Neon/Drizzle, and Better Auth, Auth.js, or Auth0.
 - Hono and Express: Neon/Drizzle backends with fail-closed host authentication.
 - Web-standard: existing-project mode only.
 
 Templates are reviewed assets published with the CLI. They pin compatible dependencies and do not execute a floating UI generator. Generation does not provision accounts, write secrets, run migrations, or deploy.
+
+A starter covers **every** Chatpack feature, not the subset a demo needs. The first version shipped directs and send/list only, and readers reasonably concluded the rest of the library did not exist - a starter that omits a feature is an argument that the feature is not ready. So the Next.js starter carries directs, groups and public channels, reactions, quote-replies, edits, soft deletes, mentions, forwarding, search, attachments, typing/presence/receipts, unread counts, roles and member management, invite links, join requests, mutes, blocks and the moderation queue, across `/`, `/channels`, `/invite/[code]` and `/moderation`; the Hono and Express starters mount the same route surface without UI. `packages/cli/test/starter.test.ts` asserts one call site per feature, so deleting one fails CI rather than quietly shrinking what the starter teaches.
+
+Three of those features need an external resource, and a starter has to run on a fresh clone with none of them. They are therefore **environment-gated, defaulting to the local option**: attachments write to `.chatpack-files` on disk until `S3_BUCKET` is set, realtime fan-out is in-process until `REDIS_URL` is set, and nobody passes `moderation.canModerate` until `MODERATOR_EMAILS` or `MODERATOR_USER_IDS` is set. All three are listed, commented out, in `.env.example` and warned about after generation. None of them go in `src/lib/env.ts`, which throws on a missing value at import time - putting an optional variable there would break the first `dev`.
 
 The `@chatpack/*` versions a starter installs are **not literals in the template manifests**. Template `package.json` files carry `{{CHATPACK_CORE_VERSION}}`-style tokens, and `packages/cli/src/versions.ts` is the single place those resolve from. A test asserts each constant equals the corresponding workspace `package.json` version, so a Changesets release that bumps core without bumping the constant fails CI instead of publishing a CLI that generates an uninstallable app.
 
@@ -36,7 +40,8 @@ The hook takes one id at a time, and core calls it in **bounded batches of eight
 
 ## Consequences
 
-- A new repository can become a complete, editable chat application with one command.
+- A new repository can become a complete, editable chat application with one command, and that application demonstrates the whole library.
+- The starter is now a second consumer of every public API, so a breaking change to one shows up as a failing starter test. That is the point, and it is also a maintenance cost: the templates have to move with the API.
 - Existing-project automation and safety rules stay compatible.
 - Generated UI remains application source. Chatpack does not gain a reusable UI package.
 - Host applications can prevent phantom conversation participants without giving Chatpack ownership of identity data.

@@ -1,14 +1,18 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
-import type { ClientConversation } from "@chatpack/client";
-import { Menu, Send, X } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import type { ClientMessage } from "@chatpack/client";
+import { MessagesSquare, X } from "lucide-react";
+import Link from "next/link";
 import { toast } from "sonner";
 
-import { ProfileSearch, type PublicProfile } from "@/components/profile-search";
-import { AuthButton } from "@/components/auth-button";
+import { ChatProvider, type ChatContextValue } from "@/components/chat/chat-context";
+import { ConversationHeader } from "@/components/chat/conversation-header";
+import { ConversationSidebar } from "@/components/chat/conversation-sidebar";
+import { MessageComposer } from "@/components/chat/message-composer";
+import { MessageList } from "@/components/chat/message-list";
+import { ProfileSearch } from "@/components/profile-search";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
   Empty,
@@ -17,266 +21,267 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import {
-  InputGroup,
-  InputGroupAddon,
-  InputGroupButton,
-  InputGroupTextarea,
-} from "@/components/ui/input-group";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Sheet, SheetClose, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
-import { Skeleton } from "@/components/ui/skeleton";
+import { Sheet, SheetClose, SheetContent, SheetTitle } from "@/components/ui/sheet";
+import { useProfileDirectory } from "@/hooks/use-profiles";
 import { createApplicationChatClient } from "@/lib/chatpack.client";
+import { createApplicationFileClient } from "@/lib/filepack.client";
+import type { PublicProfile } from "@/lib/profiles";
 
-interface Viewer {
-  id: string;
-  name: string;
-  image: string | null;
-}
-
-export function ChatShell({ user }: { user: Viewer }) {
+/**
+ * The whole chat screen, and the only place that owns state.
+ *
+ * Everything below it reads the client, the viewer and the profile directory out
+ * of `ChatProvider` instead of taking them as props - see
+ * `components/chat/chat-context.tsx` for why.
+ *
+ * One client per screen: `createApplicationChatClient` opens a realtime
+ * connection, so creating it inside a `useMemo` (rather than on every render)
+ * is what keeps that to one SSE stream per tab.
+ */
+export function ChatShell({ user }: { user: PublicProfile }) {
   const client = useMemo(() => createApplicationChatClient(user.id), [user.id]);
+  const files = useMemo(() => createApplicationFileClient(), []);
+  const directory = useProfileDirectory(user);
   const conversations = client.useConversations({ limit: 50 });
-  const [selectedId, setSelectedId] = useState("");
-  const selected = selectedId || conversations.data?.conversations[0]?.id || "";
-  const messages = client.useMessages({ conversationId: selected, limit: 50 });
-  const [body, setBody] = useState("");
-  const [profiles, setProfiles] = useState<Record<string, PublicProfile>>({});
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [replyTo, setReplyTo] = useState<ClientMessage | null>(null);
+  const [conversationsOpen, setConversationsOpen] = useState(false);
+  const [mutedConversationIds, setMutedConversationIds] = useState<ReadonlySet<string>>(
+    () => new Set(),
+  );
+  const [blockedUserIds, setBlockedUserIds] = useState<ReadonlySet<string>>(() => new Set());
 
-  const participantIds = useMemo(
-    () => [
-      ...new Set(
-        (conversations.data?.conversations ?? []).flatMap((conversation) =>
-          conversation.participants.map((participant) => participant.userId),
+  const rows = conversations.data?.conversations ?? [];
+  const selected = rows.find((conversation) => conversation.id === selectedId) ?? null;
+
+  // `/channels` and `/invite/[code]` hand a conversation over through the query
+  // string once you are in it. Read from `window` rather than `useSearchParams`
+  // so this component stays renderable outside a Suspense boundary.
+  useEffect(() => {
+    const requested = new URLSearchParams(window.location.search).get("conversation");
+    if (requested !== null) setSelectedId(requested);
+  }, []);
+
+  /**
+   * Every user id the sidebar can name, as a stable string.
+   *
+   * Keyed on the *set* rather than the conversation list: a new message rewrites
+   * `conversations.data`, and re-resolving fifty profiles because somebody typed
+   * "ok" would be silly.
+   */
+  const participantKey = useMemo(
+    () =>
+      [
+        ...new Set(
+          rows.flatMap((conversation) =>
+            conversation.participants.map((participant) => participant.userId),
+          ),
         ),
-      ),
-    ],
+      ]
+        .sort()
+        .join(","),
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `rows` is derived from this
     [conversations.data],
   );
-
-  useEffect(() => {
-    const missing = participantIds.filter((id) => id !== user.id && !profiles[id]);
-    if (missing.length === 0) return;
-    void fetch("/api/profiles", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({ ids: missing }),
-    }).then(async (response) => {
-      if (!response.ok) return;
-      const { profiles: resolved } = (await response.json()) as { profiles: PublicProfile[] };
-      setProfiles((current) => ({
-        ...current,
-        ...Object.fromEntries(resolved.map((profile) => [profile.id, profile])),
-      }));
-    });
-  }, [participantIds, profiles, user.id]);
-
-  useEffect(() => {
-    const latest = messages.data?.messages[0];
-    if (!selected || !latest) return;
-    void client.conversations.markRead({ conversationId: selected, messageId: latest.id });
-  }, [client, messages.data?.messages, selected]);
-
-  function title(conversation: ClientConversation): string {
-    if (conversation.name) return conversation.name;
-    const other = conversation.participants.find((participant) => participant.userId !== user.id);
-    return other ? (profiles[other.userId]?.name ?? "Direct message") : "Direct message";
-  }
-
-  async function openConversation(profile: PublicProfile): Promise<void> {
-    const result = await client.conversations.create({ otherUserId: profile.id });
-    if (result.error) {
-      toast.error(result.error.message);
-      return;
-    }
-    setProfiles((current) => ({ ...current, [profile.id]: profile }));
-    setSelectedId(result.data.id);
-  }
-
-  async function send(event: FormEvent): Promise<void> {
-    event.preventDefault();
-    const value = body.trim();
-    if (!selected || !value) return;
-    const result = await client.messages.send({ conversationId: selected, body: value });
-    if (result.error) {
-      toast.error(result.error.message);
-      return;
-    }
-    setBody("");
-  }
-
-  const sidebar = (
-    <div className="flex h-full flex-col border-r bg-sidebar">
-      <div className="flex items-center justify-between gap-3 border-b p-4">
-        <div className="min-w-0">
-          <p className="font-semibold">Messages</p>
-          <p className="truncate text-xs text-muted-foreground">{user.name}</p>
-        </div>
-        <ProfileSearch onSelect={openConversation} />
-      </div>
-      <ScrollArea className="flex-1">
-        <div className="space-y-1 p-2">
-          {conversations.isPending &&
-            [1, 2, 3].map((item) => <Skeleton key={item} className="h-14 w-full" />)}
-          {conversations.data?.conversations.map((conversation) => (
-            <button
-              key={conversation.id}
-              onClick={() => setSelectedId(conversation.id)}
-              className={`flex w-full items-center gap-3 rounded-lg px-3 py-2 text-left hover:bg-accent ${selected === conversation.id ? "bg-accent" : ""}`}
-            >
-              <Avatar>
-                <AvatarFallback>{title(conversation).slice(0, 2).toUpperCase()}</AvatarFallback>
-              </Avatar>
-              <span className="min-w-0 flex-1 truncate text-sm font-medium">
-                {title(conversation)}
-              </span>
-              {conversation.unreadCount > 0 && (
-                <span className="rounded-full bg-primary px-2 py-0.5 text-xs text-primary-foreground">
-                  {conversation.unreadCount}
-                </span>
-              )}
-            </button>
-          ))}
-        </div>
-      </ScrollArea>
-      <div className="border-t p-3">
-        <AuthButton user={user} />
-      </div>
-    </div>
+  const participantIds = useMemo(
+    () => (participantKey === "" ? [] : participantKey.split(",")),
+    [participantKey],
   );
 
-  return (
-    <main className="grid h-dvh bg-background md:grid-cols-[320px_1fr]">
-      <aside className="hidden md:block">{sidebar}</aside>
-      <section className="flex min-w-0 flex-col">
-        <header className="flex h-16 items-center gap-3 border-b px-4">
-          <Sheet>
-            <SheetTrigger asChild>
-              <Button
-                className="md:hidden"
-                size="icon"
-                variant="ghost"
-                aria-label="Open conversations"
-              >
-                <Menu />
-              </Button>
-            </SheetTrigger>
-            <SheetContent side="left" className="w-80 p-0" showCloseButton={false}>
-              <SheetTitle className="sr-only">Conversations</SheetTitle>
-              <SheetClose asChild>
-                <Button
-                  className="absolute top-3 right-14 z-10"
-                  size="icon-sm"
-                  variant="ghost"
-                  aria-label="Close conversations"
-                >
-                  <X />
-                </Button>
-              </SheetClose>
-              {sidebar}
-            </SheetContent>
-          </Sheet>
-          <h1 className="truncate font-semibold">
-            {conversations.data?.conversations.find((item) => item.id === selected)
-              ? title(conversations.data.conversations.find((item) => item.id === selected)!)
-              : "Chatpack"}
-          </h1>
-        </header>
-        {conversations.error || messages.error ? (
-          <div className="p-6">
-            <Alert variant="destructive">
-              <AlertTitle>Could not load chat</AlertTitle>
-              <AlertDescription>
-                {conversations.error?.message ?? messages.error?.message}
-              </AlertDescription>
-            </Alert>
-          </div>
-        ) : !selected ? (
-          <Empty className="flex-1">
-            <EmptyHeader>
-              <EmptyMedia variant="icon">
-                <Send />
-              </EmptyMedia>
-              <EmptyTitle>No conversations yet</EmptyTitle>
-              <EmptyDescription>Search for a person to start a direct message.</EmptyDescription>
-            </EmptyHeader>
-            <ProfileSearch onSelect={openConversation} />
-          </Empty>
-        ) : (
-          <>
-            <ScrollArea className="flex-1">
-              <div className="mx-auto flex max-w-3xl flex-col gap-3 p-4">
-                {messages.data?.nextCursor && (
-                  <Button variant="ghost" onClick={() => void messages.loadMore()}>
-                    Load earlier messages
-                  </Button>
-                )}
-                {messages.isPending &&
-                  [1, 2, 3].map((item) => <Skeleton key={item} className="h-16 w-3/4" />)}
-                {messages.data?.messages.toReversed().map((message) => {
-                  const isOwnMessage = message.senderId === user.id;
-                  const senderName = isOwnMessage
-                    ? "You"
-                    : (profiles[message.senderId]?.name ?? "Participant");
+  useEffect(() => {
+    directory.ensure(participantIds);
+  }, [directory, participantIds]);
 
-                  return (
-                    <div
-                      key={message.id}
-                      className={`flex w-full items-end gap-2 ${isOwnMessage ? "justify-end" : "justify-start"}`}
-                      data-message-sender={isOwnMessage ? "self" : "other"}
-                    >
-                      {!isOwnMessage && (
-                        <Avatar className="size-8">
-                          <AvatarFallback>{senderName.slice(0, 2).toUpperCase()}</AvatarFallback>
-                        </Avatar>
-                      )}
-                      <div
-                        className={`max-w-[80%] rounded-2xl px-4 py-2 text-sm ${isOwnMessage ? "bg-primary text-primary-foreground" : "bg-muted text-foreground"}`}
-                      >
-                        <div className="mb-1 flex items-center gap-2 text-[10px] opacity-70">
-                          <span className="font-medium">{senderName}</span>
-                          <time>
-                            {new Date(message.createdAt).toLocaleTimeString([], {
-                              hour: "2-digit",
-                              minute: "2-digit",
-                            })}
-                          </time>
-                        </div>
-                        <p className="whitespace-pre-wrap break-words">{message.body}</p>
-                      </div>
-                      {isOwnMessage && (
-                        <Avatar className="size-8">
-                          <AvatarFallback>{user.name.slice(0, 2).toUpperCase()}</AvatarFallback>
-                        </Avatar>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </ScrollArea>
-            <form onSubmit={(event) => void send(event)} className="border-t p-4">
-              <InputGroup className="mx-auto max-w-3xl">
-                <InputGroupTextarea
-                  value={body}
-                  onChange={(event) => setBody(event.target.value)}
-                  placeholder="Write a message"
-                  aria-label="Message"
+  useEffect(() => {
+    if (participantIds.length === 0) return;
+    // Presence is ephemeral and in-memory, so a fresh tab knows nothing until
+    // somebody comes or goes. This one request seeds the current state; the
+    // `presence.online` / `presence.offline` events keep it current afterwards
+    // (`docs/decisions/0008`).
+    void client.presence.get({ userIds: participantIds });
+  }, [client, participantIds]);
+
+  const refreshMutes = useCallback(async () => {
+    const result = await client.moderation.listMutedConversations({ limit: 100 });
+    if (result.data) {
+      setMutedConversationIds(new Set(result.data.mutes.map((mute) => mute.conversationId)));
+    }
+  }, [client]);
+
+  const refreshBlocks = useCallback(async () => {
+    const result = await client.moderation.listBlockedUsers({ limit: 100 });
+    if (result.data) {
+      setBlockedUserIds(new Set(result.data.blocks.map((block) => block.blockedUserId)));
+    }
+  }, [client]);
+
+  useEffect(() => {
+    void refreshMutes();
+    void refreshBlocks();
+  }, [refreshBlocks, refreshMutes]);
+
+  const toggleMute = useCallback(
+    async (conversationId: string) => {
+      const result = mutedConversationIds.has(conversationId)
+        ? await client.moderation.unmuteConversation({ conversationId })
+        : await client.moderation.muteConversation({ conversationId });
+      if (result.error) {
+        toast.error(result.error.message);
+        return;
+      }
+      await refreshMutes();
+    },
+    [client, mutedConversationIds, refreshMutes],
+  );
+
+  const toggleBlock = useCallback(
+    async (userId: string) => {
+      const blocked = blockedUserIds.has(userId);
+      const result = blocked
+        ? await client.moderation.unblockUser({ targetUserId: userId })
+        : await client.moderation.blockUser({ targetUserId: userId });
+      if (result.error) {
+        toast.error(result.error.message);
+        return;
+      }
+      // Blocking is one-sided and forward-looking: existing conversations stay
+      // readable, new directs between you two are refused
+      // (`docs/decisions/0021`).
+      toast.success(blocked ? "Unblocked." : "Blocked.");
+      await refreshBlocks();
+    },
+    [blockedUserIds, client, refreshBlocks],
+  );
+
+  const select = useCallback((conversationId: string | null) => {
+    setSelectedId(conversationId);
+    setReplyTo(null);
+    setConversationsOpen(false);
+  }, []);
+
+  const context = useMemo<ChatContextValue>(
+    () => ({
+      client,
+      files,
+      viewer: user,
+      directory,
+      mutedConversationIds,
+      toggleMute,
+      blockedUserIds,
+      toggleBlock,
+      select,
+    }),
+    [
+      blockedUserIds,
+      client,
+      directory,
+      files,
+      mutedConversationIds,
+      select,
+      toggleBlock,
+      toggleMute,
+      user,
+    ],
+  );
+
+  const sidebar = <ConversationSidebar conversations={conversations} selectedId={selectedId} />;
+
+  return (
+    <ChatProvider value={context}>
+      <main className="grid h-dvh bg-background md:grid-cols-[320px_1fr]">
+        <aside className="hidden md:block">{sidebar}</aside>
+
+        <Sheet open={conversationsOpen} onOpenChange={setConversationsOpen}>
+          <SheetContent side="left" className="w-80 p-0" showCloseButton={false}>
+            <SheetTitle className="sr-only">Conversations</SheetTitle>
+            <SheetClose asChild>
+              <Button
+                className="absolute top-3 right-3 z-10"
+                size="icon-sm"
+                variant="ghost"
+                aria-label="Close conversations"
+              >
+                <X />
+              </Button>
+            </SheetClose>
+            {sidebar}
+          </SheetContent>
+        </Sheet>
+
+        <section className="flex min-w-0 flex-col">
+          {conversations.error !== null && (
+            <div className="p-6">
+              <Alert variant="destructive">
+                <AlertTitle>Could not load conversations</AlertTitle>
+                <AlertDescription>{conversations.error.message}</AlertDescription>
+              </Alert>
+            </div>
+          )}
+
+          {selected === null ? (
+            <Empty className="flex-1">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <MessagesSquare />
+                </EmptyMedia>
+                <EmptyTitle>
+                  {conversations.isPending
+                    ? "Loading your conversations"
+                    : rows.length === 0
+                      ? "No conversations yet"
+                      : "Pick a chat"}
+                </EmptyTitle>
+                <EmptyDescription>
+                  {rows.length === 0
+                    ? "Search for someone to start a direct message, make a group, or join a public channel."
+                    : "Choose a conversation on the left to start reading."}
+                </EmptyDescription>
+              </EmptyHeader>
+              <div className="flex items-center gap-2">
+                <ProfileSearch
+                  onSelect={async (profile) => {
+                    directory.put(profile);
+                    const result = await client.conversations.create({ otherUserId: profile.id });
+                    if (result.error) {
+                      toast.error(result.error.message);
+                      return;
+                    }
+                    select(result.data.id);
+                  }}
                 />
-                <InputGroupAddon align="inline-end">
-                  <InputGroupButton
-                    type="submit"
-                    size="icon-sm"
-                    disabled={!body.trim()}
-                    aria-label="Send"
-                  >
-                    <Send />
-                  </InputGroupButton>
-                </InputGroupAddon>
-              </InputGroup>
-            </form>
-          </>
-        )}
-      </section>
-    </main>
+                <Button asChild variant="outline">
+                  <Link href="/channels">Browse channels</Link>
+                </Button>
+                <Button
+                  className="md:hidden"
+                  variant="outline"
+                  onClick={() => setConversationsOpen(true)}
+                >
+                  Conversations
+                </Button>
+              </div>
+            </Empty>
+          ) : (
+            <>
+              <ConversationHeader
+                conversation={selected}
+                onOpenConversations={() => setConversationsOpen(true)}
+              />
+              <MessageList
+                conversationId={selected.id}
+                conversation={selected}
+                onReply={setReplyTo}
+              />
+              <MessageComposer
+                conversationId={selected.id}
+                conversation={selected}
+                replyTo={replyTo}
+                onClearReply={() => setReplyTo(null)}
+              />
+            </>
+          )}
+        </section>
+      </main>
+    </ChatProvider>
   );
 }
