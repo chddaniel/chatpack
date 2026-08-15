@@ -191,6 +191,39 @@ describe("createPluginRuntime", () => {
     }
   });
 
+  it("does not block SSE startup on a pending async stream-open hook", async () => {
+    let releaseOpen: (() => void) | undefined;
+    const openPending = new Promise<void>((resolve) => {
+      releaseOpen = resolve;
+    });
+    const runtime = createPluginRuntime(
+      [{ name: "slow", onStreamOpen: () => openPending }],
+      fakeApi,
+      inProcessTransport(),
+    );
+    const handler = createHandler(
+      fakeApi,
+      () => ({ id: "alice" }),
+      { heartbeatIntervalMs: 0 },
+      inProcessTransport(),
+      runtime,
+    );
+
+    const response = await handler.GET(new Request("http://test.local/api/chat/stream"));
+    const reader = response.body!.getReader();
+    const first = await Promise.race([
+      reader.read(),
+      new Promise<"timeout">((resolve) => setTimeout(() => resolve("timeout"), 100)),
+    ]);
+
+    releaseOpen?.();
+    expect(first).not.toBe("timeout");
+    if (first === "timeout") return;
+    expect(new TextDecoder().decode(first.value)).toBe(": connected\n\n");
+
+    await reader.cancel();
+  });
+
   it("handleRequest: first plugin response wins, null passes through", async () => {
     const transport = inProcessTransport();
     const basePaths: string[] = [];

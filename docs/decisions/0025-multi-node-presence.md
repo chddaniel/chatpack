@@ -1,4 +1,4 @@
-# ADR 0023: Multi-node presence leases
+# ADR 0025: Multi-node presence leases
 
 ## Status
 
@@ -26,8 +26,9 @@ close, and offline confirmation are atomic per user:
   token; a new open invalidates that token.
 - `finalizeOffline` reports `offline` only when its token still owns the pending
   transition and no lease remains.
-- Lease expiry removes a crashed node's connection. A five-second offline grace
-  period remains the default to absorb normal SSE reconnects.
+- Lease expiry removes a crashed node's connection, so later snapshots report
+  offline. A five-second offline grace period remains the default to absorb
+  normal SSE reconnects.
 
 The SSE handler supplies a unique connection id and periodically invokes the
 store heartbeat. Async lifecycle hooks stay fire-and-forget from the request's

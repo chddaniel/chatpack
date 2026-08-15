@@ -479,11 +479,6 @@ export function createHandler(
 
         // The stream is live: let plugins (e.g. presence) know.
         pluginOpen = Promise.resolve(plugins?.notifyStreamOpen(userId, connectionId));
-        await pluginOpen;
-        if (closed) {
-          notifyPluginClose();
-          return;
-        }
 
         // 2. Replay anything missed since the client's last seen event.
         if (lastEventId) {

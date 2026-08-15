@@ -83,6 +83,19 @@ atomic `EVAL` scripts; keep the subscriber connection dedicated to `SUBSCRIBE`.
 
 Without a shared store, presence remains process-local for backward compatibility.
 
+## Real Redis integration test
+
+The normal suite uses an in-memory Redis double. To execute the Lua scripts
+against Redis itself, start a Redis server with `redis-cli` available and run:
+
+```bash
+CHATPACK_REDIS_URL=redis://127.0.0.1:6379 \
+  pnpm --filter @chatpack/transport-redis test -- redis.integration.test.ts
+```
+
+When `redis-cli` exists only inside Docker, use
+`CHATPACK_REDIS_CLI=docker CHATPACK_REDIS_CLI_ARGS="exec redis redis-cli"`.
+
 ## Failure behavior
 
 A Redis outage degrades live delivery; it never fails a send.
@@ -115,8 +128,8 @@ change missed during an outage shows up on the next conversation refetch
 - **Sticky sessions are not required.** Any node can serve any stream.
 - **Presence needs both shared pieces.** Configure `redisTransport()` for event
   fan-out and `redisPresenceStore()` for connection state. Lease expiry removes
-  connections from crashed nodes; the default five-second offline grace absorbs
-  reconnect flaps.
+  connections from crashed nodes, so snapshots become offline; the default
+  five-second offline grace absorbs reconnect flaps.
 
 ## Links
 

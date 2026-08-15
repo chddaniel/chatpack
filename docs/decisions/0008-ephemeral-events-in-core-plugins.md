@@ -94,7 +94,7 @@ payload, at }`) is fire-and-forget: never persisted, never replayed. Its
   that just fan out events keep working unchanged.
 - **Trade-off:** presence state is process-local by default. A multi-node
   deployment can pass the shared `PresenceStore` supplied by
-  `@chatpack/transport-redis` (ADR 0023).
+  `@chatpack/transport-redis` (ADR 0025).
 - **Trade-off:** ephemeral delivery is at-most-once (drops) _and_
   at-least-once per connection for delivered ticks (two tabs → two ticks).
   Clients dedupe by `payload.messageId`; the durable truth is always in

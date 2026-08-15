@@ -31,8 +31,9 @@ client with React hooks and polling fallback, `@chatpack/cli init`,
 Filepack-backed file attachments via `@chatpack/file`, invite links with join
 requests, and public channels (a browsable directory of public groups).
 
-True message threads, push notification providers, reusable React UI
-components, and multi-node presence have not shipped.
+True message threads, push notification providers, and reusable React UI
+components have not shipped. Multi-node presence is available with
+`redisPresenceStore()` and the Redis transport.
 
 ## File attachments (`@chatpack/file`)
 

@@ -1,11 +1,11 @@
 ---
 title: Architecture
-description: The two interfaces that carry the whole design, and the request flow from browser to database.
+description: The three interfaces that carry the whole design, and the request flow from browser to database.
 ---
 
 ## The 30-second version
 
-Two interfaces carry the whole design:
+Three interfaces carry the whole design:
 
 - **`StorageAdapter`** - durable reads/writes (conversations, messages,
   read-state). Core depends on the interface, never on a specific database.
@@ -15,6 +15,9 @@ Two interfaces carry the whole design:
   [`@chatpack/transport-redis`](/docs/realtime/multi-node) for several. Either
   way the SSE endpoint recovers missed messages on reconnect from storage via
   `Last-Event-ID`.
+- **`PresenceStore`** - expiring SSE connection leases and global online/offline
+  transitions. The default is process-local; use `redisPresenceStore()` with
+  the Redis transport for multi-node presence (ADR 0025).
 
 The core engine (`@chatpack/core`) contains all domain logic: 1:1 and group
 conversations, membership and role rules, permission checks, validation.
@@ -167,3 +170,4 @@ Non-obvious decisions are recorded as short ADRs in
 | 0020 | Public channels are a `visibility` flag on groups         |
 | 0021 | Core moderation suite as an optional capability           |
 | 0022 | Message formatting belongs to the application             |
+| 0025 | Multi-node presence uses atomic expiring leases           |

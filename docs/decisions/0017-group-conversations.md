@@ -277,7 +277,7 @@ exhaustive over `ChatpackErrorCode`, so a missing row is a typecheck failure.
   release as groups would conflate two migrations. With
   `MAX_GROUP_PARTICIPANTS` at 256 the array is bounded, so this is a payload
   size question, not a correctness one. It is the next thing to revisit.
-- **Multi-node `presence()` requires the shared store** described in ADR 0023.
+- **Multi-node `presence()` requires the shared store** described in ADR 0025.
   Groups fan out the resulting global transitions to every other participant.
 - **Threads remain a non-goal.** Groups add participants to a conversation;
   threads add a second axis of ordering (thread identity, per-thread unread,

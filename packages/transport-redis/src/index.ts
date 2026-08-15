@@ -32,7 +32,7 @@
  * **What this fixes and what it does not.** Messages, typing signals, receipt
  * ticks, and presence transition events travel on the transport. Presence
  * connection state needs the separate `redisPresenceStore()` below; configure
- * both pieces for a complete multi-node deployment (ADR 0023).
+ * both pieces for a complete multi-node deployment (ADR 0025).
  *
  * @module
  */
@@ -233,9 +233,9 @@ return { redis.call("ZCARD", KEYS[1]) > 0 and 1 or 0, lastSeen or "" }
 function presenceKeys(prefix: string, userId: string): string[] {
   const safeUserId = encodeURIComponent(userId);
   return [
-    `${prefix}:leases:${safeUserId}`,
-    `${prefix}:last-seen:${safeUserId}`,
-    `${prefix}:pending:${safeUserId}`,
+    `${prefix}:leases:{${safeUserId}}`,
+    `${prefix}:last-seen:{${safeUserId}}`,
+    `${prefix}:pending:{${safeUserId}}`,
   ];
 }
 

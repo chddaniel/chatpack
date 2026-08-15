@@ -510,6 +510,20 @@ describe("redisPresenceStore", () => {
       lastSeenAt: null,
     });
   });
+
+  it("uses one Redis Cluster hash slot for each user's presence keys", async () => {
+    const client = new FakeIoredisPresence();
+    const store = redisPresenceStore({ client, keyPrefix: "test:presence" });
+    await store.open({
+      userId: "alice",
+      connectionId: "s1",
+      now: new Date(),
+      leaseTtlMs: 30_000,
+    });
+
+    const keys = client.evalCalls[0]!.keys;
+    expect(new Set(keys.map((key) => key.match(/\{[^}]+\}/)?.[0]))).toEqual(new Set(["{alice}"]));
+  });
 });
 
 describe("redisTransport - failure handling", () => {

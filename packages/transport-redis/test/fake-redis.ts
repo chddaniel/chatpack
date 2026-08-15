@@ -195,23 +195,25 @@ export class FakePresenceDatabase {
       this.strings.delete(pendingKey!);
       return [1, this.strings.get(lastSeenKey!)?.value ?? ""];
     }
-    const lastSeen = this.strings.get(lastSeenKey!)?.value ?? "";
-    return [set.size > 0 ? 1 : 0, lastSeen];
+    if (script.includes("local lastSeen = redis.call")) {
+      const lastSeen = this.strings.get(lastSeenKey!)?.value ?? "";
+      return [set.size > 0 ? 1 : 0, lastSeen];
+    }
+    throw new Error("FakePresenceDatabase received an unsupported Redis script.");
   }
 }
 
 /** ioredis-shaped presence client for atomic store tests. */
 export class FakeIoredisPresence {
+  readonly evalCalls: Array<{ script: string; keys: string[]; args: string[] }> = [];
+
   constructor(private readonly database: FakePresenceDatabase = new FakePresenceDatabase()) {}
 
   eval(script: string, numberOfKeys: number, ...keysAndArguments: string[]): Promise<unknown> {
-    return Promise.resolve(
-      this.database.eval(
-        script,
-        keysAndArguments.slice(0, numberOfKeys),
-        keysAndArguments.slice(numberOfKeys),
-      ),
-    );
+    const keys = keysAndArguments.slice(0, numberOfKeys);
+    const args = keysAndArguments.slice(numberOfKeys);
+    this.evalCalls.push({ script, keys, args });
+    return Promise.resolve(this.database.eval(script, keys, args));
   }
 }
 

@@ -321,14 +321,17 @@ export function presence(options: PresenceOptions = {}): ChatpackPlugin {
     const allowed = new Set(await partnerIdsOf(ctx, ctx.userId));
     allowed.add(ctx.userId);
     const result: Record<string, { online: boolean; lastSeenAt: string | null }> = {};
-    for (const id of requested) {
-      if (!allowed.has(id)) continue;
-      const state = await store.get({ userId: id, now: new Date() });
+    const visibleIds = requested.filter((id) => allowed.has(id));
+    const states = await Promise.all(
+      visibleIds.map((id) => store.get({ userId: id, now: new Date() })),
+    );
+    visibleIds.forEach((id, index) => {
+      const state = states[index]!;
       result[id] = {
         online: state.online,
         lastSeenAt: state.lastSeenAt?.toISOString() ?? null,
       };
-    }
+    });
     return json(200, { presence: result });
   }
 

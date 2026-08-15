@@ -76,7 +76,7 @@ Three interfaces carry the whole design (see [docs/MVP.md](./docs/MVP.md) §6):
   `Last-Event-ID` (see [ADR 0006](./docs/decisions/0006-sse-gap-fill.md)).
 - **`PresenceStore`** - expiring SSE connection leases and global online/offline
   transitions. The default is process-local; multi-node deployments can use
-  `redisPresenceStore()` with the Redis transport (see ADR 0023).
+  `redisPresenceStore()` with the Redis transport (see ADR 0025).
 
 The core engine (`@chatpack/core`) contains all domain logic: 1:1
 conversations, permission checks, validation. Adapters contain **no** domain

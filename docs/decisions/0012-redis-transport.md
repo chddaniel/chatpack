@@ -122,7 +122,7 @@ one Redis instance can serve staging and production without crosstalk.
   presence transitions, while `redisPresenceStore()` stores one expiring lease
   per SSE connection. Configure both on every node for global presence. Without
   the store, `presence()` remains process-local for backward compatibility. The
-  lease design and atomic transition rules are in ADR 0023.
+  lease design and atomic transition rules are in ADR 0025.
 - **Limitation - Redis pub/sub is at-most-once.** An event published while a node
   is disconnected from Redis is gone; there is no replay buffer. This is
   tolerable precisely because durable events are replayable from storage and

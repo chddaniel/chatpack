@@ -205,7 +205,7 @@ export type {
   PublishEphemeralInput,
 } from "./plugin";
 
-// Shared presence state contract (`docs/decisions/0023`).
+// Shared presence state contract (`docs/decisions/0025`).
 export type {
   PresenceCloseInput,
   PresenceCloseResult,
