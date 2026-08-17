@@ -248,10 +248,11 @@ async function installFixture(manager, fixtureRoot) {
     manager === "yarn"
       ? {
           ...process.env,
-          // Public pull requests enable Yarn hardened mode automatically. This
-          // disposable fixture intentionally starts without a lockfile, so its
-          // real install must be allowed to create one.
+          // CI enables immutable installs, and public pull requests also enable
+          // hardened mode. This disposable fixture intentionally starts without
+          // a lockfile, so its real install must be allowed to create one.
           YARN_ENABLE_HARDENED_MODE: "0",
+          YARN_ENABLE_IMMUTABLE_INSTALLS: "0",
         }
       : process.env;
   await run(command, args, { cwd: fixtureRoot, env });
