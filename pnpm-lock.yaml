@@ -33,11 +33,11 @@ importers:
   apps/demo-api:
     dependencies:
       '@chatpack/adapter-memory':
-        specifier: 0.8.0
-        version: 0.8.0
+        specifier: 0.8.1
+        version: 0.8.1
       '@chatpack/core':
-        specifier: 0.12.0
-        version: 0.12.0
+        specifier: 0.13.0
+        version: 0.13.0
       next:
         specifier: 16.2.12
         version: 16.2.12(@babel/core@7.29.7)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
@@ -543,11 +543,11 @@ packages:
   '@changesets/write@0.4.0':
     resolution: {integrity: sha512-CdTLvIOPiCNuH71pyDu3rA+Q0n65cmAbXnwWH84rKGiFumFzkmHNT8KHTMEchcxN+Kl8I54xGUhJ7l3E7X396Q==}
 
-  '@chatpack/adapter-memory@0.8.0':
-    resolution: {integrity: sha512-5Vv+wPVHxOmBSdwfxrgaMEsPv6KPG31AvdHyw82luXSrep7Ai/q0RPs9a5zWDjZP28NCHINdzlvlG5u3jU3nog==}
+  '@chatpack/adapter-memory@0.8.1':
+    resolution: {integrity: sha512-yUdZFMw9fHYS5piebX4V6LnmcDz+FslXa2lUn2DcczR3gC6ZyUW98Inb0M2UU1rLQmDXandXQPjxT8cW8Sw9oA==}
 
-  '@chatpack/core@0.12.0':
-    resolution: {integrity: sha512-2lRizS7ICtA7/FPHXY54VFAp/aMbOTWhPI3xTvEOLJpDsxQ4wtajiKtJVFOnarb6LR9UAuaTwM7VIvTokCcELA==}
+  '@chatpack/core@0.13.0':
+    resolution: {integrity: sha512-dcd0fUIdt+lw3NPMgaHUi9Kw9p6YeJuWRmYteRAxStqqVDERyxxXF835WBSaXZyr7bNO+aNOLQrvZQ5s4iPwKQ==}
 
   '@clack/core@0.5.0':
     resolution: {integrity: sha512-p3y0FIOwaYRUPRcMO7+dlmLh8PSRcrjuTndsiA0WAFbWES0mLZlrjVoBRZ9DzkPFJZG6KGkJmoEAY0ZcVWTkow==}
@@ -4906,11 +4906,11 @@ snapshots:
       human-id: 4.2.0
       prettier: 2.8.8
 
-  '@chatpack/adapter-memory@0.8.0':
+  '@chatpack/adapter-memory@0.8.1':
     dependencies:
-      '@chatpack/core': 0.12.0
+      '@chatpack/core': 0.13.0
 
-  '@chatpack/core@0.12.0': {}
+  '@chatpack/core@0.13.0': {}
 
   '@clack/core@0.5.0':
     dependencies:
