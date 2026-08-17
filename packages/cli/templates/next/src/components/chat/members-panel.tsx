@@ -85,9 +85,22 @@ export function MembersPanel({
 
   useEffect(() => {
     if (!isAdmin) return;
-    void refreshInvites();
-    void refreshRequests();
-  }, [isAdmin, refreshInvites, refreshRequests]);
+    let cancelled = false;
+    void Promise.all([
+      client.invites.list({ conversationId: conversation.id }),
+      client.joinRequests.list({ conversationId: conversation.id, status: "pending" }),
+    ]).then(([inviteResult, requestResult]) => {
+      if (cancelled) return;
+      if (inviteResult.data) setInvites(inviteResult.data.invites);
+      if (requestResult.data) {
+        setRequests(requestResult.data.joinRequests);
+        directory.ensure(requestResult.data.joinRequests.map((request) => request.userId));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, conversation.id, directory, isAdmin]);
 
   async function addMember(userId: string): Promise<void> {
     const result = await client.conversations.addParticipants({

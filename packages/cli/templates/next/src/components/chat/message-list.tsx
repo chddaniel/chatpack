@@ -11,6 +11,8 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 
+const EMPTY_MESSAGES: ClientMessage[] = [];
+
 export function MessageList({
   conversationId,
   conversation,
@@ -28,7 +30,7 @@ export function MessageList({
   const receipts = client.useReceipts({ conversationId }) as ReceiptState | null;
   const bottomRef = useRef<HTMLDivElement | null>(null);
 
-  const page = messages.data?.messages ?? [];
+  const page = messages.data?.messages ?? EMPTY_MESSAGES;
   const newest = page[0];
 
   // Every id the page can name: senders, whoever they replied to, whoever they

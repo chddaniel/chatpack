@@ -29,10 +29,7 @@ export function ProfilePicker({
   const [results, setResults] = useState<PublicProfile[]>([]);
 
   useEffect(() => {
-    if (query.trim().length < 2) {
-      setResults([]);
-      return;
-    }
+    if (query.trim().length < 2) return;
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
       void searchProfiles(query, controller.signal)
@@ -58,7 +55,11 @@ export function ProfilePicker({
       <Input
         {...(id === undefined ? {} : { id })}
         value={query}
-        onChange={(event) => setQuery(event.target.value)}
+        onChange={(event) => {
+          const nextQuery = event.target.value;
+          setQuery(nextQuery);
+          if (nextQuery.trim().length < 2) setResults([]);
+        }}
         placeholder={placeholder}
       />
       {visible.length > 0 && (

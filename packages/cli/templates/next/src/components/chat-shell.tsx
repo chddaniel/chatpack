@@ -38,12 +38,18 @@ import type { PublicProfile } from "@/lib/profiles";
  * connection, so creating it inside a `useMemo` (rather than on every render)
  * is what keeps that to one SSE stream per tab.
  */
-export function ChatShell({ user }: { user: PublicProfile }) {
+export function ChatShell({
+  user,
+  initialConversationId,
+}: {
+  user: PublicProfile;
+  initialConversationId: string | null;
+}) {
   const client = useMemo(() => createApplicationChatClient(user.id), [user.id]);
   const files = useMemo(() => createApplicationFileClient(), []);
   const directory = useProfileDirectory(user);
   const conversations = client.useConversations({ limit: 50 });
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedId] = useState<string | null>(initialConversationId);
   const [replyTo, setReplyTo] = useState<ClientMessage | null>(null);
   const [conversationsOpen, setConversationsOpen] = useState(false);
   const [mutedConversationIds, setMutedConversationIds] = useState<ReadonlySet<string>>(
@@ -53,14 +59,6 @@ export function ChatShell({ user }: { user: PublicProfile }) {
 
   const rows = conversations.data?.conversations ?? [];
   const selected = rows.find((conversation) => conversation.id === selectedId) ?? null;
-
-  // `/channels` and `/invite/[code]` hand a conversation over through the query
-  // string once you are in it. Read from `window` rather than `useSearchParams`
-  // so this component stays renderable outside a Suspense boundary.
-  useEffect(() => {
-    const requested = new URLSearchParams(window.location.search).get("conversation");
-    if (requested !== null) setSelectedId(requested);
-  }, []);
 
   /**
    * Every user id the sidebar can name, as a stable string.
@@ -116,9 +114,23 @@ export function ChatShell({ user }: { user: PublicProfile }) {
   }, [client]);
 
   useEffect(() => {
-    void refreshMutes();
-    void refreshBlocks();
-  }, [refreshBlocks, refreshMutes]);
+    let cancelled = false;
+    void Promise.all([
+      client.moderation.listMutedConversations({ limit: 100 }),
+      client.moderation.listBlockedUsers({ limit: 100 }),
+    ]).then(([mutes, blocks]) => {
+      if (cancelled) return;
+      if (mutes.data) {
+        setMutedConversationIds(new Set(mutes.data.mutes.map((mute) => mute.conversationId)));
+      }
+      if (blocks.data) {
+        setBlockedUserIds(new Set(blocks.data.blocks.map((block) => block.blockedUserId)));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [client]);
 
   const toggleMute = useCallback(
     async (conversationId: string) => {

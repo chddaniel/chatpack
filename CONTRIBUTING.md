@@ -64,6 +64,23 @@ To scope a command to one package:
 pnpm --filter @chatpack/core test
 ```
 
+Starter-template changes also need a generated-app check. This builds and packs
+the local Chatpack packages, runs the packed CLI in a temporary repository,
+installs the generated app, then runs migration generation, typecheck, lint,
+production build, database migration, setup check, and HTTP smoke tests:
+
+```sh
+pnpm --filter @chatpack/cli test:generated-starter \
+  --framework next \
+  --auth-provider better-auth \
+  --package-manager pnpm
+```
+
+Set `STARTER_DATABASE_URL` to a disposable local Postgres database. The command
+starts the generated WebSocket proxy automatically. CI runs all three Next.js
+auth providers plus Hono and Express, with npm, pnpm, Yarn, and Bun represented
+across the matrix.
+
 ## Architecture in 30 seconds
 
 Two interfaces carry the whole design (see [docs/MVP.md](./docs/MVP.md) §6):

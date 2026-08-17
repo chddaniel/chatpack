@@ -31,25 +31,29 @@ export function useProfileDirectory(viewer: PublicProfile): ProfileDirectory {
   }));
   // Guards `setProfiles` after unmount, since a batch can still be in flight.
   const mounted = useRef(true);
+  const scheduled = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     mounted.current = true;
     return () => {
       mounted.current = false;
+      if (scheduled.current !== null) clearTimeout(scheduled.current);
+      scheduled.current = null;
     };
   }, []);
 
   const resolver = useMemo(() => {
     const requested = new Set<string>([viewer.id]);
     const queue = new Set<string>();
-    let scheduled: ReturnType<typeof setTimeout> | null = null;
 
     function schedule(): void {
-      if (scheduled !== null) return;
-      scheduled = setTimeout(() => void flush(), 0);
+      if (scheduled.current !== null) return;
+      scheduled.current = setTimeout(() => {
+        scheduled.current = null;
+        void flush();
+      }, 0);
     }
 
     async function flush(): Promise<void> {
-      scheduled = null;
       // The route accepts at most 100 ids; the rest go out on the next pass.
       const batch = [...queue].slice(0, 100);
       for (const userId of batch) queue.delete(userId);

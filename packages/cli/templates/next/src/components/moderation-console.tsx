@@ -38,6 +38,7 @@ export function ModerationConsole({ user }: { user: PublicProfile }) {
   const [reports, setReports] = useState<ClientModerationReport[] | null>(null);
   const [forbidden, setForbidden] = useState(false);
   const [bans, setBans] = useState<ClientUserBan[]>([]);
+  const [bansLoadedAt, setBansLoadedAt] = useState(0);
   const [blocks, setBlocks] = useState<ClientUserBlock[]>([]);
 
   const refreshReports = useCallback(async () => {
@@ -57,7 +58,10 @@ export function ModerationConsole({ user }: { user: PublicProfile }) {
 
   const refreshBans = useCallback(async () => {
     const result = await client.moderation.listBans({ limit: 50 });
-    if (result.data) setBans(result.data.bans);
+    if (result.data) {
+      setBans(result.data.bans);
+      setBansLoadedAt(Date.now());
+    }
   }, [client]);
 
   const refreshBlocks = useCallback(async () => {
@@ -66,17 +70,46 @@ export function ModerationConsole({ user }: { user: PublicProfile }) {
   }, [client]);
 
   useEffect(() => {
-    void refreshReports();
-  }, [refreshReports]);
+    let cancelled = false;
+    void client.moderation.listReports({ status, limit: 50 }).then((result) => {
+      if (cancelled) return;
+      if (result.error) {
+        if (result.error.code === "NOT_MODERATOR") setForbidden(true);
+        else toast.error(result.error.message);
+        setReports([]);
+        return;
+      }
+      setForbidden(false);
+      setReports(result.data.reports);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, status]);
 
   useEffect(() => {
-    void refreshBlocks();
-  }, [refreshBlocks]);
+    let cancelled = false;
+    void client.moderation.listBlockedUsers({ limit: 100 }).then((result) => {
+      if (!cancelled && result.data) setBlocks(result.data.blocks);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [client]);
 
   useEffect(() => {
     if (forbidden) return;
-    void refreshBans();
-  }, [forbidden, refreshBans]);
+    let cancelled = false;
+    void client.moderation.listBans({ limit: 50 }).then((result) => {
+      if (!cancelled && result.data) {
+        setBans(result.data.bans);
+        setBansLoadedAt(Date.now());
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, forbidden]);
 
   // Name resolution is a separate pass so that a resolved batch cannot re-trigger
   // the fetch that asked for it: `ensure` is idempotent, the loaders are not.
@@ -199,7 +232,7 @@ export function ModerationConsole({ user }: { user: PublicProfile }) {
               {bans.map((ban) => {
                 const active =
                   ban.revokedAt === null &&
-                  (ban.expiresAt === null || new Date(ban.expiresAt).getTime() > Date.now());
+                  (ban.expiresAt === null || new Date(ban.expiresAt).getTime() > bansLoadedAt);
                 return (
                   <div key={ban.id} className="flex items-center gap-3 rounded-lg border p-3">
                     <Gavel className="size-4 shrink-0 text-muted-foreground" />

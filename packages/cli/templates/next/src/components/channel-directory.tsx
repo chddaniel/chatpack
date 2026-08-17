@@ -54,8 +54,20 @@ export function ChannelDirectory({ user }: { user: PublicProfile }) {
   );
 
   useEffect(() => {
-    void load(null);
-  }, [load]);
+    let cancelled = false;
+    void client.channels.list({ limit: 30 }).then((result) => {
+      if (cancelled) return;
+      if (result.error) {
+        toast.error(result.error.message);
+        return;
+      }
+      setChannels(result.data.channels);
+      setCursor(result.data.nextCursor);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [client]);
 
   async function join(channel: ClientChannelPreview): Promise<void> {
     if (channel.alreadyParticipant) {

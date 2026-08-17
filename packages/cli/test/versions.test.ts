@@ -55,6 +55,26 @@ describe("starter dependency pins", () => {
     }
   });
 
+  // Drizzle Kit picks an installed Postgres driver in priority order. Without
+  // `pg` it picks the app's Neon WebSocket driver, whose private configuration
+  // cannot see the generated local proxy and makes Docker migrations fail.
+  it("pins node-postgres for Drizzle Kit migrations in every template", async () => {
+    const pins = await Promise.all(
+      templatePackageJsons.map(async (relative) => {
+        const manifest = await readJson(join(templateRoot, relative));
+        const devDependencies = (manifest.devDependencies ?? {}) as Record<string, string>;
+        return [relative, devDependencies.pg] as const;
+      }),
+    );
+    const expected = pins[0]?.[1];
+    for (const [relative, pin] of pins) {
+      expect(pin, `${relative} must pin pg exactly`).toMatch(/^\d+\.\d+\.\d+$/);
+      expect(pin, `${relative} disagrees with ${pins[0]?.[0] ?? "the first template"}`).toBe(
+        expected,
+      );
+    }
+  });
+
   it.each(templatePackageJsons)(
     "%s pins @chatpack/* by token, never literally",
     async (relative) => {
