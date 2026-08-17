@@ -80,9 +80,11 @@ in the generated `.env.example`.
 Set `S3_BUCKET` before deploying to a serverless platform: that filesystem is
 not shared between invocations and does not outlive one, so local-disk uploads
 disappear. Set `REDIS_URL` before running more than one server process, or a
-message sent on one will not reach listeners on another. Presence is the
-exception - its snapshot only knows about the streams open on the node that
-answers it, so it stays single-node either way.
+message sent on one will not reach listeners on another. Presence needs one more
+step: the starter uses the per-process default, so its snapshot only knows about
+the streams open on the node that answers. Pass a shared
+[`redisPresenceStore()`](/docs/realtime/multi-node) to `presence()` to count
+connections on every node.
 
 ## Existing applications
 

@@ -265,9 +265,10 @@ function optionalFeatureNotes(framework: StarterFramework): string[] {
     "  filesystem is not shared between invocations and does not outlive one.",
     "- **Multi-node realtime** - `REDIS_URL`. A single process fans events out in",
     "  memory. Two or more need Redis, or a message sent on server A never reaches a",
-    "  listener on server B. Presence is the exception: its snapshot only knows about",
-    "  the streams open on the node that answers, so it stays single-node either way",
-    "  (`docs/decisions/0008`).",
+    "  listener on server B. Presence needs one more step: this starter uses the",
+    "  per-process default, so pass `presence({ store: redisPresenceStore({ client })",
+    "  })` to report users connected to another node as online",
+    "  (`docs/decisions/0025`).",
   ];
 }
 

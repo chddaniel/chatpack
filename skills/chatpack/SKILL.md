@@ -86,7 +86,9 @@ installed `llms.txt` wins (it matches the installed version).
   **plus** `transport: redisTransport({ publisher, subscriber })` from
   `@chatpack/transport-redis` (two separate Redis clients; a subscriber-mode
   client can't `PUBLISH`). Without it, cross-node events are silently dropped.
-  `presence()` stays per-node either way.
+  For cross-node `presence()`, also pass
+  `presence({ store: redisPresenceStore({ client: publisher }) })` - otherwise
+  it counts connections per process and reports users on other nodes offline.
 - Serverless/edge (Vercel, Lambda, Workers, **published** AI-builder apps) →
   `memoryAdapter` loses everything per-isolate: use a database adapter, and poll
   instead of `/stream` (function lifetime is the blocker, so no transport fixes

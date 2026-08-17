@@ -48,8 +48,9 @@ Chatpack stays headless and provider-neutral.
   Chatpack does not ship push notification providers.
 - Chatpack does not ship reusable React UI components. It ships headless React
   hooks.
-- Redis relays events between nodes. Presence connection state remains local
-  to each process.
+- Redis relays events between nodes. Presence connection state is local to each
+  process by default and shared across nodes when `presence()` is given
+  `redisPresenceStore()`.
 - Public channels are discoverable, not readable. Browsing the directory
   returns a name and a participant count; reading messages requires joining.
 - Multi-region infrastructure has not shipped.
