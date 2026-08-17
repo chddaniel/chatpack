@@ -244,7 +244,17 @@ async function installFixture(manager, fixtureRoot) {
     bun: ["bun", ["install"]],
   };
   const [command, args] = commands[manager];
-  await run(command, args, { cwd: fixtureRoot });
+  const env =
+    manager === "yarn"
+      ? {
+          ...process.env,
+          // Public pull requests enable Yarn hardened mode automatically. This
+          // disposable fixture intentionally starts without a lockfile, so its
+          // real install must be allowed to create one.
+          YARN_ENABLE_HARDENED_MODE: "0",
+        }
+      : process.env;
+  await run(command, args, { cwd: fixtureRoot, env });
 }
 
 function fixtureEnvironment(proxyPort, appPort) {
