@@ -19,7 +19,7 @@ npm install @chatpack/transport-redis ioredis
 import { chatpack } from "@chatpack/core";
 import { drizzleAdapter } from "@chatpack/adapter-drizzle";
 import { redisTransport } from "@chatpack/transport-redis";
-import Redis from "ioredis";
+import { Redis } from "ioredis";
 
 // Two connections: a Redis client in subscriber mode cannot issue PUBLISH.
 export const chat = chatpack({
@@ -34,6 +34,11 @@ export const chat = chatpack({
 
 That is the entire change. Every route, event, and client behaves identically -
 `Transport` is the seam core was designed around, so nothing else moves.
+
+Import ioredis's **named** `Redis`, as above. Its default export is the same
+class at runtime, but ioredis is CommonJS, so on `"module": "nodenext"` in an ESM
+package TypeScript types that default as the module object and `new Redis(url)`
+fails to compile. The named import works in every module setting.
 
 Works with `node-redis` too:
 

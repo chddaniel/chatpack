@@ -1,7 +1,7 @@
 {
   "name": "@chatpack/cli",
   "version": "0.2.3",
-  "description": "CLI for initializing Chatpack in existing applications",
+  "description": "CLI for creating Chatpack starters and initializing existing applications",
   "license": "MIT",
   "author": "Yeabsra Habtu <yeabsra.h@shipper.now> (https://github.com/Yeabsra-Habtu)",
   "contributors": [
@@ -41,6 +41,7 @@
   },
   "files": [
     "dist",
+    "templates",
     "README.md",
     "CHANGELOG.md",
     "LICENSE",
@@ -51,6 +52,7 @@
     "build": "tsup",
     "dev": "tsup --watch",
     "test": "vitest run",
+    "test:generated-starter": "node scripts/test-generated-starter.mjs",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src",
@@ -67,5 +69,8 @@
   },
   "publishConfig": {
     "access": "public"
+  },
+  "dependencies": {
+    "@clack/prompts": "^0.11.0"
   }
 }

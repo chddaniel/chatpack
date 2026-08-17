@@ -79,6 +79,7 @@ const serverErrorCodes = {
   NOT_PUBLIC_CONVERSATION: true,
   MODERATION_UNSUPPORTED: true,
   USER_BANNED: true,
+  USER_NOT_FOUND: true,
   NOT_MODERATOR: true,
   DIRECT_INTERACTION_BLOCKED: true,
   REPORT_NOT_FOUND: true,

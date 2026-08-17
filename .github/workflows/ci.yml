@@ -44,3 +44,74 @@ jobs:
           # Optional: when this secret is set, the node-server smoke test also
           # runs against a real Postgres (e.g. Neon). Unset → in-memory only.
           SMOKE_DATABASE_URL: ${{ secrets.SMOKE_DATABASE_URL }}
+
+  generated-starters:
+    name: Starter (${{ matrix.framework }}, ${{ matrix.auth_provider || 'generic' }}, ${{ matrix.package_manager }})
+    needs: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: chatpack
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d chatpack"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - framework: next
+            auth_provider: better-auth
+            package_manager: pnpm
+          - framework: next
+            auth_provider: authjs
+            package_manager: npm
+          - framework: next
+            auth_provider: auth0
+            package_manager: pnpm
+          - framework: hono
+            auth_provider: ""
+            package_manager: yarn
+          - framework: express
+            auth_provider: ""
+            package_manager: bun
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - uses: oven-sh/setup-bun@v2
+        if: matrix.package_manager == 'bun'
+
+      - name: Install Yarn
+        if: matrix.package_manager == 'yarn'
+        run: corepack prepare yarn@4.18.0 --activate
+
+      - name: Install repository dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate and validate starter
+        run: |
+          args=(
+            --framework "${{ matrix.framework }}"
+            --package-manager "${{ matrix.package_manager }}"
+          )
+          if [[ -n "${{ matrix.auth_provider }}" ]]; then
+            args+=(--auth-provider "${{ matrix.auth_provider }}")
+          fi
+          pnpm --filter @chatpack/cli test:generated-starter "${args[@]}"
+        env:
+          STARTER_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/chatpack?sslmode=disable

@@ -2,6 +2,7 @@ import { realpathSync } from "node:fs";
 
 import { parseArgs, usage } from "./args";
 import { runInit } from "./commands/init";
+import { PromptCancelledError } from "./prompts";
 
 export async function main(argv = process.argv.slice(2)): Promise<number> {
   try {
@@ -14,6 +15,7 @@ export async function main(argv = process.argv.slice(2)): Promise<number> {
       throw new Error(`Unknown command: ${args.command}. Only init is available in v1.`);
     return await runInit(args);
   } catch (error) {
+    if (error instanceof PromptCancelledError) return 0;
     console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
     return 1;
   }

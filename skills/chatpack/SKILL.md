@@ -129,6 +129,14 @@ Optional `permissions: { canRead, canWrite }` hooks receive
 `{ user, conversation }` (with `conversation.participantIds`); default is
 participants-only, which is usually right.
 
+Optional `userExists: (userId) => boolean | Promise<boolean>` asks your identity
+store whether a user is real before creating a DM, seeding a group, or adding
+participants - `false` becomes 404 `USER_NOT_FOUND`. Omit it and user ids stay
+fully opaque and unchecked (Chatpack never owns a users table). Core never asks
+about the acting user, never asks twice about the same id, and batches the
+lookups, so a 50-member group costs a handful of queries rather than 50. This
+checks existence only - "is Alice allowed to message Bob" is `permissions`.
+
 Optional `moderation: { canModerate, enforceBans }` turns on the report queue and
 bans. `canModerate` receives `{ user, action, targetUserId?, reportId?, banId? }`
 where `action` is one of `"reports.read"`, `"reports.update"`, `"bans.read"`,

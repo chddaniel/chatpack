@@ -13,7 +13,7 @@ import { memoryAdapter } from "../src/index";
 
 const BASE = "http://test.local/api/chat";
 
-function createHttpChat(): ChatpackHandler {
+function createHttpChat(options: Partial<Parameters<typeof chatpack>[0]> = {}): ChatpackHandler {
   const chat = chatpack({
     storage: memoryAdapter(),
     telemetry: false,
@@ -21,9 +21,24 @@ function createHttpChat(): ChatpackHandler {
       const userId = request.headers.get("x-user-id");
       return userId ? { id: userId } : null;
     },
+    ...options,
   });
   return chat.handler();
 }
+
+describe("host-owned user validation", () => {
+  it("maps a missing direct-chat target to HTTP 404", async () => {
+    const handler = createHttpChat({ userExists: (userId) => userId !== "ghost" });
+
+    const response = await send(handler, "POST", "/conversations", "alice", {
+      otherUserId: "ghost",
+    });
+    expect(response.status).toBe(404);
+    await expect(response.json()).resolves.toMatchObject({
+      error: { code: "USER_NOT_FOUND" },
+    });
+  });
+});
 
 function get(handler: ChatpackHandler, path: string, userId?: string): Promise<Response> {
   return handler.GET(

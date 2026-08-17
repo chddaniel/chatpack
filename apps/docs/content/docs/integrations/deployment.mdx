@@ -66,12 +66,23 @@ reason: nothing stores them, so there's nothing to poll. The durable state
 the Redis transport relays typing and receipts, but `presence()` remains
 per-node.
 
+## Neon on Vercel
+
+Chatpack message writes use database transactions. For a Neon-backed Vercel
+deployment, use `Pool` from `@neondatabase/serverless` with
+`drizzle-orm/neon-serverless`, set the WebSocket constructor, and register the
+pool with `attachDatabasePool` from `@vercel/functions`. Do not use
+`drizzle-orm/neon-http`; that driver cannot run the required transactions.
+
+The generated Next.js, Hono, and Express starters include this setup and use the
+Node.js runtime. Edge-only deployments need a different transaction-capable
+storage design.
+
 ## Databases on edge runtimes
 
-TCP drivers (`pg`) don't run on edge runtimes. The Drizzle adapter is
-driver-agnostic - swap the `drizzle()` line for an HTTP/WebSocket driver
-(Neon, Vercel Postgres). Recipes in
-[Drizzle / Postgres](/docs/storage/drizzle#serverless--edge-runtimes).
+TCP drivers (`pg`) do not run on edge runtimes. The Drizzle adapter is
+driver-agnostic, but the selected driver must support transactions. The Neon
+HTTP driver does not, so it is not compatible with current Chatpack writes.
 
 ## Keeping SSE connections alive
 

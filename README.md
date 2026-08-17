@@ -237,10 +237,10 @@ curl -X POST /api/chat/conversations \
   -d '{"otherUserId": "bob"}'
 ```
 
-> **Chatpack never owns a users table**, so it cannot check that
-> `otherUserId` actually exists - a typo silently creates a conversation
-> with a ghost user. Validate recipient ids against your own users table
-> before calling.
+> **Chatpack never owns a users table.** Configure `userExists(userId)` to
+> validate direct-chat targets and new group participants against your own
+> identity store. Without the optional hook, previous opaque-id behavior is
+> preserved.
 
 ```json
 {
@@ -816,14 +816,14 @@ Want to write your own plugin? The seam is public - see `ChatpackPlugin` in
 | Message forwarding (copy + provenance)   | ✅ Done (v1.next) |
 | Participant-scoped message search        | ✅ Done (v0.next) |
 | Post-persistence message mutation hook   | ✅ Done (v0.next) |
-| `@chatpack/cli init`                     | ✅ Done (v0.next) |
+| `@chatpack/cli init` + starter templates | ✅ Done (v1.next) |
 | Group chats: membership, roles, admin    | ✅ Done (v0.next) |
 | File attachments (`@chatpack/file`)      | ✅ Done (v0.next) |
 | Invite links + join requests             | ✅ Done (v0.next) |
 | Public channels (browsable directory)    | ✅ Done (v0.next) |
 | Moderation: blocks, mutes, reports, bans | ✅ Done (v1.next) |
 
-Push notification providers, reusable UI components, true message threads,
+Push notification providers, reusable UI packages, true message threads,
 and multi-node presence have not shipped. Replies are flat pointers, not
 threads. See [docs/MVP.md](./docs/MVP.md) for the full scope and reasoning.
 
@@ -836,7 +836,7 @@ threads. See [docs/MVP.md](./docs/MVP.md) for the full scope and reasoning.
 | [`@chatpack/adapter-memory`](./packages/adapter-memory)   | In-memory storage (demos, tests)                 |
 | [`@chatpack/next`](./packages/next)                       | Next.js App Router integration                   |
 | [`@chatpack/client`](./packages/client)                   | Typed REST, SSE, React hooks, and client plugins |
-| [`@chatpack/cli`](./packages/cli)                         | Safe project setup CLI (`chatpack init`)         |
+| [`@chatpack/cli`](./packages/cli)                         | Project setup and full starter CLI               |
 | [`@chatpack/transport-redis`](./packages/transport-redis) | Redis pub/sub transport (multi-node SSE)         |
 | [`@chatpack/file`](./packages/file)                       | Filepack-backed message attachments              |
 

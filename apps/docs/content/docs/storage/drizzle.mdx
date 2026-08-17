@@ -91,7 +91,7 @@ referenced **by id only** - there is no foreign key into your users table.
   should be able to out-rank the other.
 </Callout>
 
-<Tabs items={['drizzle-kit (recommended)', 'Idempotent DDL at boot', 'One-statement drivers']}>
+<Tabs items={['drizzle-kit (recommended)', 'Idempotent DDL at boot']}>
 
 <Tab value="drizzle-kit (recommended)">
 
@@ -119,47 +119,29 @@ await pool.query(migrationSql); // node-postgres, postgres.js, PGlite
 
 </Tab>
 
-<Tab value="One-statement drivers">
-
-Drivers that reject multi-statement queries (Neon HTTP, Vercel Postgres,
-Cloudflare D1) need `migrationStatements` - the same DDL split into
-individual statements:
-
-```ts
-import { neon } from "@neondatabase/serverless";
-import { migrationStatements } from "@chatpack/adapter-drizzle";
-
-const sql = neon(process.env.DATABASE_URL!);
-for (const statement of migrationStatements) await sql(statement);
-```
-
-</Tab>
-
 </Tabs>
 
-## Serverless / edge runtimes
+## Neon and serverless runtimes
 
-TCP-based drivers like `pg` (node-postgres) don't run on edge runtimes - use
-an HTTP/WebSocket driver instead. The adapter itself is driver-agnostic, so
-only the `drizzle()` line changes. Neon on Cloudflare Workers:
+Chatpack message writes use `db.transaction()`. Use Neon's WebSocket Pool, not
+the Neon HTTP driver:
 
 ```ts
-import { neon } from "@neondatabase/serverless";
-import { drizzle } from "drizzle-orm/neon-http";
-import { chatpack } from "@chatpack/core";
-import { drizzleAdapter } from "@chatpack/adapter-drizzle";
+import { Pool, neonConfig } from "@neondatabase/serverless";
+import { attachDatabasePool } from "@vercel/functions";
+import { drizzle } from "drizzle-orm/neon-serverless";
+import ws from "ws";
 
-const db = drizzle(neon(env.DATABASE_URL));
+neonConfig.webSocketConstructor = ws;
+const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+attachDatabasePool(pool);
 
-export const chat = chatpack({
-  storage: drizzleAdapter(db),
-  auth: async (req) => getSessionUser(req),
-});
-
-export default { fetch: chat.handler().fetch };
+export const db = drizzle({ client: pool });
 ```
 
-The same pattern works with `drizzle-orm/vercel-postgres` on Vercel Edge.
+The Neon HTTP driver cannot run the transactions required for message ordering
+and group mutations. Current Chatpack deployments must use a Node.js runtime or
+another transaction-capable Drizzle Postgres driver.
 
 <Callout type="warn">
   **Real-time on serverless:** the default SSE transport is in-process, so on Workers/Lambda-style

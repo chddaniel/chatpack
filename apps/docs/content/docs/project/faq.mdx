@@ -59,10 +59,10 @@ export const chat = (g.__chatpack__ ??= chatpack({ storage, auth }));
 
 <Accordion title="Does Chatpack manage my users?">
 
-No. Chatpack never owns a users table - the `auth` hook (`Request → { id } |
-null`) is the only auth touchpoint, and user ids are opaque strings. That also
-means `otherUserId` is not validated to exist: validate recipients against
-your own users table.
+No. Chatpack never owns a users table. The `auth` hook resolves the acting user.
+The optional `userExists(userId)` hook validates new direct-chat targets and
+group participants against your identity store. Omitting it preserves opaque-id
+behavior.
 
 </Accordion>
 

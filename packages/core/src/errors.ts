@@ -92,6 +92,8 @@ export type ChatpackErrorCode =
   | "MODERATION_UNSUPPORTED"
   /** The authenticated Chatpack user has an active ban. */
   | "USER_BANNED"
+  /** A host-owned user existence check rejected a new participant id. */
+  | "USER_NOT_FOUND"
   /** The host moderator hook denied an admin operation. */
   | "NOT_MODERATOR"
   /** A direct conversation is blocked by either participant. */

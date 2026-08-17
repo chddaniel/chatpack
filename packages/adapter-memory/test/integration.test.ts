@@ -72,6 +72,20 @@ describe("conversations", () => {
     ).rejects.toMatchObject({ code: "INVALID_INPUT" });
   });
 
+  it("rejects a direct-chat target that the host does not know", async () => {
+    const userExists = vi.fn(async (userId: string) => userId === "bob");
+    const chat = createChat({ userExists });
+
+    await expect(
+      chat.api.getOrCreateConversation({ userId: "alice", otherUserId: "mallory" }),
+    ).rejects.toMatchObject({ code: "USER_NOT_FOUND" });
+    await expect(
+      chat.api.getOrCreateConversation({ userId: "alice", otherUserId: "bob" }),
+    ).resolves.toMatchObject({ type: "direct" });
+    expect(userExists).toHaveBeenCalledWith("mallory");
+    expect(userExists).toHaveBeenCalledWith("bob");
+  });
+
   it("stores metadata on creation only", async () => {
     const chat = createChat();
     const created = await chat.api.getOrCreateConversation({

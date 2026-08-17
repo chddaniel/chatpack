@@ -43,6 +43,20 @@ describe("client requests", () => {
     expect(denied.error?.code).toBe("FORBIDDEN_WRITE");
     expect(denied.data).toBeNull();
 
+    const missingUser = createRequester({
+      basePath: "/api/chat",
+      credentials: "same-origin",
+      fetch: vi.fn(
+        async () =>
+          new Response(JSON.stringify({ error: { code: "USER_NOT_FOUND", message: "missing" } }), {
+            status: 404,
+          }),
+      ),
+    });
+    expect((await missingUser.request("/conversations", { method: "POST" })).error?.code).toBe(
+      "USER_NOT_FOUND",
+    );
+
     const network = createRequester({
       basePath: "/api/chat",
       credentials: "same-origin",

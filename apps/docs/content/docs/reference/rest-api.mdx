@@ -350,8 +350,9 @@ senderId }`, naming the **immediate** source (one hop, like replies). There is
   against the **target**.
 - **`role`** is `"user" | "assistant" | "system"` (default `"user"`) - a
   stored label; core never branches on it. Anything else is a 400.
-- **`otherUserId` and group `userIds` are not validated to exist** (Chatpack
-  never owns a users table) - validate recipients in your app.
+- **User ids stay host-owned.** Configure `userExists(userId)` to validate new
+  direct-chat targets and group participants. Missing users return
+  `404 USER_NOT_FOUND`; omitting the hook preserves opaque-id behavior.
 - **Timestamps** are `Date` in server-side calls, ISO 8601 strings over HTTP.
 - **Auth runs before routing** - an unauthenticated request to a wrong path
   still 401s. Fix auth first; then a lingering `404 NOT_FOUND` means your

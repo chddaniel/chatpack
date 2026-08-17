@@ -225,9 +225,9 @@ curl '/api/chat/conversations/conv_1/messages?limit=50'
 ```
 
 <Callout type="warn">
-  **Chatpack never owns a users table**, so it cannot check that `otherUserId` actually exists - a
-  typo silently creates a conversation with a ghost user. Validate recipient ids against your own
-  users table before calling.
+  **Chatpack never owns a users table.** Configure `userExists(userId)` to validate direct-chat
+  targets and new group participants against your identity store. Omitting the optional hook keeps
+  opaque-id behavior.
 </Callout>
 
 </Step>

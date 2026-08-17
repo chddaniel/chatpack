@@ -73,6 +73,13 @@ const MAX_MODERATOR_NOTE_LENGTH = 2000;
  * adapter agrees rather than each imposing its own ceiling.
  */
 export const MAX_GROUP_PARTICIPANTS = 256;
+/**
+ * How many `userExists` checks may be in flight at once. Not tunable on
+ * purpose: it exists to keep a large group from flooding the host's connection
+ * pool, and a host that wants one query for many ids should batch inside its
+ * own hook.
+ */
+const USER_EXISTS_CONCURRENCY = 8;
 /** Max length of a group name (ADR 0017 §1). */
 export const MAX_CONVERSATION_NAME_LENGTH = 200;
 /**
@@ -855,6 +862,36 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
     const ban = await activeStorage.isUserBanned(userId);
     if (ban) {
       throw new ChatpackError("USER_BANNED", `User "${userId}" has an active Chatpack ban.`);
+    }
+  }
+
+  /**
+   * Checks ids in bounded batches rather than one at a time, so creating a
+   * 50-member group costs a handful of round trips instead of 50. The cap
+   * matters as much as the parallelism: a 256-member group must not open 256
+   * simultaneous queries against a host pool that is usually far smaller.
+   *
+   * The reported id is the first missing one in the caller's order, never the
+   * first query to settle, so the same input always produces the same error.
+   */
+  async function requireKnownUsers(userIds: string[]): Promise<void> {
+    const userExists = options.userExists;
+    if (!userExists) return;
+    const unique = [...new Set(userIds)];
+    const missing = new Set<string>();
+    for (let start = 0; start < unique.length; start += USER_EXISTS_CONCURRENCY) {
+      const batch = unique.slice(start, start + USER_EXISTS_CONCURRENCY);
+      const found = await Promise.all(batch.map((userId) => userExists(userId)));
+      batch.forEach((userId, index) => {
+        if (!found[index]) missing.add(userId);
+      });
+      // Batches follow caller order, so the earliest missing id overall is in
+      // the first batch that reports one - no need to check the rest.
+      if (missing.size > 0) break;
+    }
+    const first = userIds.find((userId) => missing.has(userId));
+    if (first !== undefined) {
+      throw new ChatpackError("USER_NOT_FOUND", `User "${first}" was not found.`);
     }
   }
 
@@ -1971,6 +2008,7 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
           "A direct conversation requires two distinct users.",
         );
       }
+      await requireKnownUsers([input.otherUserId]);
       if (
         moderationStorage &&
         (await moderationStorage.isBlocked(input.userId, input.otherUserId))
@@ -2007,6 +2045,7 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
           `A group may hold at most ${MAX_GROUP_PARTICIPANTS} participants, got ${userIds.length + 1}.`,
         );
       }
+      await requireKnownUsers(userIds);
 
       const { visibility, joinPolicy } = resolveChannelFields(input.visibility, input.joinPolicy);
 
@@ -2055,6 +2094,7 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
           `A group may hold at most ${MAX_GROUP_PARTICIPANTS} participants, got ${existing.size + userIds.length}.`,
         );
       }
+      await requireKnownUsers(userIds);
 
       const updated = await storage.addParticipants({
         conversationId: conversation.id,

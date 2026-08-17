@@ -1,12 +1,13 @@
 import { resolve } from "node:path";
 
-import type { Adapter, CliArgs, Framework, PackageManager } from "./types";
+import type { Adapter, AuthProvider, CliArgs, Framework, PackageManager } from "./types";
 
 export type { CliArgs } from "./types";
 
 const frameworks = new Set<Framework>(["next", "hono", "express", "web"]);
 const adapters = new Set<Adapter>(["memory", "drizzle"]);
 const packageManagers = new Set<PackageManager>(["npm", "pnpm", "yarn", "bun"]);
+const authProviders = new Set<AuthProvider>(["better-auth", "authjs", "auth0"]);
 const valueOptions = new Set([
   "cwd",
   "framework",
@@ -17,6 +18,8 @@ const valueOptions = new Set([
   "auth-id-property",
   "db-path",
   "db-export",
+  "auth-provider",
+  "name",
 ]);
 
 function valueAfter(argv: string[], index: number, name: string): string {
@@ -86,6 +89,15 @@ export function parseArgs(argv: string[], initialCwd = process.cwd()): CliArgs {
         }
         result.packageManager = value as PackageManager;
         break;
+      case "auth-provider":
+        if (!authProviders.has(value as AuthProvider)) {
+          throw new Error(`Unsupported auth provider: ${value}`);
+        }
+        result.authProvider = value as AuthProvider;
+        break;
+      case "name":
+        result.name = value;
+        break;
       case "auth-path":
         result.authPath = value;
         break;
@@ -132,6 +144,8 @@ Options:
   --db-path <path>                     Drizzle database module
   --db-export <name>                   Drizzle database export
   --package-manager <name>             npm, pnpm, yarn, or bun
+  --auth-provider <name>               better-auth, authjs, or auth0 (Next starters)
+  --name <package-name>                Package name for a new starter
   --client                             Generate client setup
   --yes                                Skip confirmation; never skips required decisions
   --dry-run                            Show plan without installing or writing

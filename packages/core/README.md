@@ -29,6 +29,8 @@ const chat = chatpack({
     const session = await getSessionFromCookie(req.headers.get("cookie"));
     return session ? { id: session.userId } : null;
   },
+  // Optional: reject unknown direct-chat targets and group participants.
+  userExists: async (userId) => Boolean(await users.findById(userId)),
 });
 ```
 
@@ -329,9 +331,9 @@ Opt-in plugins from `@chatpack/core/plugins` add routes of their own
 - **`role`** must be `"user" | "assistant" | "system"` (default `"user"`).
   It's an AI escape hatch only - core never behaves differently based on it;
   any other value is a 400 `INVALID_INPUT`.
-- **`otherUserId` is not validated to exist** - Chatpack never owns a users
-  table, so any non-empty string creates a conversation. Validate recipient
-  ids against your own users table before calling.
+- **User ids stay host-owned.** Configure `userExists(userId)` to validate new
+  direct-chat targets and group participants. A missing user throws
+  `USER_NOT_FOUND`. Omitting the hook preserves opaque-id behavior.
 - **Timestamps on the wire are ISO strings.** The exported types declare
   `createdAt`/`editedAt`/`deletedAt` as `Date` (correct for the server-side
   `chat.api.*` calls), but JSON serialization means HTTP clients receive ISO
@@ -472,17 +474,17 @@ The `auth` hook runs on every request. Errors are JSON -
 `{ "error": { "code", "message" } }` - with statuses mapped from the error
 code:
 
-| Status | Code(s)                                                                                                        | When                                                 |
-| ------ | -------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
-| 401    | `UNAUTHENTICATED`                                                                                              | `auth` returned `null` (or a non-`ChatpackUser`)     |
-| 400    | `INVALID_INPUT`                                                                                                | bad body/query params                                |
-| 403    | `FORBIDDEN_READ`, `FORBIDDEN_WRITE`, `NOT_MESSAGE_SENDER`, `NOT_CONVERSATION_ADMIN`, `NOT_PUBLIC_CONVERSATION` | not allowed                                          |
-| 404    | `CONVERSATION_NOT_FOUND`, `MESSAGE_NOT_FOUND`, `INVITE_NOT_FOUND`, `JOIN_REQUEST_NOT_FOUND`, `NOT_FOUND`       | missing resource/route                               |
-| 409    | `MESSAGE_DELETED`, `NOT_GROUP_CONVERSATION`, `LAST_ADMIN_REMAINING`, `ALREADY_PARTICIPANT`                     | the resource is in the wrong state for the operation |
-| 410    | `INVITE_EXPIRED`                                                                                               | the invite is past its expiry, or out of uses        |
-| 422    | `MESSAGE_REJECTED`, `GROUP_LIMIT_EXCEEDED`, `INVITE_LIMIT_EXCEEDED`                                            | a hook refused the message / a cap was hit           |
-| 500    | `INTERNAL_ERROR`                                                                                               | unexpected server error (opaque)                     |
-| 501    | `SEARCH_UNSUPPORTED`, `INVITES_UNSUPPORTED`, `CHANNELS_UNSUPPORTED`                                            | the adapter lacks that optional capability           |
+| Status | Code(s)                                                                                                                    | When                                                 |
+| ------ | -------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| 401    | `UNAUTHENTICATED`                                                                                                          | `auth` returned `null` (or a non-`ChatpackUser`)     |
+| 400    | `INVALID_INPUT`                                                                                                            | bad body/query params                                |
+| 403    | `FORBIDDEN_READ`, `FORBIDDEN_WRITE`, `NOT_MESSAGE_SENDER`, `NOT_CONVERSATION_ADMIN`, `NOT_PUBLIC_CONVERSATION`             | not allowed                                          |
+| 404    | `USER_NOT_FOUND`, `CONVERSATION_NOT_FOUND`, `MESSAGE_NOT_FOUND`, `INVITE_NOT_FOUND`, `JOIN_REQUEST_NOT_FOUND`, `NOT_FOUND` | missing user/resource/route                          |
+| 409    | `MESSAGE_DELETED`, `NOT_GROUP_CONVERSATION`, `LAST_ADMIN_REMAINING`, `ALREADY_PARTICIPANT`                                 | the resource is in the wrong state for the operation |
+| 410    | `INVITE_EXPIRED`                                                                                                           | the invite is past its expiry, or out of uses        |
+| 422    | `MESSAGE_REJECTED`, `GROUP_LIMIT_EXCEEDED`, `INVITE_LIMIT_EXCEEDED`                                                        | a hook refused the message / a cap was hit           |
+| 500    | `INTERNAL_ERROR`                                                                                                           | unexpected server error (opaque)                     |
+| 501    | `SEARCH_UNSUPPORTED`, `INVITES_UNSUPPORTED`, `CHANNELS_UNSUPPORTED`                                                        | the adapter lacks that optional capability           |
 
 ## Message hooks
 

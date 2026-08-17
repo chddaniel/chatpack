@@ -34,6 +34,16 @@ export interface ChatpackUser {
  */
 export type AuthHook = (request: Request) => Promise<ChatpackUser | null> | ChatpackUser | null;
 
+/**
+ * Confirms that a host-owned user id exists before Chatpack adds that id to a
+ * new direct conversation or group membership.
+ *
+ * Chatpack does not own a users table. Applications that expose raw Chatpack
+ * routes can provide this hook so callers cannot create phantom participants
+ * by submitting arbitrary ids. Omit it to preserve the historical behavior.
+ */
+export type UserExistsHook = (userId: string) => Promise<boolean> | boolean;
+
 /** Context passed to permission hooks. */
 export interface PermissionContext {
   /** The user attempting the action (id always present). */
@@ -270,6 +280,11 @@ export interface ChatpackOptions {
    * explicit user ids); required once the HTTP handler mounts in M2.
    */
   auth?: AuthHook;
+  /**
+   * Optional host-owned existence check for new conversation participants.
+   * The acting user is already authenticated and is not checked again.
+   */
+  userExists?: UserExistsHook;
   /** Permission overrides. Default: only the two participants can read/write. */
   permissions?: PermissionHooks;
   /** Optional moderation configuration. Admin access is denied when omitted. */

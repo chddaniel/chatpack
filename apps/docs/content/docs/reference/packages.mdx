@@ -12,8 +12,8 @@ permissions, read state and unread counts, SSE with gap-fill, memory and Drizzle
 storage, Redis event fan-out, typing/presence/receipts, reactions, quote-replies,
 validated mentions, message forwarding, participant-scoped search, the
 post-persistence mutation hook, the browser client with React hooks and polling
-fallback, Filepack-backed file attachments, and project setup with
-`@chatpack/cli init`.
+fallback, Filepack-backed file attachments, and project setup and complete
+starter generation with `@chatpack/cli init`.
 
 Push notification providers, a mention inbox or mention notifications, reusable
 React UI components, true message threads, and multi-node presence have not
@@ -136,8 +136,14 @@ integration.
 npx @chatpack/cli init
 ```
 
-The v1 command supports Next.js App Router, Hono, and Express. It never runs
-database migrations and never generates provider-specific authentication code.
+The command supports Next.js App Router, Hono, and Express. In an empty
+repository it creates a complete Next.js chat application with Better Auth,
+Auth.js, or Auth0, or a fail-closed Hono/Express backend. In an existing project
+it generates focused integration wiring. It never provisions accounts, writes
+secrets, runs migrations, or deploys.
+
+The Next.js UI is reviewed application-owned source. It is not a reusable
+`@chatpack/ui` package, so Chatpack remains headless at the package boundary.
 
 ## `@chatpack/transport-redis`
 
@@ -147,7 +153,7 @@ a message sent on node B never reaches a stream held by node A.
 
 ```ts
 import { redisTransport } from "@chatpack/transport-redis";
-import Redis from "ioredis";
+import { Redis } from "ioredis";
 
 const transport = redisTransport({
   publisher: new Redis(process.env.REDIS_URL!),
