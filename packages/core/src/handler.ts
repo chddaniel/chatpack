@@ -390,6 +390,13 @@ function parseLastEventId(raw: string | null): { conversationId: string; seq: nu
   return { conversationId, seq };
 }
 
+/** Create a per-stream id for plugins that track individual connections. */
+function randomConnectionId(): string {
+  const globalCrypto: { randomUUID?: () => string } | undefined = globalThis.crypto;
+  if (typeof globalCrypto?.randomUUID === "function") return globalCrypto.randomUUID();
+  return `connection-${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`;
+}
+
 /**
  * Create the Web-standard request handler for a Chatpack API.
  *
@@ -438,6 +445,15 @@ export function createHandler(
     let heartbeat: ReturnType<typeof setInterval> | undefined;
     let closed = false;
     let banCheckInFlight = false;
+    const connectionId = randomConnectionId();
+    let pluginOpen: Promise<void> = Promise.resolve();
+    let pluginCloseNotified = false;
+
+    const notifyPluginClose = (): void => {
+      if (!plugins || pluginCloseNotified) return;
+      pluginCloseNotified = true;
+      void pluginOpen.then(() => plugins.notifyStreamClose(userId, connectionId));
+    };
 
     const stream = new ReadableStream<Uint8Array>({
       async start(controller) {
@@ -468,7 +484,7 @@ export function createHandler(
         });
 
         // The stream is live: let plugins (e.g. presence) know.
-        plugins?.notifyStreamOpen(userId);
+        pluginOpen = Promise.resolve(plugins?.notifyStreamOpen(userId, connectionId));
 
         // 2. Replay anything missed since the client's last seen event.
         if (lastEventId) {
@@ -513,7 +529,7 @@ export function createHandler(
                 } catch {
                   // Consumer already closed.
                 }
-                plugins?.notifyStreamClose(userId);
+                notifyPluginClose();
               })
               .catch((err) => console.error("chatpack: moderation ban check failed", err))
               .finally(() => {
@@ -528,7 +544,7 @@ export function createHandler(
         closed = true;
         unsubscribe?.();
         if (heartbeat !== undefined) clearInterval(heartbeat);
-        plugins?.notifyStreamClose(userId);
+        notifyPluginClose();
       },
     });
 

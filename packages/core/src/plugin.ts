@@ -96,6 +96,8 @@ export interface PluginBeforeMessageSendContext extends PluginContext, BeforeMes
 export interface PluginStreamContext extends PluginContext {
   /** The user whose SSE stream opened or closed. */
   userId: string;
+  /** Unique id for this SSE connection, stable across its lifecycle hooks. */
+  connectionId: string;
 }
 
 /** Context for {@link ChatpackPlugin.onMarkRead}. */
@@ -160,9 +162,9 @@ export interface ChatpackPlugin {
     ctx: PluginCapabilityRequestContext,
   ): Promise<Response | null> | Response | null;
   /** A user's SSE stream connected. Fire-and-forget. */
-  onStreamOpen?(ctx: PluginStreamContext): void;
+  onStreamOpen?(ctx: PluginStreamContext): unknown | Promise<unknown>;
   /** A user's SSE stream disconnected. Fire-and-forget. */
-  onStreamClose?(ctx: PluginStreamContext): void;
+  onStreamClose?(ctx: PluginStreamContext): unknown | Promise<unknown>;
   /** A user durably updated their last-read state. Fire-and-forget. */
   onMarkRead?(ctx: PluginMarkReadContext): void;
   /**
@@ -195,8 +197,8 @@ export interface PluginRuntime {
   }): Promise<Response | null>;
   /** Run blocking plugin message hooks in registration order. */
   runBeforeMessageSend(ctx: BeforeMessageSendContext): Promise<BeforeMessageSendResult>;
-  notifyStreamOpen(userId: string): void;
-  notifyStreamClose(userId: string): void;
+  notifyStreamOpen(userId: string, connectionId?: string): void | Promise<void>;
+  notifyStreamClose(userId: string, connectionId?: string): void | Promise<void>;
   notifyMarkRead(input: {
     userId: string;
     conversationId: string;
@@ -228,9 +230,21 @@ export function createPluginRuntime(
   const context: PluginContext = { api, publishEphemeral };
 
   /** Run a notification hook so a throwing plugin never breaks the caller. */
-  function safely(plugin: ChatpackPlugin, hook: string, run: () => void): void {
+  function safely(
+    plugin: ChatpackPlugin,
+    hook: string,
+    run: () => unknown | Promise<unknown>,
+  ): void | Promise<void> {
     try {
-      run();
+      const result = run();
+      if (result instanceof Promise) {
+        return result.then(
+          () => undefined,
+          (err: unknown) => {
+            console.error(`chatpack: plugin "${plugin.name}" threw in ${hook}`, err);
+          },
+        );
+      }
     } catch (err) {
       console.error(`chatpack: plugin "${plugin.name}" threw in ${hook}`, err);
     }
@@ -284,18 +298,28 @@ export function createPluginRuntime(
       return { body: current.body, metadata: current.metadata };
     },
 
-    notifyStreamOpen(userId) {
+    notifyStreamOpen(userId, connectionId = "legacy") {
+      const pending: Promise<void>[] = [];
       for (const plugin of plugins) {
         if (!plugin.onStreamOpen) continue;
-        safely(plugin, "onStreamOpen", () => plugin.onStreamOpen!({ ...context, userId }));
+        const result = safely(plugin, "onStreamOpen", () =>
+          plugin.onStreamOpen!({ ...context, userId, connectionId }),
+        );
+        if (result instanceof Promise) pending.push(result);
       }
+      return pending.length > 0 ? Promise.all(pending).then(() => undefined) : undefined;
     },
 
-    notifyStreamClose(userId) {
+    notifyStreamClose(userId, connectionId = "legacy") {
+      const pending: Promise<void>[] = [];
       for (const plugin of plugins) {
         if (!plugin.onStreamClose) continue;
-        safely(plugin, "onStreamClose", () => plugin.onStreamClose!({ ...context, userId }));
+        const result = safely(plugin, "onStreamClose", () =>
+          plugin.onStreamClose!({ ...context, userId, connectionId }),
+        );
+        if (result instanceof Promise) pending.push(result);
       }
+      return pending.length > 0 ? Promise.all(pending).then(() => undefined) : undefined;
     },
 
     notifyMarkRead(input) {

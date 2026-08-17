@@ -118,7 +118,10 @@ WhatsApp-style extras feel related to 1:1 because consumer apps bundle them. Cha
   per-request hydrated preview.
   Threads stay a non-goal - they need a thread identity, per-thread counts, and
   nested pagination, which is a different data model, not a column.
-- **Horizontal multi-node fan-out _in core_** - core ships single-node only. The `Transport` seam held: multi-node fan-out shipped as the optional `@chatpack/transport-redis` package (ADR 0012) with **zero changes to core** and no public API change. Multi-node `presence()` is still a non-goal - it needs shared connection state, not a transport.
+- **Horizontal multi-node fan-out _in core_** - core ships single-node by
+  default. The `Transport` seam held: multi-node fan-out shipped as the
+  optional `@chatpack/transport-redis` package (ADR 0012). Multi-node presence
+  uses the generic `PresenceStore` seam and Redis leases (ADR 0025).
 
 ## 6. Architecture (backend-only, adapter-driven)
 
@@ -135,10 +138,13 @@ Core engine  (@chatpack/core)
    └── Transport         → single-node in-process emitter → SSE fan-out
 ```
 
-Two interfaces carry the whole design:
+Three interfaces carry the whole design:
 
 - **StorageAdapter** - durable reads/writes. Reference: Drizzle + Postgres. Interface-based, so Prisma/MySQL/SQLite/community adapters need no core changes.
 - **Transport** - publish/subscribe of live message events to connected SSE clients. v0 ships a single-node in-process implementation; shaped so multi-node can come later with no public API change.
+- **PresenceStore** - expiring SSE connection leases and global online/offline
+  transitions. The default is process-local; multi-node deployments can use
+  `redisPresenceStore()` with the Redis transport (ADR 0025).
 
 Durable data and live events stay separate: different reliability requirements; coupling them is how chat backends rot.
 

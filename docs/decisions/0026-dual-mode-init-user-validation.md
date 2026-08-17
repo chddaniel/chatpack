@@ -1,4 +1,4 @@
-# ADR 0025: Dual-mode init and host-owned user validation
+# ADR 0026: Dual-mode init and host-owned user validation
 
 - **Status:** accepted
 - **Date:** 2026-08-13

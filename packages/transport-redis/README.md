@@ -18,17 +18,20 @@ npm install @chatpack/transport-redis ioredis
 ```ts
 import { chatpack } from "@chatpack/core";
 import { drizzleAdapter } from "@chatpack/adapter-drizzle";
-import { redisTransport } from "@chatpack/transport-redis";
+import { redisPresenceStore, redisTransport } from "@chatpack/transport-redis";
+import { presence } from "@chatpack/core/plugins";
 import { Redis } from "ioredis";
 
 // Two connections: a Redis client in subscriber mode cannot issue PUBLISH.
+const publisher = new Redis(process.env.REDIS_URL!);
 export const chat = chatpack({
   storage: drizzleAdapter(db),
   auth: async (req) => getSessionUser(req),
   transport: redisTransport({
-    publisher: new Redis(process.env.REDIS_URL!),
+    publisher,
     subscriber: new Redis(process.env.REDIS_URL!),
   }),
+  plugins: [presence({ store: redisPresenceStore({ client: publisher }) })],
 });
 ```
 
@@ -77,11 +80,26 @@ indicators, and read receipts. All of them travel on the transport -
 the `Date` fields on whichever snapshot the event carries: a message, or a
 conversation and its participants.
 
-**Still per-node: `presence()`.** It counts live SSE connections in an
-in-process `Map`, so each node only knows its own. `GET /presence` answers for
-locally-connected users only, and online/offline transitions fire per node.
-Multi-node presence needs shared connection state and isn't solved here - see
-[ADR 0012](../../docs/decisions/0012-redis-transport.md).
+**Multi-node: `presence()` with `redisPresenceStore()`.** Pass the same shared
+store to every node. It tracks one expiring lease per SSE connection, so
+`GET /presence` and online/offline transitions reflect all nodes. The transport
+publisher must be a normal Redis connection because the presence store runs
+atomic `EVAL` scripts; keep the subscriber connection dedicated to `SUBSCRIBE`.
+
+Without a shared store, presence remains process-local for backward compatibility.
+
+## Real Redis integration test
+
+The normal suite uses an in-memory Redis double. To execute the Lua scripts
+against Redis itself, start a Redis server with `redis-cli` available and run:
+
+```bash
+CHATPACK_REDIS_URL=redis://127.0.0.1:6379 \
+  pnpm --filter @chatpack/transport-redis test -- redis.integration.test.ts
+```
+
+When `redis-cli` exists only inside Docker, use
+`CHATPACK_REDIS_CLI=docker CHATPACK_REDIS_CLI_ARGS="exec redis redis-cli"`.
 
 ## Failure behavior
 
@@ -113,6 +131,10 @@ change missed during an outage shows up on the next conversation refetch
 - **Ordering** is per-publisher; two nodes publishing concurrently can
   interleave. Clients sort by `seq`, so message order stays correct.
 - **Sticky sessions are not required.** Any node can serve any stream.
+- **Presence needs both shared pieces.** Configure `redisTransport()` for event
+  fan-out and `redisPresenceStore()` for connection state. Lease expiry removes
+  connections from crashed nodes, so snapshots become offline; the default
+  five-second offline grace absorbs reconnect flaps.
 
 ## Links
 

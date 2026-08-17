@@ -14,8 +14,13 @@ import { chatpack, type ChatpackHandler, type ChatpackInstance } from "@chatpack
 import { presence, receipts, typing } from "@chatpack/core/plugins";
 import { memoryAdapter } from "@chatpack/adapter-memory";
 import { inProcessTransport } from "@chatpack/core";
-import { redisTransport, type RedisTransport } from "../src/index";
-import { FakeIoredis, FakeRedisBroker } from "./fake-redis";
+import { redisPresenceStore, redisTransport, type RedisTransport } from "../src/index";
+import {
+  FakeIoredis,
+  FakeIoredisPresence,
+  FakePresenceDatabase,
+  FakeRedisBroker,
+} from "./fake-redis";
 
 const BASE = "http://test.local/api/chat";
 
@@ -102,6 +107,7 @@ interface Node {
  */
 function cluster(size: number, options: { withPlugins?: boolean } = {}): Node[] {
   const broker = new FakeRedisBroker();
+  const presenceDatabase = new FakePresenceDatabase();
   const storage = memoryAdapter();
   const nodes: Node[] = [];
 
@@ -116,7 +122,21 @@ function cluster(size: number, options: { withPlugins?: boolean } = {}): Node[] 
       storage,
       transport,
       telemetry: false,
-      ...(options.withPlugins ? { plugins: [typing(), presence(), receipts()] } : {}),
+      ...(options.withPlugins
+        ? {
+            plugins: [
+              typing(),
+              presence({
+                offlineDelayMs: 0,
+                store: redisPresenceStore({
+                  client: new FakeIoredisPresence(presenceDatabase),
+                  keyPrefix: "test:presence",
+                }),
+              }),
+              receipts(),
+            ],
+          }
+        : {}),
       auth: (request) => {
         const userId = request.headers.get("x-user-id");
         return userId ? { id: userId } : null;
@@ -349,5 +369,38 @@ describe("multi-node ephemeral events", () => {
     const receipt = events.find((e) => e.event === "receipt.read");
     expect(receipt).toBeDefined();
     expect((receipt?.data["payload"] as { messageId: string }).messageId).toBe(message.id);
+  });
+
+  it("shares presence across nodes and publishes one global transition", async () => {
+    const [nodeA, nodeB] = cluster(2, { withPlugins: true }) as [Node, Node];
+    const conversation = await nodeA.chat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "bob",
+    });
+
+    const bob = await connect(nodeB, "bob");
+    const alice = await connect(nodeA, "alice");
+    const online = await bob.waitForEvents(1);
+    expect(online.filter((event) => event.event === "presence.online")).toHaveLength(1);
+
+    const snapshot = await nodeB.handler.GET(
+      new Request(`${BASE}/presence?userIds=alice`, { headers: { "x-user-id": "bob" } }),
+    );
+    expect(snapshot.status).toBe(200);
+    expect((await snapshot.json()).presence.alice.online).toBe(true);
+
+    await alice.close();
+    const offline = await bob.waitForEvents(2);
+    expect(offline.filter((event) => event.event === "presence.offline")).toHaveLength(1);
+    expect(
+      (
+        await nodeB.handler
+          .GET(new Request(`${BASE}/presence?userIds=alice`, { headers: { "x-user-id": "bob" } }))
+          .then((response) => response.json())
+      ).presence.alice.online,
+    ).toBe(false);
+
+    // Keep conversation referenced so this test documents the access path.
+    expect(conversation.id).toBeTruthy();
   });
 });

@@ -92,9 +92,9 @@ payload, at }`) is fire-and-forget: never persisted, never replayed. Its
   instead of `ChatEvent` - a minor breaking change for custom transport
   authors (fine at 0.x, called out in the changelog). Existing transports
   that just fan out events keep working unchanged.
-- **Trade-off:** presence state is in-memory and single-node, exactly like
-  the in-process transport (MVP §5, ADR 0006). Documented loudly; a
-  multi-node deployment needs a shared-state presence implementation later.
+- **Trade-off:** presence state is process-local by default. A multi-node
+  deployment can pass the shared `PresenceStore` supplied by
+  `@chatpack/transport-redis` (ADR 0025).
 - **Trade-off:** ephemeral delivery is at-most-once (drops) _and_
   at-least-once per connection for delivered ticks (two tabs → two ticks).
   Clients dedupe by `payload.messageId`; the durable truth is always in

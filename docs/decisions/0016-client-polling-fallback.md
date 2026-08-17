@@ -94,8 +94,9 @@ nothing about requesters or the cache.
 
 ### 3. Ephemerals are unavailable while polling, and are documented as such
 
-Typing, presence and receipts are in-memory and never stored (ADR 0008). There
-is no endpoint to poll and nothing to poll it for: `useTyping` stays `null`.
+Typing, presence and receipts are ephemeral and are not available while polling
+(ADR 0008). Presence may use transient shared leases for multi-node SSE, but it
+still has no durable snapshot for a polling client: `useTyping` stays `null`.
 
 This is not a gap to close later. Persisting ephemerals to make them pollable
 would reverse ADR 0008 in order to serve the platform least able to afford the

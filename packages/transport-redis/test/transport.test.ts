@@ -7,8 +7,15 @@ import type {
   ReactionEvent,
   TransportEvent,
 } from "@chatpack/core";
-import { DEFAULT_CHANNEL, decodeEnvelope, redisTransport } from "../src/index";
-import { FakeIoredis, FakeNodeRedis, FakeRedisBroker } from "./fake-redis";
+import { DEFAULT_CHANNEL, decodeEnvelope, redisPresenceStore, redisTransport } from "../src/index";
+import {
+  FakeIoredis,
+  FakeIoredisPresence,
+  FakeNodeRedis,
+  FakeNodeRedisPresence,
+  FakePresenceDatabase,
+  FakeRedisBroker,
+} from "./fake-redis";
 
 // Events carry the API-decorated message (`replyTo` + `reactions`, ADR 0013;
 // `mentions` + `forwardedFrom`, ADR 0023/0024), so that is what crosses the wire
@@ -361,6 +368,167 @@ describe("redisTransport - Date fields survive the wire", () => {
     expect(relayed.conversation.createdAt.getTime()).toBe(createdAt.getTime());
     expect(relayed.conversation.participants[1]!.joinedAt).toBeInstanceOf(Date);
     expect(relayed.conversation.participants[1]!.joinedAt.getTime()).toBe(joinedAt.getTime());
+  });
+});
+
+describe("redisPresenceStore", () => {
+  it("shares first-open and last-close state across nodes", async () => {
+    const database = new FakePresenceDatabase();
+    const nodeA = redisPresenceStore({ client: new FakeIoredisPresence(database) });
+    const nodeB = redisPresenceStore({ client: new FakeIoredisPresence(database) });
+    const t0 = new Date("2026-08-12T10:00:00.000Z");
+
+    const first = await nodeA.open({
+      userId: "alice",
+      connectionId: "node-a/stream-1",
+      now: t0,
+      leaseTtlMs: 30_000,
+    });
+    const second = await nodeB.open({
+      userId: "alice",
+      connectionId: "node-b/stream-2",
+      now: t0,
+      leaseTtlMs: 30_000,
+    });
+    expect(first.transition).toBe("online");
+    expect(second.transition).toBeNull();
+    expect((await nodeB.get({ userId: "alice", now: t0 })).online).toBe(true);
+
+    const earlyClose = await nodeA.close({
+      userId: "alice",
+      connectionId: "node-a/stream-1",
+      now: new Date(t0.getTime() + 1),
+      offlineDelayMs: 5_000,
+    });
+    expect(earlyClose.offlineToken).toBeNull();
+    const finalClose = await nodeB.close({
+      userId: "alice",
+      connectionId: "node-b/stream-2",
+      now: new Date(t0.getTime() + 2),
+      offlineDelayMs: 5_000,
+    });
+    expect(finalClose.offlineToken).not.toBeNull();
+    const offline = await nodeA.finalizeOffline({
+      userId: "alice",
+      token: finalClose.offlineToken!,
+      now: new Date(t0.getTime() + 5_002),
+    });
+    expect(offline?.transition).toBe("offline");
+    expect(offline?.state.lastSeenAt?.getTime()).toBe(t0.getTime() + 2);
+    expect((await nodeA.get({ userId: "alice", now: new Date(t0.getTime() + 5_002) })).online).toBe(
+      false,
+    );
+  });
+
+  it("does not resurrect expired or closed connections, and renews live leases", async () => {
+    const store = redisPresenceStore({ client: new FakeIoredisPresence() });
+    const t0 = new Date("2026-08-12T10:00:00.000Z");
+    await store.open({ userId: "alice", connectionId: "s1", now: t0, leaseTtlMs: 10 });
+    await store.heartbeat({
+      userId: "alice",
+      connectionId: "s1",
+      now: new Date(t0.getTime() + 5),
+      leaseTtlMs: 10,
+    });
+    expect((await store.get({ userId: "alice", now: new Date(t0.getTime() + 14) })).online).toBe(
+      true,
+    );
+    expect((await store.get({ userId: "alice", now: new Date(t0.getTime() + 16) })).online).toBe(
+      false,
+    );
+    await store.heartbeat({
+      userId: "alice",
+      connectionId: "s1",
+      now: new Date(t0.getTime() + 17),
+      leaseTtlMs: 10,
+    });
+    expect((await store.get({ userId: "alice", now: new Date(t0.getTime() + 17) })).online).toBe(
+      false,
+    );
+  });
+
+  it("supports node-redis eval options", async () => {
+    const store = redisPresenceStore({ client: new FakeNodeRedisPresence() });
+    const result = await store.open({
+      userId: "alice",
+      connectionId: "node-redis",
+      now: new Date(),
+      leaseTtlMs: 30_000,
+    });
+    expect(result.transition).toBe("online");
+  });
+
+  it("invalidates stale offline tokens when a connection reconnects", async () => {
+    const store = redisPresenceStore({ client: new FakeIoredisPresence() });
+    const t0 = new Date("2026-08-12T10:00:00.000Z");
+    await store.open({ userId: "alice", connectionId: "old", now: t0, leaseTtlMs: 30_000 });
+    const oldClose = await store.close({
+      userId: "alice",
+      connectionId: "old",
+      now: new Date(t0.getTime() + 1),
+      offlineDelayMs: 5_000,
+    });
+    const reconnect = await store.open({
+      userId: "alice",
+      connectionId: "new",
+      now: new Date(t0.getTime() + 2),
+      leaseTtlMs: 30_000,
+    });
+
+    expect(reconnect.transition).toBeNull();
+    await expect(
+      store.finalizeOffline({
+        userId: "alice",
+        token: oldClose.offlineToken!,
+        now: new Date(t0.getTime() + 5_001),
+      }),
+    ).resolves.toBeNull();
+    expect((await store.get({ userId: "alice", now: new Date(t0.getTime() + 5_001) })).online).toBe(
+      true,
+    );
+
+    const newClose = await store.close({
+      userId: "alice",
+      connectionId: "new",
+      now: new Date(t0.getTime() + 5_002),
+      offlineDelayMs: 0,
+    });
+    const lateClose = await store.close({
+      userId: "alice",
+      connectionId: "old",
+      now: new Date(t0.getTime() + 5_003),
+      offlineDelayMs: 0,
+    });
+    expect(lateClose.offlineToken).toBeNull();
+    await expect(
+      store.finalizeOffline({
+        userId: "alice",
+        token: newClose.offlineToken!,
+        now: new Date(t0.getTime() + 5_004),
+      }),
+    ).resolves.toMatchObject({ transition: "offline" });
+  });
+
+  it("returns null lastSeenAt for an unseen user", async () => {
+    const store = redisPresenceStore({ client: new FakeIoredisPresence() });
+    await expect(store.get({ userId: "unseen", now: new Date() })).resolves.toEqual({
+      online: false,
+      lastSeenAt: null,
+    });
+  });
+
+  it("uses one Redis Cluster hash slot for each user's presence keys", async () => {
+    const client = new FakeIoredisPresence();
+    const store = redisPresenceStore({ client, keyPrefix: "test:presence" });
+    await store.open({
+      userId: "alice",
+      connectionId: "s1",
+      now: new Date(),
+      leaseTtlMs: 30_000,
+    });
+
+    const keys = client.evalCalls[0]!.keys;
+    expect(new Set(keys.map((key) => key.match(/\{[^}]+\}/)?.[0]))).toEqual(new Set(["{alice}"]));
   });
 });
 

@@ -29,17 +29,15 @@
  * tests. Chatpack does not depend on a Redis driver, so there is no version to
  * keep compatible and no second copy of one in your bundle.
  *
- * **What this fixes and what it does not.** Messages, typing signals, and
- * receipt ticks all travel on the transport, so they go multi-node here.
- * `presence()` is different: it counts live connections in a per-process `Map`
- * (`docs/decisions/0008`), so each node still only knows about its own
- * connections. Multi-node presence needs shared state and is not solved by this
- * package - see `docs/decisions/0012`.
+ * **What this fixes and what it does not.** Messages, typing signals, receipt
+ * ticks, and presence transition events travel on the transport. Presence
+ * connection state needs the separate `redisPresenceStore()` below; configure
+ * both pieces for a complete multi-node deployment (ADR 0025).
  *
  * @module
  */
 
-import type { Transport, TransportEvent } from "@chatpack/core";
+import type { PresenceStore, PresenceState, Transport, TransportEvent } from "@chatpack/core";
 import { decodeEnvelope, encodeEnvelope } from "./serialize";
 
 /** The default Redis channel events are relayed on. */
@@ -157,6 +155,250 @@ export interface RedisTransport extends Transport {
    * open them.
    */
   close(): Promise<void>;
+}
+
+/** ioredis-shaped client used by {@link redisPresenceStore}. */
+export interface RedisPresenceIoredisClient {
+  eval(
+    script: string,
+    numberOfKeys: number,
+    ...keysAndArguments: string[]
+  ): Promise<unknown> | unknown;
+  psubscribe?: unknown;
+}
+
+/** node-redis-shaped client used by {@link redisPresenceStore}. */
+export interface RedisPresenceNodeClient {
+  eval(
+    script: string,
+    options: { keys: string[]; arguments: string[] },
+  ): Promise<unknown> | unknown;
+  pSubscribe?: unknown;
+}
+
+/** Redis client shapes accepted by {@link redisPresenceStore}. */
+export type RedisPresenceClient = RedisPresenceIoredisClient | RedisPresenceNodeClient;
+
+/** Where a presence-store failure happened. */
+export type RedisPresenceErrorContext = "open" | "heartbeat" | "close" | "finalize" | "get";
+
+/** Options for {@link redisPresenceStore}. */
+export interface RedisPresenceStoreOptions {
+  /** A normal Redis connection that supports `EVAL`, not a subscriber connection. */
+  client: RedisPresenceClient;
+  /** Prefix used for all presence keys. Default: `chatpack:presence`. */
+  keyPrefix?: string;
+  /** Called before a store error is rethrown to the core plugin. */
+  onError?: (error: unknown, context: RedisPresenceErrorContext) => void;
+}
+
+const OPEN_PRESENCE_SCRIPT = `
+local now = tonumber(ARGV[1])
+local expiry = tonumber(ARGV[2])
+local connection = ARGV[3]
+redis.call("ZREMRANGEBYSCORE", KEYS[1], "-inf", now)
+local wasOnline = redis.call("ZCARD", KEYS[1]) > 0
+local wasPending = redis.call("GET", KEYS[3]) ~= false
+redis.call("ZADD", KEYS[1], expiry, connection)
+redis.call("SET", KEYS[2], ARGV[1])
+redis.call("DEL", KEYS[3])
+return { wasOnline and 1 or 0, wasPending and 1 or 0 }
+`;
+
+const HEARTBEAT_PRESENCE_SCRIPT = `
+local now = tonumber(ARGV[1])
+local expiry = tonumber(ARGV[2])
+local connection = ARGV[3]
+redis.call("ZREMRANGEBYSCORE", KEYS[1], "-inf", now)
+if redis.call("ZSCORE", KEYS[1], connection) == false then return 0 end
+redis.call("ZADD", KEYS[1], expiry, connection)
+redis.call("SET", KEYS[2], ARGV[1])
+return 1
+`;
+
+const CLOSE_PRESENCE_SCRIPT = `
+local now = tonumber(ARGV[1])
+local connection = ARGV[2]
+local token = ARGV[3]
+local delay = tonumber(ARGV[4])
+redis.call("ZREMRANGEBYSCORE", KEYS[1], "-inf", now)
+local removed = redis.call("ZREM", KEYS[1], connection)
+if removed == 0 then return { 0, 0, redis.call("GET", KEYS[2]) or "" } end
+redis.call("SET", KEYS[2], ARGV[1])
+local remaining = redis.call("ZCARD", KEYS[1])
+if remaining == 0 then
+  -- Keep token alive slightly beyond the application timer. The timer and
+  -- Redis key expiry use separate clocks and must not race at the boundary.
+  redis.call("SET", KEYS[3], token, "PX", math.max(delay + 1000, 1000))
+end
+return { removed, remaining, redis.call("GET", KEYS[2]) or "" }
+`;
+
+const FINALIZE_PRESENCE_SCRIPT = `
+local now = tonumber(ARGV[1])
+local token = ARGV[2]
+redis.call("ZREMRANGEBYSCORE", KEYS[1], "-inf", now)
+if redis.call("GET", KEYS[3]) ~= token then return { 0, "" } end
+if redis.call("ZCARD", KEYS[1]) > 0 then return { 0, "" } end
+redis.call("DEL", KEYS[3])
+return { 1, redis.call("GET", KEYS[2]) or "" }
+`;
+
+const GET_PRESENCE_SCRIPT = `
+local now = tonumber(ARGV[1])
+redis.call("ZREMRANGEBYSCORE", KEYS[1], "-inf", now)
+local lastSeen = redis.call("GET", KEYS[2])
+return { redis.call("ZCARD", KEYS[1]) > 0 and 1 or 0, lastSeen or "" }
+`;
+
+function presenceKeys(prefix: string, userId: string): string[] {
+  const safeUserId = encodeURIComponent(userId);
+  return [
+    `${prefix}:leases:{${safeUserId}}`,
+    `${prefix}:last-seen:{${safeUserId}}`,
+    `${prefix}:pending:{${safeUserId}}`,
+  ];
+}
+
+function redisResultArray(value: unknown, operation: string): unknown[] {
+  if (!Array.isArray(value)) throw new Error(`chatpack: invalid Redis ${operation} result.`);
+  return value;
+}
+
+function redisResultNumber(value: unknown, operation: string): number {
+  if (typeof value === "number") return value;
+  if (typeof value === "string" && value !== "") return Number(value);
+  throw new Error(`chatpack: invalid Redis ${operation} result.`);
+}
+
+function presenceState(online: boolean, rawLastSeen: unknown): PresenceState {
+  if (typeof rawLastSeen !== "string" || rawLastSeen === "") {
+    return { online, lastSeenAt: null };
+  }
+  const lastSeenAt = new Date(Number(rawLastSeen));
+  if (Number.isNaN(lastSeenAt.getTime())) {
+    throw new Error("chatpack: Redis presence last-seen value is invalid.");
+  }
+  return { online, lastSeenAt };
+}
+
+function evaluatePresence(
+  client: RedisPresenceClient,
+  script: string,
+  keys: string[],
+  args: string[],
+): Promise<unknown> {
+  const isNodeRedis =
+    "pSubscribe" in client && typeof (client as RedisPresenceNodeClient).pSubscribe === "function";
+  const result = isNodeRedis
+    ? (client as RedisPresenceNodeClient).eval(script, { keys, arguments: args })
+    : (client as RedisPresenceIoredisClient).eval(script, keys.length, ...keys, ...args);
+  return Promise.resolve(result);
+}
+
+/** Create a Redis-backed, multi-node {@link PresenceStore}. */
+export function redisPresenceStore(options: RedisPresenceStoreOptions): PresenceStore {
+  const prefix = options.keyPrefix ?? "chatpack:presence";
+  const reportError =
+    options.onError ??
+    ((error: unknown, context: RedisPresenceErrorContext) =>
+      console.error(`chatpack: Redis presence ${context} failed`, error));
+
+  async function run<T>(
+    context: RedisPresenceErrorContext,
+    operation: () => Promise<T>,
+  ): Promise<T> {
+    try {
+      return await operation();
+    } catch (error) {
+      reportError(error, context);
+      throw error;
+    }
+  }
+
+  return {
+    open(input: Parameters<PresenceStore["open"]>[0]) {
+      return run("open", async () => {
+        const keys = presenceKeys(prefix, input.userId);
+        const raw = redisResultArray(
+          await evaluatePresence(options.client, OPEN_PRESENCE_SCRIPT, keys, [
+            String(input.now.getTime()),
+            String(input.now.getTime() + input.leaseTtlMs),
+            input.connectionId,
+          ]),
+          "open",
+        );
+        const wasOnline = redisResultNumber(raw[0], "open") === 1;
+        const wasPending = redisResultNumber(raw[1], "open") === 1;
+        return {
+          state: presenceState(true, String(input.now.getTime())),
+          transition: !wasOnline && !wasPending ? "online" : null,
+        };
+      });
+    },
+
+    heartbeat(input: Parameters<PresenceStore["heartbeat"]>[0]) {
+      return run("heartbeat", async () => {
+        const keys = presenceKeys(prefix, input.userId);
+        await evaluatePresence(options.client, HEARTBEAT_PRESENCE_SCRIPT, keys, [
+          String(input.now.getTime()),
+          String(input.now.getTime() + input.leaseTtlMs),
+          input.connectionId,
+        ]);
+      });
+    },
+
+    close(input: Parameters<PresenceStore["close"]>[0]) {
+      return run("close", async () => {
+        const keys = presenceKeys(prefix, input.userId);
+        const offlineToken = `${Math.random().toString(36).slice(2)}-${Date.now().toString(36)}`;
+        const raw = redisResultArray(
+          await evaluatePresence(options.client, CLOSE_PRESENCE_SCRIPT, keys, [
+            String(input.now.getTime()),
+            input.connectionId,
+            offlineToken,
+            String(input.offlineDelayMs),
+          ]),
+          "close",
+        );
+        const removed = redisResultNumber(raw[0], "close") === 1;
+        const remaining = redisResultNumber(raw[1], "close");
+        return {
+          state: presenceState(remaining > 0, raw[2]),
+          offlineToken: removed && remaining === 0 ? offlineToken : null,
+        };
+      });
+    },
+
+    finalizeOffline(input: Parameters<PresenceStore["finalizeOffline"]>[0]) {
+      return run("finalize", async () => {
+        const keys = presenceKeys(prefix, input.userId);
+        const raw = await evaluatePresence(options.client, FINALIZE_PRESENCE_SCRIPT, keys, [
+          String(input.now.getTime()),
+          input.token,
+        ]);
+        const result = redisResultArray(raw, "finalize");
+        if (redisResultNumber(result[0], "finalize") !== 1) return null;
+        return {
+          state: presenceState(false, result[1]),
+          transition: "offline" as const,
+        };
+      });
+    },
+
+    get(input: Parameters<PresenceStore["get"]>[0]) {
+      return run("get", async () => {
+        const keys = presenceKeys(prefix, input.userId);
+        const raw = redisResultArray(
+          await evaluatePresence(options.client, GET_PRESENCE_SCRIPT, keys, [
+            String(input.now.getTime()),
+          ]),
+          "get",
+        );
+        return presenceState(redisResultNumber(raw[0], "get") === 1, raw[1]);
+      });
+    },
+  };
 }
 
 function randomNodeId(): string {

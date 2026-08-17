@@ -783,10 +783,9 @@ Notes that keep the design honest:
   Ticks are at-least-once - dedupe by `payload.messageId`. Each tick is
   **per-user**, so in a group collect `senderId`s rather than treating one tick
   as "everyone read it". The durable truth is still `lastReadMessageId`.
-- Plugin state is **in-memory and single-node** (MVP §5).
-  [`@chatpack/transport-redis`](./packages/transport-redis) relays events
-  between nodes, but `presence()` connection state remains local to each
-  process.
+- Plugin state is in-memory by default. For several long-lived app servers,
+  [`@chatpack/transport-redis`](./packages/transport-redis) relays events and
+  `redisPresenceStore()` shares presence leases across nodes.
 
 Want to write your own plugin? The seam is public - see `ChatpackPlugin` in
 [`@chatpack/core`](./packages/core) and
@@ -822,9 +821,11 @@ Want to write your own plugin? The seam is public - see `ChatpackPlugin` in
 | Invite links + join requests             | ✅ Done (v0.next) |
 | Public channels (browsable directory)    | ✅ Done (v0.next) |
 | Moderation: blocks, mutes, reports, bans | ✅ Done (v1.next) |
+| Multi-node presence                      | ✅ Done (v1.next) |
 
-Push notification providers, reusable UI packages, true message threads,
-and multi-node presence have not shipped. Replies are flat pointers, not
+Push notification providers, reusable UI packages, and true message threads
+have not shipped. Multi-node presence is available through the shared Redis
+presence store. Replies are flat pointers, not
 threads. See [docs/MVP.md](./docs/MVP.md) for the full scope and reasoning.
 
 ## Packages
