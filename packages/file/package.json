@@ -1,8 +1,14 @@
 {
   "name": "@chatpack/file",
-  "version": "0.1.3",
+  "version": "0.1.6",
   "description": "Chatpack integration for Filepack-backed attachments",
   "license": "MIT",
+  "author": "Yeabsra Habtu <yeabsra.h@shipper.now> (https://github.com/Yeabsra-Habtu)",
+  "contributors": [
+    "DanielCH <hello@chdaniel.com> (https://github.com/chddaniel)",
+    "Ikem Peter <ikem.peter@shipper.now> (https://github.com/ikemHood)",
+    "DavidCH <chhddavid@gmail.com> (https://github.com/chhddavid)"
+  ],
   "homepage": "https://github.com/chddaniel/chatpack#readme",
   "repository": {
     "type": "git",

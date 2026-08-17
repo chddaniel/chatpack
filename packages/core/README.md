@@ -86,11 +86,12 @@ lives at [`examples/messenger`](../../examples/messenger).
 | `api.addParticipants`         | Add members to a group as `member` (admin only); idempotent                                                         |
 | `api.removeParticipant`       | Remove a member, or leave by passing your own id (admin, or self); idempotent                                       |
 | `api.setParticipantRole`      | Promote to `admin` or demote to `member` (admin only)                                                               |
-| `api.sendMessage`             | Send a text message, optionally quote-replying to another (write-permission checked)                                |
+| `api.sendMessage`             | Send a text message, optionally quote-replying to another or mentioning participants (write-permission checked)     |
 | `api.listMessages`            | Paginate history, newest-first                                                                                      |
 | `api.searchMessages`          | Search participant conversation bodies case-insensitively, ranked and cursor-paginated; requires adapter capability |
 | `api.editMessage`             | Edit your own message                                                                                               |
 | `api.deleteMessage`           | Soft-delete your own message                                                                                        |
+| `api.forwardMessage`          | Copy a message into another conversation (read on the source, write on the target); you are the copy's sender       |
 | `api.addReaction`             | React as `userId` (write-permission checked); idempotent                                                            |
 | `api.removeReaction`          | Remove one of your own reactions; idempotent                                                                        |
 | `api.markRead`                | Update durable read-state (`last_read`); monotonic - marking an older message is a silent no-op                     |
@@ -145,11 +146,15 @@ group-management methods) return the conversation plus the calling user's
 (soft-deleted messages count; they render as tombstones).
 
 Message-returning methods all return `MessageWithDetails` - the stored
-`Message` plus two per-request decorations: `replyTo` (the quoted parent's
-read-only preview `{ id, senderId, excerpt, deleted }`, or `null`) and
-`reactions` (`[{ emoji, count, userIds }]`, grouped, earliest-first). Neither is
-stored; core computes both from batched adapter calls, one per page, so an
-edited parent's excerpt is never stale.
+`Message` plus four decorations: `replyTo` (the quoted parent's
+read-only preview `{ id, senderId, excerpt, deleted }`, or `null`),
+`reactions` (`[{ emoji, count, userIds }]`, grouped, earliest-first),
+`mentions` (the participant ids named in the message), and `forwardedFrom`
+(`{ messageId, conversationId, senderId }`, or `null`). The first two are not
+stored at all; core computes them from batched adapter calls, one per page, so an
+edited parent's excerpt is never stale. `mentions` is read from its own batched
+call, and `forwardedFrom` is assembled from three columns on the message - both
+are durable, so they never change after the write.
 
 ### Which API do I call?
 
@@ -170,6 +175,7 @@ from a browser/client:
 | Load history / scroll back      | `listMessages`                                      | `GET /conversations/:id/messages`                          |
 | Send a message                  | `sendMessage`                                       | `POST /conversations/:id/messages`                         |
 | Edit / delete my message        | `editMessage`, `deleteMessage`                      | `PATCH` / `DELETE /messages/:id`                           |
+| Forward a message               | `forwardMessage`                                    | `POST /messages/:id/forward`                               |
 | React / un-react                | `addReaction`, `removeReaction`                     | `POST` / `DELETE /messages/:id/reactions`                  |
 | Mark a conversation read        | `markRead`                                          | `POST /conversations/:id/read`                             |
 | Mint an invite link             | `createInvite`                                      | `POST /conversations/:id/invites`                          |
@@ -281,12 +287,13 @@ so don't reuse HTTP-response types for `chat.api.*` calls or vice versa:
 | POST   | `/conversations/:id/participants`  | `{ userIds }` - admin                                           | `{ conversation }`                        |
 | DELETE | `/conversations/:id/participants`  | `{ userId }` - admin, or self to leave                          | `{ conversation }`                        |
 | PATCH  | `/conversations/:id/participants`  | `{ userId, role }` - admin                                      | `{ conversation }`                        |
-| POST   | `/conversations/:id/messages`      | `{ body, role?, replyToMessageId?, metadata? }`                 | `{ message }` (201)                       |
+| POST   | `/conversations/:id/messages`      | `{ body, role?, replyToMessageId?, mentions?, metadata? }`      | `{ message }` (201)                       |
 | GET    | `/conversations/:id/messages`      | `?limit=&cursor=`                                               | `{ messages, nextCursor }` - newest first |
 | GET    | `/search/messages`                 | `?q=&limit=&cursor=`                                            | `{ messages, nextCursor }` - ranked       |
 | POST   | `/conversations/:id/read`          | `{ messageId }`                                                 | `{ ok: true }`                            |
-| PATCH  | `/messages/:id`                    | `{ body }`                                                      | `{ message }`                             |
+| PATCH  | `/messages/:id`                    | `{ body, mentions? }`                                           | `{ message }`                             |
 | DELETE | `/messages/:id`                    | -                                                               | `{ message }` (soft-deleted)              |
+| POST   | `/messages/:id/forward`            | `{ conversationId, role?, mentions?, metadata? }`               | `{ message }` (201) - the copy            |
 | POST   | `/messages/:id/reactions`          | `{ emoji }`                                                     | `{ message }` (full reaction set)         |
 | DELETE | `/messages/:id/reactions`          | `{ emoji }`                                                     | `{ message }` (full reaction set)         |
 | POST   | `/conversations/:id/invites`       | `{ expiresInSeconds?, maxUses?, requiresApproval?, metadata? }` | `{ invite }` (201)                        |
@@ -342,7 +349,29 @@ Opt-in plugins from `@chatpack/core/plugins` add routes of their own
   a parent leaves its replies intact, a reply to a reply is still one flat hop,
   and the pointer is immutable. These are quote-replies, **not threads**.
 - **A reaction is not a message:** no `seq`, no `unreadCount` bump, no
-  reordering of the conversation list. The same is true of a membership change.
+  reordering of the conversation list. The same is true of a membership change,
+  and of a mention.
+- **Mentions are ids you supply, never parsed from the body.** `mentions:
+["user_1"]` on send or edit; core does not read the text, so the two can
+  legitimately disagree and your app owns keeping them in step. Every id must be
+  a current participant or the call is 400 `MENTION_NOT_PARTICIPANT` (never a
+  silent drop - a drop nobody sees looks like a notification that fired).
+  Self-mentions are fine, the cap is 256 per message, and the array reads back
+  **sorted**: treat it as a set. On edit, omitting `mentions` leaves the stored
+  set alone and `[]` clears it; an id already stored is re-accepted even after
+  that person leaves, so fixing a typo still works. Chatpack notifies nobody and
+  keeps no mention inbox - `afterMessageMutation` hands you `mentions` next to
+  `recipientIds` for that.
+- **Forwarding copies the message.** `POST /messages/:id/forward` writes a new
+  message into `conversationId` with you as sender, the body verbatim, its own
+  `seq`, counting toward unread there. Editing or deleting the original never
+  changes the copy - nothing is a live pointer. Needs **read** on the source and
+  **write** on the target; a tombstone is 409 `MESSAGE_DELETED`.
+  `forwardedFrom` holds three ids naming the **immediate** source (one hop, like
+  replies) - no excerpt and no source conversation _name_, because the people
+  reading the copy may have no access to where it came from. Reactions, the reply
+  pointer, mentions, metadata and `role` do not travel; pass fresh ones if you
+  want them, and `mentions` is checked against the **target**.
 - **`POST /conversations/group` always creates.** Every field is optional (a
   bodyless POST makes an empty unnamed group), and calling it twice makes two
   groups - there is no pair key to converge on, so store the id you get back.
@@ -711,6 +740,8 @@ deliberately small:
 | `addReaction`                   | Idempotent insert; return the message's **full** reaction set            |
 | `removeReaction`                | Idempotent delete; return the remaining set                              |
 | `listReactionsByMessageIds`     | Batched reactions for a page, ascending `createdAt`                      |
+| `setMessageMentions`            | **Replace** a message's mention set; total, idempotent, returns nothing  |
+| `listMentionsByMessageIds`      | Batched mentions for a page, ascending `(createdAt, userId)`             |
 
 Contract rules that the type signatures alone don't tell you:
 
@@ -750,8 +781,20 @@ Contract rules that the type signatures alone don't tell you:
   unknown ids are simply absent (no `null`s, no throw), and `[]` in means `[]`
   out without touching the database. Sort reactions ascending by `createdAt`.
 - **Store `replyToMessageId` verbatim** - core already validated that it names
-  a message in the same conversation. Adapters never see `replyTo` /
-  `reactions`; those are core's per-request decorations.
+  a message in the same conversation. Same for the three `forwardedFrom*`
+  columns: plain nullable text, no foreign key (a forward is a copy that must
+  outlive its source, in a conversation whose participants may have no part in
+  it). Adapters never see `replyTo` / `reactions` / `mentions` /
+  `forwardedFrom`; those are core's per-request decorations.
+- **`setMessageMentions` replaces the whole set.** After the call the message's
+  mentions are exactly the ids core handed you: insert the new ones and delete
+  every other mention row on that message, in one transaction. An empty array
+  means delete them all. Enforce uniqueness on `(messageId, userId)` in the
+  database, don't re-stamp `createdAt` on rows that survive, and return nothing.
+  `listMentionsByMessageIds` sorts by `createdAt` **with `userId` as the
+  tiebreak** - a set written in one call shares a timestamp, so without it two
+  adapters return the same mentions in different orders. Like reactions, neither
+  may touch `lastSeq` or the activity timestamp.
 - **Group creation is atomic and never find-or-create.** The conversation row
   and all its participant rows land in one transaction, and two groups with
   identical membership are two distinct groups. `pairKey` is `null` for groups,
@@ -794,6 +837,13 @@ For the complete agent-friendly guide - invariants, reference schema, a
 method-by-method skeleton, pitfalls, and a "verify your adapter" checklist -
 see [`llms.txt`](../../llms.txt) at the repo root. Contract rules also live
 in the [contributing guide](../../CONTRIBUTING.md).
+
+## Community
+
+- **[Discord](https://discord.gg/gY3GCTRv5Y)** — chat with the team and other developers
+- **[X](https://x.com/chatpackdev)** — releases and updates
+- **[Docs](https://docs.chatpack.dev)** — the full documentation site
+- **[GitHub Discussions](https://github.com/chddaniel/chatpack/discussions)** — questions, show-and-tell, and feedback
 
 ## License
 

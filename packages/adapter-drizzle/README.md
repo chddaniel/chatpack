@@ -41,11 +41,11 @@ export const chat = chatpack({
 
 ## Creating the tables
 
-Chatpack needs eleven tables (`chatpack_conversations`,
+Chatpack needs twelve tables (`chatpack_conversations`,
 `chatpack_conversation_participants`, `chatpack_messages`,
 `chatpack_message_search_tokens`, `chatpack_message_reactions`,
-`chatpack_conversation_invites`, `chatpack_join_requests`,
-`chatpack_user_blocks`, `chatpack_conversation_mutes`,
+`chatpack_message_mentions`, `chatpack_conversation_invites`,
+`chatpack_join_requests`, `chatpack_user_blocks`, `chatpack_conversation_mutes`,
 `chatpack_moderation_reports`, `chatpack_user_bans`). Users are
 referenced **by id only** - there is no foreign key into your users table.
 
@@ -81,13 +81,24 @@ referenced **by id only** - there is no foreign key into your users table.
 > `chatpack_conversation_mutes`, `chatpack_moderation_reports` and
 > `chatpack_user_bans` are **pure table additions** with no changes to existing
 > tables, so they are safe to apply before deploying the new code.
+>
+> Mentions add one more pure table, `chatpack_message_mentions`. Forwarding adds
+> three **nullable** columns to `chatpack_messages`
+> (`forwarded_from_message_id`, `forwarded_from_conversation_id`,
+> `forwarded_from_sender_id`) - nullable is the whole migration story, since every
+> existing message was not forwarded. Those columns deliberately carry **no
+> foreign key**: the source message may be hard-deleted, or live in a
+> conversation this reader can't see, and a cascade would silently rewrite
+> history in the copy. They are indexed by a **partial** index
+> (`WHERE forwarded_from_message_id IS NOT NULL`) so the mostly-null column
+> doesn't cost an entry per message.
 
 **Option A - your `drizzle-kit` flow (recommended).** Re-export the schema and
 generate a migration like any other table you own:
 
 ```ts
 // db/schema.ts
-export * from "@chatpack/adapter-drizzle"; // conversations, participants, messages, search tokens, reactions, invites, join requests, moderation
+export * from "@chatpack/adapter-drizzle"; // conversations, participants, messages, search tokens, reactions, mentions, invites, join requests, moderation
 ```
 
 ```sh
@@ -212,6 +223,13 @@ adapter does them (details in
 The integration suite runs the full Chatpack engine against this adapter on
 [PGlite](https://pglite.dev) - real Postgres compiled to WASM - so
 `pnpm test` needs no Docker or external database, locally or in CI.
+
+## Community
+
+- **[Discord](https://discord.gg/gY3GCTRv5Y)** — chat with the team and other developers
+- **[X](https://x.com/chatpackdev)** — releases and updates
+- **[Docs](https://docs.chatpack.dev)** — the full documentation site
+- **[GitHub Discussions](https://github.com/chddaniel/chatpack/discussions)** — questions, show-and-tell, and feedback
 
 ## License
 

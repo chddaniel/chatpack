@@ -89,6 +89,8 @@ describe("Filepack message metadata", () => {
       metadata: createFileAttachmentMetadata([file]),
       role: "user",
       action: "send",
+      mentions: [],
+      forwardedFrom: null,
     });
 
     expect(authorized).toEqual(["file-1"]);
@@ -119,6 +121,8 @@ describe("Filepack message metadata", () => {
         metadata: createFileAttachmentMetadata([file]),
         role: "user",
         action: "send",
+        mentions: [],
+        forwardedFrom: null,
       }),
     ).rejects.toThrow("unavailable");
   });

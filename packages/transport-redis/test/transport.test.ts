@@ -17,8 +17,9 @@ import {
   FakeRedisBroker,
 } from "./fake-redis";
 
-// Events carry the API-decorated message (`replyTo` + `reactions`, ADR 0013),
-// so that is what crosses the wire between nodes.
+// Events carry the API-decorated message (`replyTo` + `reactions`, ADR 0013;
+// `mentions` + `forwardedFrom`, ADR 0023/0024), so that is what crosses the wire
+// between nodes.
 function message(overrides: Partial<MessageWithDetails> = {}): MessageWithDetails {
   return {
     id: "m1",
@@ -31,8 +32,13 @@ function message(overrides: Partial<MessageWithDetails> = {}): MessageWithDetail
     editedAt: null,
     deletedAt: null,
     replyToMessageId: null,
+    forwardedFromMessageId: null,
+    forwardedFromConversationId: null,
+    forwardedFromSenderId: null,
     replyTo: null,
     reactions: [],
+    mentions: [],
+    forwardedFrom: null,
     metadata: {},
     ...overrides,
   };

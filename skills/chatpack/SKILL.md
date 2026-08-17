@@ -27,7 +27,8 @@ installed `llms.txt` wins (it matches the installed version).
    `createGroupConversation`, `listConversations`, `getConversation`,
    `updateConversation`, `addParticipants`, `removeParticipant`,
    `setParticipantRole`, `sendMessage`, `listMessages`,
-   `searchMessages`, `editMessage`, `deleteMessage`, `addReaction`, `removeReaction`, `markRead`,
+   `searchMessages`, `editMessage`, `deleteMessage`, `forwardMessage`,
+   `addReaction`, `removeReaction`, `markRead`,
    `listMessagesAfter`, `createInvite`, `listInvites`, `revokeInvite`,
    `getInvitePreview`, `acceptInvite`, `requestToJoin`, `listJoinRequests`,
    `resolveJoinRequest`, `listPublicConversations`, `joinConversation` - plus the
@@ -207,20 +208,30 @@ const { conversation } = await fetch("/api/chat/conversations", {
 
 // 3. send a message - the text field is `body` (NOT text/content).
 //    Add `replyToMessageId` to quote-reply an earlier message in the thread.
+//    `mentions` is an array of user IDS YOU SUPPLY - core never parses the text,
+//    so build it from your @-picker, and every id must be a current participant.
 await fetch(`/api/chat/conversations/${conversation.id}/messages`, {
   method: "POST",
   headers: { "content-type": "application/json" },
-  body: JSON.stringify({ body: "hey bob!" }),
+  body: JSON.stringify({ body: "hey @bob!", mentions: ["bob"] }),
 });
 
-// 4. react - POST to add, DELETE to remove; emoji goes in the BODY both times
+// 4. forward - a COPY into another conversation, you as sender, its own id/seq.
+//    The field naming the destination is `conversationId`.
+await fetch(`/api/chat/messages/msg_1/forward`, {
+  method: "POST",
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ conversationId: "conv_2" }),
+});
+
+// 5. react - POST to add, DELETE to remove; emoji goes in the BODY both times
 await fetch(`/api/chat/messages/msg_1/reactions`, {
   method: "POST",
   headers: { "content-type": "application/json" },
   body: JSON.stringify({ emoji: "👍" }),
 });
 
-// 5. live updates - ONE EventSource; reconnect + gap-fill are automatic
+// 6. live updates - ONE EventSource; reconnect + gap-fill are automatic
 const events = new EventSource("/api/chat/stream");
 events.addEventListener("message.created", (e) => {
   const { message } = JSON.parse((e as MessageEvent).data);
@@ -479,6 +490,32 @@ Client semantics that trip up generated code:
   (`"👍"`, `":shipit:"`, `"custom_1234"`); `""` or longer is `INVALID_INPUT`.
   Replies are flat pointers, **not threads**; a reaction is not a message - no
   `seq`, no conversation reorder, no unread bump.
+- **`mentions` are ids you supply, not text Chatpack parsed.** Send or edit with
+  `mentions: ["bob"]`; core never reads the body, so `"@bob"` in the text with an
+  empty array (or the reverse) is legal and your composer owns keeping them
+  aligned. Every id must be a **current participant** or the whole call is 400
+  `MENTION_NOT_PARTICIPANT` - Chatpack won't silently drop one, because a drop
+  nobody sees looks exactly like a notification that fired. Self-mentions are
+  allowed, the cap is 256, and the array reads back **sorted, not in the order you
+  passed it**: it's a set. On edit, omitting `mentions` leaves the stored set
+  alone while `[]` clears it, and an id that's already stored stays valid even
+  after that person leaves the conversation, so fixing a typo doesn't fail. A
+  mention is not a message either (no `seq`, no unread bump, no SSE event of its
+  own) and Chatpack keeps **no mention inbox** - notifying people is your job,
+  from `mentions` on `afterMessageMutation`.
+- **Forwarding is a copy, never a live pointer.** `POST
+/messages/:id/forward` with `{ conversationId }` writes a NEW message into that
+  conversation: your id as sender, the body verbatim, its own `seq`, counted in
+  unread there. Edit or delete the original afterwards and the copy is unchanged -
+  that's the point. You need **read** on the source and **write** on the target
+  (403 `FORBIDDEN_READ` / `FORBIDDEN_WRITE`), and a deleted message is 409
+  `MESSAGE_DELETED`. The copy carries `forwardedFrom` (`{ messageId,
+conversationId, senderId }`) naming only the **immediate** source - one hop, no
+  chains, and deliberately no excerpt and no source conversation _name_, since
+  whoever reads the copy may have no access to where it came from. Reactions, the
+  reply pointer, mentions, metadata and `role` do **not** travel; pass fresh ones
+  in the forward body if you want them (`mentions` is validated against the
+  **target**).
 - **Reaction and membership events aren't replayed.**
   `reaction.added`/`.removed` and `participant.added`/`.removed` /
   `conversation.updated` are live-only: they have no `seq`, so their frames carry
@@ -503,7 +540,7 @@ Client semantics that trip up generated code:
 ## Step 5 - Verify BEFORE declaring success (mandatory)
 
 Run these (adjust port/cookie names). All must pass; do not report the
-integration as working until they do. Skip #4 if the app has no group UI.
+integration as working until they do. Skip #5-#7 if the app has no group UI.
 
 ```sh
 # 1. auth + server-generated conversation id (expect 200, id like "conv_1")
@@ -523,17 +560,28 @@ curl -s -X POST localhost:3000/api/chat/messages/msg_1/reactions \
 curl -s -X POST localhost:3000/api/chat/messages/msg_1/reactions \
   -H 'cookie: demo_user=bob' -H 'content-type: application/json' -d '{"emoji":"👍"}'
 
-# 4. group (expect 201, type "group", pairKey null, alice admin + bob member)
+# 4. mention a non-participant (expect 400 MENTION_NOT_PARTICIPANT, message NOT stored)
+curl -si -X POST localhost:3000/api/chat/conversations/conv_1/messages \
+  -H 'cookie: demo_user=alice' -H 'content-type: application/json' \
+  -d '{"body":"hi @zed","mentions":["zed"]}'
+
+# 5. group (expect 201, type "group", pairKey null, alice admin + bob member)
 curl -si -X POST localhost:3000/api/chat/conversations/group \
   -H 'cookie: demo_user=alice' -H 'content-type: application/json' \
   -d '{"name":"Launch","userIds":["bob"]}'
 
-# 5. non-admin management is refused (expect 403 NOT_CONVERSATION_ADMIN)
+# 6. forward into the group, then edit the ORIGINAL (expect the copy unchanged:
+#    new id, seq 1 in conv_2, alice as sender, forwardedFrom naming msg_1)
+curl -si -X POST localhost:3000/api/chat/messages/msg_1/forward \
+  -H 'cookie: demo_user=alice' -H 'content-type: application/json' \
+  -d '{"conversationId":"conv_2"}'
+
+# 7. non-admin management is refused (expect 403 NOT_CONVERSATION_ADMIN)
 curl -si -X POST localhost:3000/api/chat/conversations/conv_2/participants \
   -H 'cookie: demo_user=bob' -H 'content-type: application/json' \
   -d '{"userIds":["carol"]}'
 
-# 6. live stream (expect ": connected", then events as messages are sent;
+# 8. live stream (expect ": connected", then events as messages are sent;
 #    reaction.added and participant.* frames arrive with no `id:` line - correct)
 curl -sN localhost:3000/api/chat/stream -H 'cookie: demo_user=bob'
 
@@ -583,42 +631,55 @@ AND the Network tab must show it on `/api/chat/*` requests.
 
 ## Troubleshooting
 
-| Symptom                                                                          | Cause & fix                                                                                                                                                                            |
-| -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 401 on everything                                                                | **Read the response body first** - it names the exact failure (bad hook return shape vs missing cookie vs unparsed cookie). Auth runs before routing, so fix auth before chasing 404s. |
-| 401 only in the preview pane, works in a real tab                                | Cross-site iframe dropped a `SameSite=Lax` cookie. Re-set it with `SameSite=None; Secure; Partitioned`.                                                                                |
-| 404 `NOT_FOUND` after auth passes                                                | Mount path/basePath mismatch, or the route file isn't a catch-all (`[...chatpack]` / `chat.$`).                                                                                        |
-| `chat.api.getOrCreateDirectConversation is not a function`                       | Hallucinated method - the API method is `getOrCreateConversation` (Hard rule 2).                                                                                                       |
-| Messages send but never appear live                                              | Custom-written stream route, second `chatpack()` instance, or non-streaming Express bridge. One instance, one handler (Hard rules 1 & 5).                                              |
-| `EventSource` closes and never retries                                           | Fatal response (usually 401): browser won't reconnect on its own - re-auth, then create a new `EventSource`.                                                                           |
-| Chat state vanishes between requests                                             | `memoryAdapter` on serverless/multi-isolate, or HMR wiped an unguarded instance. Database adapter / `globalThis` guard.                                                                |
-| Old package version right after a release (Bun)                                  | Bun's `minimumReleaseAge` guard - check `npm view @chatpack/core dist-tags`.                                                                                                           |
-| 409 `NOT_GROUP_CONVERSATION`                                                     | A group-only call (add/remove/role/rename) aimed at a DM. DM membership is fixed at creation.                                                                                          |
-| 409 `LAST_ADMIN_REMAINING`                                                       | Removing or demoting a group's only admin. Promote a successor first - Chatpack refuses rather than leave a group nobody can manage.                                                   |
-| Duplicate groups piling up                                                       | Treating `createGroupConversation` as find-or-create. It always creates; store the returned id (Hard rule 4).                                                                          |
-| Second group insert fails on a unique-key error                                  | Custom adapter left the `pair_key` unique index total instead of partial (`WHERE pair_key IS NOT NULL`), so two `NULL` keys collide.                                                   |
-| An admin silently becomes a `member`                                             | Custom adapter used `ON CONFLICT DO UPDATE` for participant inserts. Re-adding an existing member must be `DO NOTHING`.                                                                |
-| 501 `INVITES_UNSUPPORTED`                                                        | The storage adapter has no `invites` capability. Both first-party adapters do; a custom one needs the whole nine-method namespace (all or nothing).                                    |
-| 410 `INVITE_EXPIRED` on a fresh-looking link                                     | Past `expiresAt`, or `maxUses` is spent. Mint a new one - the code is permanently done. A 404 instead means unknown _or revoked_.                                                      |
-| A one-use invite let in two people                                               | Custom adapter did `SELECT`-then-`UPDATE` in `consumeInvite`. It must be one atomic statement, same rule as `seq`.                                                                     |
-| A denied user can't re-request                                                   | Custom adapter used `DO NOTHING` in `createJoinRequest`. Join requests are the one place that needs `DO UPDATE` - reset `status` to `pending` and clear the resolution.                |
-| 501 `CHANNELS_UNSUPPORTED`                                                       | The storage adapter has no `channels` capability - and it also blocks _setting_ `visibility`/`joinPolicy`, so a `POST /conversations/group` with `visibility: "public"` fails too.     |
-| 403 `NOT_PUBLIC_CONVERSATION` on join                                            | The group is still `visibility: "private"`. An admin must PATCH it public first; joining is only ever self-service for channels.                                                       |
-| A channel was published but the directory is empty                               | Custom adapter stored `visibility` nowhere (the columns are part of the **required** contract, not the `channels` namespace), or its query filters on `visibility` without `type`.     |
-| Renaming happened by accident when flipping visibility                           | Custom adapter tried to write only the field it thought changed. Core sends all three already resolved against the current row - write all three.                                      |
-| A user can browse a channel but gets 403 reading it                              | Working as designed: discoverable is not readable. Call the join route first; there is no read-without-membership mode.                                                                |
-| 501 `MODERATION_UNSUPPORTED`                                                     | The storage adapter has no `moderation` capability. Both first-party adapters do; a custom one needs the whole namespace (blocks, mutes, reports, bans - all or nothing).              |
-| 403 `NOT_MODERATOR` for your admin                                               | `moderation.canModerate` is missing or returned false. It's your hook, not a Chatpack role - check `ctx.action` (`bans.create` etc.) if you're gating per action.                      |
-| A ban was created but the user keeps chatting                                    | Bans are only enforced when `moderation` is configured. If the row was written outside Chatpack (an admin dashboard), pass `moderation: { enforceBans: true }`.                        |
-| 403 `USER_BANNED` on a user you already unbanned                                 | A timed ban that hasn't expired, or a duplicate active row from a custom adapter whose `createBan` reads-then-inserts. Check `listBans({ activeOnly: true })`.                         |
-| 403 `DIRECT_INTERACTION_BLOCKED`                                                 | Either side blocked the other - it's symmetric. Existing DM history still reads fine, and groups are unaffected; this only stops direct writes and new DMs.                            |
-| 400 `INVALID_INPUT` sending an image with no caption                             | `body` is required and non-empty after trimming; attachments never substitute for it. Synthesize a body (a space won't do - it's trimmed).                                             |
-| Chrome uploads fail as `CLIENT_NETWORK_ERROR` with no request in the Network tab | `@filepack/client` ≤ 0.1.1 calls an unbound `globalThis.fetch` ("Illegal invocation"). Pass `controlFetch: (input, init) => fetch(input, init)` to `createChatpackFileClient`.         |
+| Symptom                                                                          | Cause & fix                                                                                                                                                                                                |
+| -------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 401 on everything                                                                | **Read the response body first** - it names the exact failure (bad hook return shape vs missing cookie vs unparsed cookie). Auth runs before routing, so fix auth before chasing 404s.                     |
+| 401 only in the preview pane, works in a real tab                                | Cross-site iframe dropped a `SameSite=Lax` cookie. Re-set it with `SameSite=None; Secure; Partitioned`.                                                                                                    |
+| 404 `NOT_FOUND` after auth passes                                                | Mount path/basePath mismatch, or the route file isn't a catch-all (`[...chatpack]` / `chat.$`).                                                                                                            |
+| `chat.api.getOrCreateDirectConversation is not a function`                       | Hallucinated method - the API method is `getOrCreateConversation` (Hard rule 2).                                                                                                                           |
+| Messages send but never appear live                                              | Custom-written stream route, second `chatpack()` instance, or non-streaming Express bridge. One instance, one handler (Hard rules 1 & 5).                                                                  |
+| `EventSource` closes and never retries                                           | Fatal response (usually 401): browser won't reconnect on its own - re-auth, then create a new `EventSource`.                                                                                               |
+| Chat state vanishes between requests                                             | `memoryAdapter` on serverless/multi-isolate, or HMR wiped an unguarded instance. Database adapter / `globalThis` guard.                                                                                    |
+| Old package version right after a release (Bun)                                  | Bun's `minimumReleaseAge` guard - check `npm view @chatpack/core dist-tags`.                                                                                                                               |
+| 409 `NOT_GROUP_CONVERSATION`                                                     | A group-only call (add/remove/role/rename) aimed at a DM. DM membership is fixed at creation.                                                                                                              |
+| 409 `LAST_ADMIN_REMAINING`                                                       | Removing or demoting a group's only admin. Promote a successor first - Chatpack refuses rather than leave a group nobody can manage.                                                                       |
+| Duplicate groups piling up                                                       | Treating `createGroupConversation` as find-or-create. It always creates; store the returned id (Hard rule 4).                                                                                              |
+| Second group insert fails on a unique-key error                                  | Custom adapter left the `pair_key` unique index total instead of partial (`WHERE pair_key IS NOT NULL`), so two `NULL` keys collide.                                                                       |
+| An admin silently becomes a `member`                                             | Custom adapter used `ON CONFLICT DO UPDATE` for participant inserts. Re-adding an existing member must be `DO NOTHING`.                                                                                    |
+| 501 `INVITES_UNSUPPORTED`                                                        | The storage adapter has no `invites` capability. Both first-party adapters do; a custom one needs the whole nine-method namespace (all or nothing).                                                        |
+| 410 `INVITE_EXPIRED` on a fresh-looking link                                     | Past `expiresAt`, or `maxUses` is spent. Mint a new one - the code is permanently done. A 404 instead means unknown _or revoked_.                                                                          |
+| A one-use invite let in two people                                               | Custom adapter did `SELECT`-then-`UPDATE` in `consumeInvite`. It must be one atomic statement, same rule as `seq`.                                                                                         |
+| A denied user can't re-request                                                   | Custom adapter used `DO NOTHING` in `createJoinRequest`. Join requests are the one place that needs `DO UPDATE` - reset `status` to `pending` and clear the resolution.                                    |
+| 501 `CHANNELS_UNSUPPORTED`                                                       | The storage adapter has no `channels` capability - and it also blocks _setting_ `visibility`/`joinPolicy`, so a `POST /conversations/group` with `visibility: "public"` fails too.                         |
+| 403 `NOT_PUBLIC_CONVERSATION` on join                                            | The group is still `visibility: "private"`. An admin must PATCH it public first; joining is only ever self-service for channels.                                                                           |
+| A channel was published but the directory is empty                               | Custom adapter stored `visibility` nowhere (the columns are part of the **required** contract, not the `channels` namespace), or its query filters on `visibility` without `type`.                         |
+| Renaming happened by accident when flipping visibility                           | Custom adapter tried to write only the field it thought changed. Core sends all three already resolved against the current row - write all three.                                                          |
+| A user can browse a channel but gets 403 reading it                              | Working as designed: discoverable is not readable. Call the join route first; there is no read-without-membership mode.                                                                                    |
+| 501 `MODERATION_UNSUPPORTED`                                                     | The storage adapter has no `moderation` capability. Both first-party adapters do; a custom one needs the whole namespace (blocks, mutes, reports, bans - all or nothing).                                  |
+| 403 `NOT_MODERATOR` for your admin                                               | `moderation.canModerate` is missing or returned false. It's your hook, not a Chatpack role - check `ctx.action` (`bans.create` etc.) if you're gating per action.                                          |
+| A ban was created but the user keeps chatting                                    | Bans are only enforced when `moderation` is configured. If the row was written outside Chatpack (an admin dashboard), pass `moderation: { enforceBans: true }`.                                            |
+| 403 `USER_BANNED` on a user you already unbanned                                 | A timed ban that hasn't expired, or a duplicate active row from a custom adapter whose `createBan` reads-then-inserts. Check `listBans({ activeOnly: true })`.                                             |
+| 403 `DIRECT_INTERACTION_BLOCKED`                                                 | Either side blocked the other - it's symmetric. Existing DM history still reads fine, and groups are unaffected; this only stops direct writes and new DMs.                                                |
+| 400 `MENTION_NOT_PARTICIPANT` on a name the picker offered                       | The picker listed org members, not conversation participants. Populate it from `conversation.participants`, and refetch after a membership change - core validates every id and rejects the whole message. |
+| Nobody got notified about a mention                                              | Expected: Chatpack stores mentions and stops. Wire your own push/email in `afterMessageMutation` using `ctx.mentions`, which is a subset of `ctx.recipientIds`.                                            |
+| Mentions come back in a different order than they were sent                      | Correct, not a bug: mentions are a **set**, read back sorted by `(createdAt, userId)`. Don't encode meaning in the position - render them from the body instead.                                           |
+| An edit dropped the mentions                                                     | The PATCH sent `mentions: []` (or a re-serialized empty composer state). Omit the field entirely to leave the stored set untouched.                                                                        |
+| A forwarded message shows the wrong sender                                       | Working as designed - the forwarder is the sender, because they're the one speaking in the destination. The original author is in `forwardedFrom.senderId`; render "Forwarded" from there.                 |
+| Editing the original didn't update the forward                                   | Forwarding **copies**. There is no live link, by design; if the copy must track the source you want a quote-reply in the same conversation, not a forward.                                                 |
+| 409 `MESSAGE_DELETED` forwarding a message that's still on screen                | It's a tombstone - someone deleted it since the list was fetched. Refetch the thread; tombstones are never forwardable.                                                                                    |
+| 400 `INVALID_INPUT` sending an image with no caption                             | `body` is required and non-empty after trimming; attachments never substitute for it. Synthesize a body (a space won't do - it's trimmed).                                                                 |
+| Chrome uploads fail as `CLIENT_NETWORK_ERROR` with no request in the Network tab | `@filepack/client` ≤ 0.1.1 calls an unbound `globalThis.fetch` ("Illegal invocation"). Pass `controlFetch: (input, init) => fetch(input, init)` to `createChatpackFileClient`.                             |
+
+Symptom not listed here, or the docs said something that turned out to be wrong?
+Tell the maintainers - Discord <https://discord.gg/gY3GCTRv5Y> is the fastest,
+[Discussions](https://github.com/chddaniel/chatpack/discussions) and
+[issues](https://github.com/chddaniel/chatpack/issues/new/choose) also work.
+Friction reports are wanted, not tolerated.
 
 ## Custom storage adapter (Supabase JS / Convex / Firestore / other)
 
 Do NOT improvise: read **Part 2 of `llms.txt`** and follow it exactly - it
-contains the 19-required-method `StorageAdapter` contract plus four optional
+contains the 21-required-method `StorageAdapter` contract plus four optional
 capabilities (search, the nine-method `invites` namespace, the one-method
 `channels` namespace, and the `moderation` namespace),
 the invariants (atomic
@@ -628,8 +689,8 @@ batched exact unread counts, participant-scoped ranked search when supported,
 idempotent reaction writes that never touch `lastSeq`/activity, single-statement
 invite consumption, single-statement `createBan`,
 `visibility`/`joinPolicy` round-tripping with coercion on
-read), the reference
-Postgres schema, a skeleton, and a 20-point verification checklist.
+read, total mention replacement that preserves survivors' `createdAt`), the
+reference Postgres schema, a skeleton, and a 22-point verification checklist.
 The adapter must run server-side with privileged credentials; `chatpack_*`
 tables must never be readable by browser/anon clients.
 
@@ -650,6 +711,21 @@ right: the `visibility` and `join_policy` **columns are required** (add them wit
 directory query lives in the optional `channels` namespace. Omitting the namespace
 makes core refuse to set a non-default value, so a pre-channels adapter reports a
 clean 501 instead of quietly storing a "public" channel nobody can find.
+
+Mentions add the other two **required** methods, `setMessageMentions` and
+`listMentionsByMessageIds` - one table, but two invariants that are easy to miss.
+`setMessageMentions` is a **total replace**, so an empty array must delete every
+row rather than no-op, and it must not re-stamp the `created_at` of an id that
+survives the replace (do it as `ON CONFLICT DO NOTHING` plus a delete of the
+complement, in one transaction). `listMentionsByMessageIds` is batched - one call
+per page, never one per message - and must sort by `(created_at, user_id)`: a set
+written in a single call shares a timestamp, and the id tiebreak is the only
+reason two adapters return the same array.
+
+Forwarding needs **no new method**. Three nullable columns on `chatpack_messages`
+hold the provenance, written by the same `addMessage` you already have. Give them
+**no foreign key**: the source can be hard-deleted or sit in a conversation this
+reader can't open, and a cascade would rewrite history inside the copy.
 
 Moderation is entirely optional and entirely self-contained: four tables (blocks,
 mutes, reports with immutable evidence JSON, bans with expiry + revocation) and no

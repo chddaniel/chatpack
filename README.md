@@ -11,18 +11,26 @@ and real-time delivery - without rebuilding it from scratch.
 [![CI](https://github.com/chddaniel/chatpack/actions/workflows/ci.yml/badge.svg)](https://github.com/chddaniel/chatpack/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 [![Discord](https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/gY3GCTRv5Y)
+[![X](https://img.shields.io/badge/X-@chatpackdev-000000?logo=x&logoColor=white)](https://x.com/chatpackdev)
+[![npm](https://img.shields.io/npm/v/@chatpack/core?logo=npm&color=CB3837&label=@chatpack/core)](https://www.npmjs.com/package/@chatpack/core)
 
 **[Documentation → docs.chatpack.dev](https://docs.chatpack.dev)** -
 quickstart, concepts, real-time, storage adapters, framework guides, and the
 full REST reference. (Source in [`apps/docs`](./apps/docs); run locally with
 `pnpm --filter @chatpack/docs dev`.)
 
+A project by **[DanielCH](https://github.com/chddaniel)** and
+**[DavidCH](https://github.com/chhddavid)** · principal author
+**[Yeabsra Habtu](https://github.com/Yeabsra-Habtu)** ·
+[all contributors](https://github.com/chddaniel/chatpack/graphs/contributors)
+
 </div>
 
 ---
 
 > **Status: `0.x` - v0 MVP + real-time plugins + unread counts + browser
-> client + reactions + search + group chats, live on npm.** The v0 MVP (core engine,
+> client + reactions + search + group chats + mentions + forwarding, live on
+> npm.** The v0 MVP (core engine,
 > HTTP handler, real-time SSE, Postgres adapter) plus the opt-in real-time
 > plugins - **`typing()`, `presence()`, and `receipts()`, all shipping today
 > inside `@chatpack/core` under the `@chatpack/core/plugins` subpath** (see
@@ -359,7 +367,9 @@ curl -X POST /api/chat/conversations/conv_1/messages \
     "metadata": {},
     "replyToMessageId": null,
     "replyTo": null,
-    "reactions": []
+    "reactions": [],
+    "mentions": [],
+    "forwardedFrom": null
   }
 }
 ```
@@ -384,6 +394,35 @@ message with its **complete** reaction set
 (`[{ emoji, count, userIds }]`). These are quote-replies, not threads, and a
 reaction is not a message: it has no `seq` and never reorders the conversation
 list.
+
+**Mentions** are ids you supply, not text Chatpack parses - it has no users table
+to resolve a name against, and `body` stays opaque. **Forwarding** copies a
+message into another conversation:
+
+```sh
+curl -X POST /api/chat/conversations/conv_2/messages \
+  -H 'content-type: application/json' \
+  -d '{"body": "@carol ship it", "mentions": ["carol"]}'
+
+curl -X POST /api/chat/messages/msg_1/forward \
+  -H 'content-type: application/json' \
+  -d '{"conversationId": "conv_2"}'
+```
+
+Every mentioned id must be a current participant, or the whole call is `400
+MENTION_NOT_PARTICIPANT` - never a silent drop, because a drop nobody sees looks
+exactly like a notification that fired. On edit, omitting `mentions` leaves the
+stored set alone and `[]` clears it. Chatpack notifies nobody and keeps no mention
+inbox: `afterMessageMutation` hands you `mentions` next to `recipientIds`, which is
+where a push integration belongs.
+
+A forward is a **copy**, never a live pointer: a new message in the target with
+your id as sender, its own `seq`, and `forwardedFrom`
+(`{ messageId, conversationId, senderId }`) frozen at forward time. Editing or
+deleting the original changes nothing about the copy. One hop, like replies -
+and deliberately no excerpt and no source conversation _name_, since whoever reads
+the copy may have no access to where it came from. Reactions, the reply pointer,
+mentions, metadata and `role` don't travel.
 
 List history (newest first, keyset-paginated):
 
@@ -497,6 +536,12 @@ return either a joined conversation or a pending request; expected HTTP failures
 remain structured client results. `chatClient.moderation` wraps all thirteen
 moderation calls the same way - note that none of them touch the query cache, so
 refetch the lists you show after a block or a mute.
+
+`messages.send` and `messages.edit` take `mentions`, and `messages.forward`
+copies a message into another conversation - resolving with the copy and echoing
+it into the target thread just like a send. The destination is
+`toConversationId` in the client input even though the wire field is a plain
+`conversationId`, because the route already names the source.
 
 See [`@chatpack/client`](./packages/client) for the framework-agnostic API,
 React hooks, the polling fallback, and client plugin usage.
@@ -766,6 +811,8 @@ Want to write your own plugin? The seam is public - see `ChatpackPlugin` in
 | Browser client + React hooks             | ✅ Done (v0.next) |
 | Client polling fallback                  | ✅ Done (v0.next) |
 | Reactions + quote-replies                | ✅ Done (v0.next) |
+| Mentions (validated, supplied ids)       | ✅ Done (v1.next) |
+| Message forwarding (copy + provenance)   | ✅ Done (v1.next) |
 | Participant-scoped message search        | ✅ Done (v0.next) |
 | Post-persistence message mutation hook   | ✅ Done (v0.next) |
 | `@chatpack/cli init`                     | ✅ Done (v0.next) |
@@ -837,8 +884,11 @@ alive. Details in [docs/MVP.md §12](./docs/MVP.md).
 
 ## Community
 
+- **[Discord](https://discord.gg/gY3GCTRv5Y)** — chat with the team and other developers
 - **[GitHub Discussions](https://github.com/chddaniel/chatpack/discussions)** — questions, show-and-tell, and feedback
-- **[Discord](https://discord.gg/gY3GCTRv5Y)** — chat with the community
+- **[X](https://x.com/chatpackdev)** — releases and updates
+- **[Docs](https://docs.chatpack.dev)** — the full documentation site
+- **[npm](https://www.npmjs.com/package/@chatpack/core)** — every `@chatpack/*` package
 - **[Open an issue](https://github.com/chddaniel/chatpack/issues/new/choose)** — bugs and feature requests
 
 If you've built something with Chatpack, got stuck installing it, or have opinions about the API — we want to hear from you. The team reads everything.
@@ -847,6 +897,36 @@ If you've built something with Chatpack, got stuck installing it, or have opinio
 
 Contributions are very welcome - see [CONTRIBUTING.md](./CONTRIBUTING.md) for
 repo layout, dev workflow, and the adapter contract.
+
+## Credits
+
+Chatpack is a project by **[DanielCH](https://github.com/chddaniel)** and
+**[DavidCH](https://github.com/chhddavid)**, who own and maintain it.
+
+The library itself was written by
+**[Yeabsra Habtu](https://github.com/Yeabsra-Habtu)** — the core engine and
+permission model, the HTTP handler, the storage adapter contract and both its
+memory and Drizzle/Postgres implementations, the real-time SSE transport and the
+ephemeral plugin trio, and the first-party browser client.
+
+**[Ikem Peter](https://github.com/ikemHood)** builds Chatpack alongside him — the
+moderation suite, the client's message search and its invite, join-request and
+channel wrappers, and the CLI refresh. **[DavidCH](https://github.com/chhddavid)**
+contributes to the code as well as co-owning the project.
+
+| Role                                                  |                                    |
+| ----------------------------------------------------- | ---------------------------------- |
+| **[DanielCH](https://github.com/chddaniel)**          | Project co-owner, maintainer       |
+| **[DavidCH](https://github.com/chhddavid)**           | Project co-owner, contributor      |
+| **[Yeabsra Habtu](https://github.com/Yeabsra-Habtu)** | Principal author, maintainer       |
+| **[Ikem Peter](https://github.com/ikemHood)**         | Contributing developer, maintainer |
+
+Who wrote what is verifiable rather than asserted — see the
+[contributor graph](https://github.com/chddaniel/chatpack/graphs/contributors)
+or run `git shortlog -sne` in a clone.
+
+Citing Chatpack in a paper or writeup? See [`CITATION.cff`](./CITATION.cff), or
+use the "Cite this repository" button in the GitHub sidebar.
 
 ## License
 

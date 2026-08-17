@@ -1,8 +1,14 @@
 {
   "name": "@chatpack/adapter-memory",
-  "version": "0.7.0",
+  "version": "0.8.0",
   "description": "In-memory storage adapter for Chatpack - zero-setup demos and fast, deterministic tests",
   "license": "MIT",
+  "author": "Yeabsra Habtu <yeabsra.h@shipper.now> (https://github.com/Yeabsra-Habtu)",
+  "contributors": [
+    "DanielCH <hello@chdaniel.com> (https://github.com/chddaniel)",
+    "Ikem Peter <ikem.peter@shipper.now> (https://github.com/ikemHood)",
+    "DavidCH <chhddavid@gmail.com> (https://github.com/chhddavid)"
+  ],
   "homepage": "https://github.com/chddaniel/chatpack#readme",
   "repository": {
     "type": "git",

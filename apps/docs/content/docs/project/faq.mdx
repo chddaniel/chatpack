@@ -229,7 +229,7 @@ seams. See [Roadmap](/docs/project/roadmap).
 
 </Accordion>
 
-<Accordion title="Do group chats work? What about invite links, channels, and mentions?">
+<Accordion title="Do group chats work? What about invite links and channels?">
 
 Groups ship: `createGroupConversation`, a first-class `name`, `admin`/`member`
 roles, admin-gated membership management, and 1-256 participants
@@ -253,9 +253,56 @@ Discoverable is not readable - browsing hands out a name and a participant
 _count_, never member ids or messages, so reading a channel still means joining
 it. Adapters that skip the capability answer `501 CHANNELS_UNSUPPORTED`.
 
-What isn't there: per-group permission grants, mentions, and roles beyond
+What isn't there: per-group permission grants and roles beyond
 `admin`/`member`. Chatpack owns membership, roles, and the three ways in; the
 social layer around them stays your app's.
+
+</Accordion>
+
+<Accordion title="Do mentions work? Does Chatpack parse @names for me?">
+
+Mentions ship, but as **validation, not parsing**. You pass `mentions:
+["user_1"]` alongside `body` on send or edit, and Chatpack stores that set and
+returns it on every message. It never reads the text looking for `@`: there is no
+users table to resolve a name against, and `body` stays opaque
+([ADR 0022](/docs/concepts/architecture)). So your composer's picker supplies the
+ids, and `body` and `mentions` can legitimately disagree - keeping them in step is
+your app's job.
+
+What Chatpack does guarantee is that a mention is real. Every id must be a
+current participant, or the whole call fails with
+`400 MENTION_NOT_PARTICIPANT` - never a silent drop, because a drop nobody sees
+looks exactly like a notification that fired. On edit, omitting `mentions` leaves
+the stored set alone (so a mentions-unaware client can't erase them) and `[]`
+clears it; an id that's already stored stays valid even after that person leaves,
+so fixing a typo doesn't have to drop a mention that was legitimate when it was
+made. Read the array as a **set** - it comes back sorted, not in the order you
+sent it.
+
+What isn't there: notifications and a mention inbox. Chatpack stores mentions and
+stops. `afterMessageMutation` hands you `mentions` next to `recipientIds`, which
+is where a push or email integration belongs.
+
+</Accordion>
+
+<Accordion title="Can users forward a message to another conversation?">
+
+Yes - and it's a **copy**, not a live pointer. `POST /messages/:id/forward` with
+`{ conversationId }` writes a new message into that conversation: the body
+verbatim, the forwarder as sender (they're the one speaking there), its own id and
+its own `seq`, counting toward unread like any other message. Editing or deleting
+the original afterwards changes nothing about the copy. You need read access to
+the source and write access to the target, and a deleted message can't be
+forwarded (`409 MESSAGE_DELETED`).
+
+The copy carries `forwardedFrom`: `{ messageId, conversationId, senderId }`,
+frozen at forward time and naming only the **immediate** source - one hop, like
+replies, so a chain doesn't accumulate. Deliberately no excerpt and no source
+conversation _name_: the people reading the copy may have no access to where it
+came from, and a live field would let them watch a conversation they were never in.
+Reactions, the reply pointer, mentions, metadata and `role` don't travel either -
+pass fresh ones in the forward body if you want them. See
+[ADR 0024](/docs/concepts/architecture).
 
 </Accordion>
 
@@ -277,6 +324,18 @@ version, and a random per-process id - at most twice a day. Never message
 bodies, user ids, conversation ids, or hostnames. Opt out with
 `telemetry: false` or `CHATPACK_TELEMETRY=0`. See
 [Telemetry](/docs/concepts/telemetry).
+
+</Accordion>
+
+<Accordion title="Where do I get help, or tell you something is broken?">
+
+[Discord](https://discord.gg/gY3GCTRv5Y) is the fastest - the maintainers are in
+there, and "I got stuck installing this" is exactly the kind of report the
+community exists for. Longer questions and show-and-tell go in
+[GitHub Discussions](https://github.com/chddaniel/chatpack/discussions), bugs and
+feature requests in
+[Issues](https://github.com/chddaniel/chatpack/issues/new/choose), and releases
+are announced on [X](https://x.com/chatpackdev).
 
 </Accordion>
 

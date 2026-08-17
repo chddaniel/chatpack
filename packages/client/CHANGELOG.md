@@ -1,5 +1,83 @@
 # @chatpack/client
 
+## 0.8.0
+
+### Minor Changes
+
+- 7803136: Add message mentions (ADR 0023) and message forwarding (ADR 0024).
+
+  **Mentions** are user ids you supply, never text Chatpack parses. `sendMessage`
+  and `editMessage` take an optional `mentions: string[]`, and every message reads
+  back a `mentions` array hydrated in one batched adapter call per page. Core
+  validates the set against current membership and refuses the whole call with
+  `400 MENTION_NOT_PARTICIPANT` rather than dropping an id, because a silent drop
+  looks exactly like a notification that fired. The cap is 256 per message. On edit,
+  omitting `mentions` leaves the stored set alone while `[]` clears it, so a
+  mentions-unaware client can't erase them; ids already stored stay valid even after
+  that person leaves, so fixing a typo never has to drop a legitimate mention. The
+  array is a **set** - de-duplicated and read back sorted by `(createdAt, userId)`,
+  not in the order you passed it. Chatpack notifies nobody and keeps no mention
+  inbox: `beforeMessageSend` sees the validated set and `afterMessageMutation`
+  reports `mentions` next to `recipientIds`, including on `delete`.
+
+  **Forwarding** copies a message into another conversation. `chat.api.forwardMessage`
+  and `POST /messages/:id/forward` write a new message into the target with the
+  forwarder as sender, the body verbatim, its own `seq`, and `forwardedFrom`
+  (`{ messageId, conversationId, senderId }`) frozen at forward time. Editing or
+  deleting the original never changes the copy. Requires read on the source and
+  write on the target; a tombstone is `409 MESSAGE_DELETED`. One hop only, and
+  deliberately no excerpt and no source conversation _name_ - whoever reads the copy
+  may have no access to where it came from. Reactions, the reply pointer, mentions,
+  metadata and `role` do not travel; a forward runs the hooks as `action: "send"`
+  with `forwardedFrom` populated, which is how you make something unforwardable.
+
+  `@chatpack/client` gains `messages.forward` (destination is `toConversationId`;
+  the wire field stays `conversationId` because the route already names the source),
+  `mentions` on `messages.send` / `messages.edit` preserving the
+  absent-versus-empty distinction, and cache echo for the copy in the target thread.
+
+  **Breaking for custom storage adapters:** the required `StorageAdapter` method
+  count goes from nineteen to twenty-one - `setMessageMentions` (a total replace
+  that must delete every row on an empty set and must not re-stamp a surviving row's
+  `createdAt`) and `listMentionsByMessageIds` (batched, ascending
+  `(createdAt, userId)`). Forwarding adds no methods: three nullable columns on the
+  messages table, deliberately without a foreign key. Both first-party adapters
+  implement them, and the Drizzle migration is idempotent - one new table plus three
+  `ADD COLUMN IF NOT EXISTS` and a partial index.
+
+### Patch Changes
+
+- 5d6f1c8: Add the community links (Discord, X, docs, Discussions) to every package README and to
+  `llms.txt`, so the fastest way to reach the maintainers is on the npm page of whichever
+  package you installed. No code changes.
+- Updated dependencies [5d6f1c8]
+- Updated dependencies [7803136]
+  - @chatpack/core@0.12.0
+
+## 0.7.2
+
+### Patch Changes
+
+- Credit the project's co-owners by name rather than GitHub handle in package
+  `contributors` metadata and the credits surfaces: DanielCH and DavidCH.
+- ac8fb5b: Harden moderation client responses with typed action inputs, validated pagination
+  and delete envelopes, and focused structured-error coverage for blocks, mutes,
+  reports, and moderator bans.
+- Updated dependencies
+  - @chatpack/core@0.11.2
+
+## 0.7.1
+
+### Patch Changes
+
+- Fill in the `author` and `contributors` metadata, which was empty on every
+  published package. Yeabsra Habtu is credited as author (principal author of the
+  library), with chddaniel, Ikem Peter and chhddavid as contributors. Registry
+  maintainers and publish rights are unchanged. No runtime or API changes —
+  package metadata only, so authorship shows up on npm and in registry mirrors.
+- Updated dependencies
+  - @chatpack/core@0.11.1
+
 ## 0.7.0
 
 ### Minor Changes

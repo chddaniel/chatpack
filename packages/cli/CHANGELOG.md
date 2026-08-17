@@ -1,5 +1,30 @@
 # @chatpack/cli
 
+## 0.2.3
+
+### Patch Changes
+
+- 5d6f1c8: Add the community links (Discord, X, docs, Discussions) to every package README and to
+  `llms.txt`, so the fastest way to reach the maintainers is on the npm page of whichever
+  package you installed. No code changes.
+
+## 0.2.2
+
+### Patch Changes
+
+- Credit the project's co-owners by name rather than GitHub handle in package
+  `contributors` metadata and the credits surfaces: DanielCH and DavidCH.
+
+## 0.2.1
+
+### Patch Changes
+
+- Fill in the `author` and `contributors` metadata, which was empty on every
+  published package. Yeabsra Habtu is credited as author (principal author of the
+  library), with chddaniel, Ikem Peter and chhddavid as contributors. Registry
+  maintainers and publish rights are unchanged. No runtime or API changes —
+  package metadata only, so authorship shows up on npm and in registry mirrors.
+
 ## 0.2.0
 
 ### Minor Changes

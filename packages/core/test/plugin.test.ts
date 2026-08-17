@@ -34,9 +34,14 @@ function sampleMessage(): MessageWithDetails {
     editedAt: null,
     deletedAt: null,
     replyToMessageId: null,
+    forwardedFromMessageId: null,
+    forwardedFromConversationId: null,
+    forwardedFromSenderId: null,
     metadata: {},
     replyTo: null,
     reactions: [],
+    mentions: [],
+    forwardedFrom: null,
   };
 }
 
@@ -416,6 +421,8 @@ describe("createPluginRuntime", () => {
         metadata: {},
         role: "user",
         action: "send",
+        mentions: [],
+        forwardedFrom: null,
       }),
     ).resolves.toMatchObject({ body: "hello!", metadata: {} });
     expect(calls).toEqual(["first:hello", "second:hello!"]);
@@ -454,6 +461,8 @@ describe("createPluginRuntime", () => {
         metadata: {},
         role: "user",
         action: "send",
+        mentions: [],
+        forwardedFrom: null,
       }),
     ).rejects.toMatchObject({ code: "MESSAGE_REJECTED", message: "File is not ready." });
   });

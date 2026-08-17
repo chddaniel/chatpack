@@ -49,10 +49,66 @@ if (sent.error === null) {
 Both reaction calls are idempotent and return the message with its **complete**
 reaction set, which the client writes straight into the cache. Every cached
 message carries `replyToMessageId`, a read-only `replyTo` preview
-(`{ id, senderId, excerpt, deleted }`) for the quote bar, and `reactions`.
+(`{ id, senderId, excerpt, deleted }`) for the quote bar, `reactions`,
+`mentions`, and `forwardedFrom`.
 An `emoji` is any non-empty string up to 32 characters; `""` or longer comes
 back as `INVALID_INPUT`, and an unknown `messageId` as `MESSAGE_NOT_FOUND` -
 as results, not throws.
+
+## Mentions
+
+`messages.send` and `messages.edit` take a `mentions` array of **user ids you
+supply** - the client sends them through, and every message in the cache carries
+the stored set back:
+
+```ts
+const sent = await chatClient.messages.send({
+  conversationId,
+  body: "@bob take a look",
+  mentions: ["bob"],
+});
+sent.data?.mentions; // ["bob"]
+```
+
+Chatpack never parses `body` for `@`, so build the array from your own picker -
+populated from `conversation.participants`, not an org-wide user list, because a
+non-participant id fails the whole call with `MENTION_NOT_PARTICIPANT` (a result,
+not a throw). Read `mentions` as a **set**: it comes back sorted, not in the order
+you sent it.
+
+`messages.edit` treats an absent `mentions` differently from an empty one, and the
+client preserves that distinction on the wire - omit the field and the stored set
+is left alone, pass `[]` and it's cleared:
+
+```ts
+await chatClient.messages.edit({ messageId, body: "fixed a typo" }); // mentions untouched
+await chatClient.messages.edit({ messageId, body: "never mind", mentions: [] }); // cleared
+```
+
+## Forwarding
+
+`messages.forward` copies a message into another conversation and resolves with
+the **new** message there, not the source:
+
+```ts
+const forwarded = await chatClient.messages.forward({
+  messageId: sent.data.id,
+  toConversationId: otherConversationId,
+});
+forwarded.data?.senderId; // you - the forwarder is the sender
+forwarded.data?.forwardedFrom; // { messageId, conversationId, senderId } - frozen
+```
+
+The destination is `toConversationId` in the client input even though the wire
+field is a plain `conversationId`: the route already names the source in its path,
+so an unqualified name would read either way in your code. Optional `role`,
+`mentions`, and `metadata` apply to the copy - nothing travels from the original,
+and `mentions` is validated against the **target**.
+
+The client echoes the forward into the cache exactly as it echoes a send: the copy
+appears in the target thread and that conversation moves to the top of the list,
+because sending into a conversation is what makes it recently active. Editing or
+deleting the original later changes nothing about the copy.
 
 ## Groups
 

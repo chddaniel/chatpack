@@ -32,6 +32,8 @@ description: What shipped in v0, what's deliberately out of scope, and where Cha
 | Public channels (browsable directory)    | ✅ Done (v0.next) |
 | Moderation: blocks, mutes, reports, bans | ✅ Done (v1.next) |
 | Multi-node presence                      | ✅ Done (v1.next) |
+| Mentions (validated, supplied ids)       | ✅ Done (v1.next) |
+| Message forwarding (copy + provenance)   | ✅ Done (v1.next) |
 
 ## Deliberately not in scope yet
 
@@ -40,8 +42,8 @@ description: What shipped in v0, what's deliberately out of scope, and where Cha
   management ([ADR 0017](/docs/concepts/architecture)), shareable invite links
   with an optional approval queue ([ADR 0019](/docs/concepts/architecture)), and
   a public/private flag that puts a group in a browsable directory
-  ([ADR 0020](/docs/concepts/architecture)). Per-group permission grants,
-  mentions, and channel-wide roles beyond `admin`/`member` are not part of it.
+  ([ADR 0020](/docs/concepts/architecture)). Per-group permission grants and
+  channel-wide roles beyond `admin`/`member` are not part of it.
   A public channel is discoverable, not readable: browsing the directory grants
   no read access, so reading still means joining.
 - **Message threads** - `replyToMessageId` is a flat pointer at one earlier
@@ -52,6 +54,15 @@ description: What shipped in v0, what's deliberately out of scope, and where Cha
   plain text, Markdown, or another syntax and own safe parsing and rendering;
   Chatpack does not parse Markdown or return rendered HTML. See
   [ADR 0022](/docs/concepts/architecture).
+- **A mention inbox, and notifying the people mentioned** - mentions ship as
+  validated storage ([ADR 0023](/docs/concepts/architecture)): a message carries
+  the ids it names, and every id must be a current participant. There is no
+  "mentions of me" feed and nothing is sent to anyone. `afterMessageMutation`
+  hands you `mentions` next to `recipientIds`; delivery is your app's.
+- **Resolving `@names` out of message text** - Chatpack has no users table and
+  never parses `body` ([ADR 0022](/docs/concepts/architecture)), so your composer
+  supplies the ids. `body` and `mentions` can legitimately disagree, and keeping
+  them in step is the app's job.
 - **Push notification providers** - applications can start their own delivery
   work from `afterMessageMutation`, but Chatpack does not ship providers.
 - **React UI components** - Chatpack is headless; bring your own frontend.

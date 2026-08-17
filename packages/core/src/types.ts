@@ -270,8 +270,70 @@ export interface Message {
    * only ever change the body.
    */
   replyToMessageId: string | null;
+  /**
+   * The message this one was forwarded from, or `null` for an ordinary message
+   * (`docs/decisions/0024`).
+   *
+   * Unlike {@link replyToMessageId} this points **across** conversations, so it
+   * is never resolved on read: the body was copied at forward time and the
+   * provenance is frozen with it. See {@link forwardedFromConversationId} for
+   * why the reference carries no excerpt.
+   */
+  forwardedFromMessageId: string | null;
+  /**
+   * The conversation the forwarded message was copied out of, or `null`
+   * (`docs/decisions/0024` §2).
+   *
+   * Stored rather than hydrated on purpose. A live excerpt would let the
+   * recipient of a forward watch the current body of a conversation they cannot
+   * read, and it would be a duplicate of {@link Message.body} anyway. The
+   * source conversation's **name** is deliberately absent - the id is opaque,
+   * a name is not.
+   */
+  forwardedFromConversationId: string | null;
+  /** Who sent the original, or `null`. The forwarder is {@link senderId}. */
+  forwardedFromSenderId: string | null;
   /** Developer-defined metadata (escape hatch). */
   metadata: Metadata;
+}
+
+/**
+ * One user mentioned in one message (`docs/decisions/0023`).
+ *
+ * Durable, but not a message: mentions have no `seq`, never light the unread
+ * badge on their own, and never reorder the conversation list. The message
+ * carrying them already does all three.
+ */
+export interface MessageMention {
+  /** The message the mention was made in. */
+  messageId: string;
+  /**
+   * Who was mentioned. Validated as a participant of the conversation when the
+   * mention was made - **not** re-validated afterwards, so this may name
+   * someone who has since left (ADR 0023 §3).
+   */
+  userId: string;
+  /** When the mention was recorded. */
+  createdAt: Date;
+}
+
+/**
+ * Where a forwarded message came from (`docs/decisions/0024` §2).
+ *
+ * Three ids and nothing else. Assembled by core from the stored columns on
+ * {@link Message} - no query, no hydration, and no field that changes after the
+ * forward is written.
+ */
+export interface ForwardProvenance {
+  /** The message that was copied. */
+  messageId: string;
+  /**
+   * The conversation it was copied out of. The viewer may well have no access
+   * to it; the id is opaque and the name is not included (ADR 0024 §2).
+   */
+  conversationId: string;
+  /** Who sent the original. */
+  senderId: string;
 }
 
 /**
@@ -491,4 +553,28 @@ export type MessageWithDetails = Message & {
   replyTo: MessageReference | null;
   /** All reactions on this message, grouped by emoji. Empty when there are none. */
   reactions: ReactionSummary[];
+  /**
+   * The participants named in this message (`docs/decisions/0023`), empty when
+   * there are none.
+   *
+   * **A set, not a sequence.** De-duplicated, and read back sorted by
+   * `(createdAt, userId)` - so ids supplied in one call share a timestamp and
+   * come back ordered by id, not in the order they were passed. That ordering
+   * is what keeps two storage adapters returning the same array; nothing about
+   * a mention depends on its position, so do not read one into it.
+   *
+   * Records who *was* mentioned, not who is currently in the conversation - a
+   * mention is validated once, when it is made (ADR 0023 §3). Never derived
+   * from `body`: core does not parse message text (ADR 0022), so the two can
+   * legitimately disagree and the app owns keeping them in step.
+   */
+  mentions: string[];
+  /**
+   * Where this message was forwarded from, or `null` when it is not a forward
+   * (`docs/decisions/0024`).
+   *
+   * Assembled from stored columns rather than hydrated, so unlike `replyTo` it
+   * cannot go stale, cannot leak the source's current body, and costs no query.
+   */
+  forwardedFrom: ForwardProvenance | null;
 };

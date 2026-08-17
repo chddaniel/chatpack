@@ -16,6 +16,7 @@ export {
   MAX_GROUP_PARTICIPANTS,
   MAX_INVITES_PER_CONVERSATION,
   MAX_JOIN_REQUEST_MESSAGE_LENGTH,
+  MAX_MENTIONS_PER_MESSAGE,
   type ChatpackApi,
   type ChatpackInstance,
   type GetOrCreateConversationInput,
@@ -54,6 +55,8 @@ export {
   type ListPublicConversationsApiResult,
   type JoinConversationApiInput,
   type JoinConversationResult,
+  // Message forwarding (docs/decisions/0024)
+  type ForwardMessageInput,
 } from "./chatpack";
 
 // Configuration
@@ -87,6 +90,9 @@ export type {
   Metadata,
   Reaction,
   ReactionSummary,
+  // Mentions (docs/decisions/0023) + forwarding (docs/decisions/0024)
+  MessageMention,
+  ForwardProvenance,
   // Invite links + join requests (docs/decisions/0019)
   ConversationInvite,
   InvitePreview,
@@ -119,6 +125,7 @@ export type {
   SearchMessagesResult,
   ListMessagesAfterSeqInput,
   ReactionInput,
+  SetMessageMentionsInput,
   UpdateMessageInput,
   UpdateLastReadInput,
   CountUnreadInput,

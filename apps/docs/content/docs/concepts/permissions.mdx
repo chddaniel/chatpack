@@ -124,6 +124,12 @@ mutes, and filing a report keep working, because those are self-service.
 - **Leaving is exempt from `canManage`.** Removing _yourself_ always works,
   even when your `canManage` returns `false`, so a member is never trapped in
   a group.
+- **Forwarding runs two checks in two conversations.** `canRead` on the source
+  and `canWrite` on the target, so a `403` from a forward can mean either -
+  `FORBIDDEN_READ` for the message you tried to copy, `FORBIDDEN_WRITE` for the
+  place you tried to put it. Nothing is relaxed because the content already
+  exists: a conversation you can't write to stays closed to forwards, and the
+  block and ban checks an ordinary send makes apply here too.
 - **`canManage` deliberately has the narrowest default.** `canRead` and
   `canWrite` default to "any participant"; `canManage` defaults to "any
   participant whose role is `admin`". If you override it, you are replacing
