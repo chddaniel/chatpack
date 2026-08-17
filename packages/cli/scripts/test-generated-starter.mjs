@@ -232,7 +232,16 @@ async function useLocalPackages(fixtureRoot, tarballs, packageManager) {
   }
   // Pin modern Yarn for this isolated check. The generated application remains
   // manager-version agnostic; this only makes CI exercise one reproducible Yarn.
-  if (packageManager === "yarn") manifest.packageManager = `yarn@${yarnVersion}`;
+  if (packageManager === "yarn") {
+    manifest.packageManager = `yarn@${yarnVersion}`;
+    // Packed fixture paths and Drizzle Kit do not work reliably through PnP.
+    // Use Yarn's supported node-modules linker and allow this disposable app to
+    // create its first lockfile inside public-pull-request CI.
+    await writeFile(
+      join(fixtureRoot, ".yarnrc.yml"),
+      "nodeLinker: node-modules\nenableHardenedMode: false\nenableImmutableInstalls: false\n",
+    );
+  }
   await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 }
 
@@ -244,18 +253,7 @@ async function installFixture(manager, fixtureRoot) {
     bun: ["bun", ["install"]],
   };
   const [command, args] = commands[manager];
-  const env =
-    manager === "yarn"
-      ? {
-          ...process.env,
-          // CI enables immutable installs, and public pull requests also enable
-          // hardened mode. This disposable fixture intentionally starts without
-          // a lockfile, so its real install must be allowed to create one.
-          YARN_ENABLE_HARDENED_MODE: "0",
-          YARN_ENABLE_IMMUTABLE_INSTALLS: "0",
-        }
-      : process.env;
-  await run(command, args, { cwd: fixtureRoot, env });
+  await run(command, args, { cwd: fixtureRoot });
 }
 
 function fixtureEnvironment(proxyPort, appPort) {
