@@ -1,5 +1,14 @@
 # @chatpack/client
 
+## 0.8.1
+
+### Patch Changes
+
+- df5bed6: Preserve the new `USER_NOT_FOUND` server error code in structured client errors.
+- Updated dependencies [df5bed6]
+- Updated dependencies [676ca9e]
+  - @chatpack/core@0.13.0
+
 ## 0.8.0
 
 ### Minor Changes

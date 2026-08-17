@@ -1,5 +1,13 @@
 # @chatpack/core
 
+## 0.13.0
+
+### Minor Changes
+
+- df5bed6: Add the optional `userExists` hook and the `USER_NOT_FOUND` error for direct and group participant validation.
+- 676ca9e: Add shared presence leases for multi-node deployments through the new
+  `PresenceStore` contract and `redisPresenceStore()` implementation.
+
 ## 0.12.0
 
 ### Minor Changes

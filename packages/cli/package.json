@@ -1,6 +1,6 @@
 {
   "name": "@chatpack/cli",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "description": "CLI for creating Chatpack starters and initializing existing applications",
   "license": "MIT",
   "author": "Yeabsra Habtu <yeabsra.h@shipper.now> (https://github.com/Yeabsra-Habtu)",
