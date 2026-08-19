@@ -1,7 +1,7 @@
 {
   "name": "@chatpack/core",
   "version": "0.13.0",
-  "description": "Open-source chat infrastructure for developers - the Chatpack core engine",
+  "description": "Open-source TypeScript chat backend for 1:1 and group messaging, REST, SSE realtime, permissions, and storage adapters",
   "license": "MIT",
   "author": "Yeabsra Habtu <yeabsra.h@shipper.now> (https://github.com/Yeabsra-Habtu)",
   "contributors": [
@@ -20,7 +20,15 @@
     "chat",
     "messaging",
     "chat-backend",
-    "realtime",
+    "chat-api",
+    "in-app-chat",
+    "realtime-chat",
+    "sse",
+    "group-chat",
+    "direct-messaging",
+    "typescript",
+    "nodejs",
+    "open-source",
     "chatpack"
   ],
   "sideEffects": false,

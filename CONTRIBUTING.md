@@ -20,6 +20,7 @@ chatpack/
 │   ├── core/              # @chatpack/core - the chat engine + HTTP handler
 │   ├── adapter-drizzle/   # @chatpack/adapter-drizzle - Drizzle/Postgres storage
 │   ├── adapter-memory/    # @chatpack/adapter-memory - in-memory storage
+│   ├── adapter-supabase/  # @chatpack/adapter-supabase - server-side Supabase storage
 │   ├── transport-redis/   # @chatpack/transport-redis - multi-node SSE fan-out
 │   ├── next/              # @chatpack/next - Next.js App Router integration
 │   ├── cli/               # @chatpack/cli - the `init` setup CLI

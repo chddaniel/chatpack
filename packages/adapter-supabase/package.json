@@ -21,6 +21,8 @@
     "chatpack",
     "storage-adapter",
     "supabase",
+    "supabase-chat",
+    "postgrest",
     "postgres"
   ],
   "sideEffects": false,
