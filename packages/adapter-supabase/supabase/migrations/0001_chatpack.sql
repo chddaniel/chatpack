@@ -363,6 +363,38 @@ create or replace function public.chatpack_search_messages(
   limit p_limit;
 $$;
 
+-- Database-side keyset pagination keeps membership and directory filters out
+-- of PostgREST URL parameters as the conversation set grows.
+create or replace function public.chatpack_list_conversations(
+  p_user_id text,
+  p_public_only boolean,
+  p_cursor_activity_at timestamptz,
+  p_cursor_id text,
+  p_limit integer
+) returns setof public.chatpack_conversations
+language sql stable as $$
+  select c.*
+  from public.chatpack_conversations c
+  where (
+    (p_public_only and c.type = 'group' and c.visibility = 'public')
+    or (
+      not p_public_only
+      and exists (
+        select 1
+        from public.chatpack_conversation_participants p
+        where p.conversation_id = c.id and p.user_id = p_user_id
+      )
+    )
+  )
+    and (
+      p_cursor_activity_at is null
+      or c.last_activity_at < p_cursor_activity_at
+      or (c.last_activity_at = p_cursor_activity_at and c.id < p_cursor_id)
+    )
+  order by c.last_activity_at desc, c.id desc
+  limit greatest(p_limit, 0);
+$$;
+
 -- Chatpack data is server-only. RLS is enabled with no public policies.
 do $$ declare t text; begin
   foreach t in array array[
@@ -373,7 +405,20 @@ do $$ declare t text; begin
   ] loop execute format('alter table public.%I enable row level security', t); end loop;
 end $$;
 
-revoke all on all tables in schema public from anon, authenticated;
+revoke all on table
+  public.chatpack_conversations,
+  public.chatpack_conversation_participants,
+  public.chatpack_messages,
+  public.chatpack_message_search_tokens,
+  public.chatpack_message_reactions,
+  public.chatpack_message_mentions,
+  public.chatpack_conversation_invites,
+  public.chatpack_join_requests,
+  public.chatpack_user_blocks,
+  public.chatpack_conversation_mutes,
+  public.chatpack_moderation_reports,
+  public.chatpack_user_bans
+from public, anon, authenticated;
 -- New Supabase projects can require explicit Data API grants. Keep these
 -- tables reachable only by the privileged server-side adapter client.
 grant all on table
@@ -390,13 +435,23 @@ grant all on table
   public.chatpack_moderation_reports,
   public.chatpack_user_bans
 to service_role;
-revoke execute on function public.chatpack_get_or_create_direct_conversation(text,text[],jsonb,text,timestamptz) from public;
-revoke execute on function public.chatpack_create_group_conversation(text,text,text[],text,text,text,jsonb,timestamptz) from public;
-revoke execute on function public.chatpack_add_message(text,text,text,text,text,text,text,text,text,jsonb,timestamptz,jsonb) from public;
-revoke execute on function public.chatpack_update_message(text,text,boolean,timestamptz,boolean,timestamptz,boolean,jsonb) from public;
-revoke execute on function public.chatpack_replace_message_mentions(text,text[],timestamptz) from public;
-revoke execute on function public.chatpack_count_unread(text,text[]) from public;
-revoke execute on function public.chatpack_consume_invite(text,timestamptz) from public;
-revoke execute on function public.chatpack_create_ban(text,text,text,text,timestamptz,timestamptz) from public;
-revoke execute on function public.chatpack_search_messages(text,text[],integer,timestamptz,text,integer) from public;
-grant execute on all functions in schema public to service_role;
+revoke execute on function public.chatpack_get_or_create_direct_conversation(text,text[],jsonb,text,timestamptz) from public, anon, authenticated;
+revoke execute on function public.chatpack_create_group_conversation(text,text,text[],text,text,text,jsonb,timestamptz) from public, anon, authenticated;
+revoke execute on function public.chatpack_list_conversations(text,boolean,timestamptz,text,integer) from public, anon, authenticated;
+revoke execute on function public.chatpack_add_message(text,text,text,text,text,text,text,text,text,jsonb,timestamptz,jsonb) from public, anon, authenticated;
+revoke execute on function public.chatpack_update_message(text,text,boolean,timestamptz,boolean,timestamptz,boolean,jsonb) from public, anon, authenticated;
+revoke execute on function public.chatpack_replace_message_mentions(text,text[],timestamptz) from public, anon, authenticated;
+revoke execute on function public.chatpack_count_unread(text,text[]) from public, anon, authenticated;
+revoke execute on function public.chatpack_consume_invite(text,timestamptz) from public, anon, authenticated;
+revoke execute on function public.chatpack_create_ban(text,text,text,text,timestamptz,timestamptz) from public, anon, authenticated;
+revoke execute on function public.chatpack_search_messages(text,text[],integer,timestamptz,text,integer) from public, anon, authenticated;
+grant execute on function public.chatpack_get_or_create_direct_conversation(text,text[],jsonb,text,timestamptz) to service_role;
+grant execute on function public.chatpack_create_group_conversation(text,text,text[],text,text,text,jsonb,timestamptz) to service_role;
+grant execute on function public.chatpack_list_conversations(text,boolean,timestamptz,text,integer) to service_role;
+grant execute on function public.chatpack_add_message(text,text,text,text,text,text,text,text,text,jsonb,timestamptz,jsonb) to service_role;
+grant execute on function public.chatpack_update_message(text,text,boolean,timestamptz,boolean,timestamptz,boolean,jsonb) to service_role;
+grant execute on function public.chatpack_replace_message_mentions(text,text[],timestamptz) to service_role;
+grant execute on function public.chatpack_count_unread(text,text[]) to service_role;
+grant execute on function public.chatpack_consume_invite(text,timestamptz) to service_role;
+grant execute on function public.chatpack_create_ban(text,text,text,text,timestamptz,timestamptz) to service_role;
+grant execute on function public.chatpack_search_messages(text,text[],integer,timestamptz,text,integer) to service_role;

@@ -18,6 +18,7 @@ export const TABLE = {
 export const RPC = {
   direct: "chatpack_get_or_create_direct_conversation",
   group: "chatpack_create_group_conversation",
+  listConversations: "chatpack_list_conversations",
   message: "chatpack_add_message",
   updateMessage: "chatpack_update_message",
   mentions: "chatpack_replace_message_mentions",

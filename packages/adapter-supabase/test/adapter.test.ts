@@ -197,6 +197,58 @@ describe("supabaseAdapter conversion and query boundaries", () => {
     expect(second.messages.map((entry) => entry.id)).toEqual(["msg_0"]);
   });
 
+  it("pages conversations through the SQL RPC instead of an unbounded id filter", async () => {
+    const requests: Array<{ pathname: string; body: unknown }> = [];
+    const rows = [
+      { ...conversationRow, id: "conv_3", last_activity_at: "2026-01-01T00:03:00.000Z" },
+      { ...conversationRow, id: "conv_2", last_activity_at: "2026-01-01T00:02:00.000Z" },
+      { ...conversationRow, id: "conv_1", last_activity_at: "2026-01-01T00:01:00.000Z" },
+    ];
+    const client = fakeClient(({ pathname, body }) => {
+      requests.push({ pathname, body });
+      if (pathname.endsWith("/rpc/chatpack_list_conversations")) return { body: rows };
+      if (pathname.endsWith("/chatpack_conversation_participants")) return { body: [] };
+      throw new Error(`unexpected request ${pathname}`);
+    });
+    const storage = supabaseAdapter(client);
+
+    const first = await storage.listConversations({ userId: "alice", limit: 2 });
+    expect(first.conversations.map((entry) => entry.id)).toEqual(["conv_3", "conv_2"]);
+    expect(first.nextCursor).not.toBeNull();
+
+    await storage.listConversations({ userId: "alice", limit: 2, cursor: first.nextCursor! });
+    await storage.channels?.listPublicConversations({ limit: 1 });
+
+    const rpcRequests = requests.filter(({ pathname }) =>
+      pathname.endsWith("/rpc/chatpack_list_conversations"),
+    );
+    expect(rpcRequests).toHaveLength(3);
+    expect(rpcRequests[0]?.body).toMatchObject({
+      p_user_id: "alice",
+      p_public_only: false,
+      p_cursor_activity_at: null,
+      p_cursor_id: null,
+      p_limit: 3,
+    });
+    expect(rpcRequests[1]?.body).toMatchObject({
+      p_user_id: "alice",
+      p_public_only: false,
+      p_cursor_activity_at: "2026-01-01T00:02:00.000Z",
+      p_cursor_id: "conv_2",
+      p_limit: 3,
+    });
+    expect(rpcRequests[2]?.body).toMatchObject({
+      p_user_id: null,
+      p_public_only: true,
+      p_cursor_activity_at: null,
+      p_cursor_id: null,
+      p_limit: 2,
+    });
+    expect(requests.every(({ pathname }) => !pathname.endsWith("/chatpack_conversations"))).toBe(
+      true,
+    );
+  });
+
   it("relies on the unique reaction key and returns complete snapshots", async () => {
     let writes = 0;
     const reactions = [

@@ -178,24 +178,20 @@ export function supabaseAdapter(
   }
 
   async function pageConversations(
-    filterIds: string[],
+    userId: string | null,
+    publicOnly: boolean,
     limit: number,
     cursor: string | undefined,
   ): Promise<ListConversationsResult> {
-    if (filterIds.length === 0) return { conversations: [], nextCursor: null };
     const decoded = decodeActivityCursor(cursor);
-    let query = client.from(TABLE.conversations).select("*").in("id", filterIds);
-    if (decoded) {
-      const activity = new Date(decoded.activityMs).toISOString();
-      query = query.or(
-        `last_activity_at.lt.${activity},and(last_activity_at.eq.${activity},id.lt.${decoded.id})`,
-      );
-    }
     const rows = requiredRows(
-      (await query
-        .order("last_activity_at", { ascending: false })
-        .order("id", { ascending: false })
-        .limit(limit + 1)) as QueryResult<ConversationRow[]>,
+      (await client.rpc(RPC.listConversations, {
+        p_user_id: userId,
+        p_public_only: publicOnly,
+        p_cursor_activity_at: decoded ? new Date(decoded.activityMs).toISOString() : null,
+        p_cursor_id: decoded?.id ?? null,
+        p_limit: limit + 1,
+      })) as QueryResult<ConversationRow[]>,
       "list conversations",
     );
     const page = rows.slice(0, limit);
@@ -668,18 +664,7 @@ export function supabaseAdapter(
     },
 
     async listConversations(input: ListConversationsInput): Promise<ListConversationsResult> {
-      const membershipRows = requiredRows(
-        (await client
-          .from(TABLE.participants)
-          .select("conversation_id")
-          .eq("user_id", input.userId)) as QueryResult<Array<{ conversation_id: string }>>,
-        "load conversation membership",
-      );
-      return pageConversations(
-        membershipRows.map((row) => row.conversation_id),
-        input.limit,
-        input.cursor,
-      );
+      return pageConversations(input.userId, false, input.limit, input.cursor);
     },
 
     async addMessage(input: AddMessageInput): Promise<Message> {
@@ -919,19 +904,7 @@ export function supabaseAdapter(
       async listPublicConversations(
         input: ListPublicConversationsInput,
       ): Promise<ListPublicConversationsResult> {
-        const rows = requiredRows(
-          (await client
-            .from(TABLE.conversations)
-            .select("id")
-            .eq("type", "group")
-            .eq("visibility", "public")) as QueryResult<Array<{ id: string }>>,
-          "list public conversation ids",
-        );
-        return pageConversations(
-          rows.map((row) => row.id),
-          input.limit,
-          input.cursor,
-        );
+        return pageConversations(null, true, input.limit, input.cursor);
       },
     },
 
