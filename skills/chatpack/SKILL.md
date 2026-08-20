@@ -63,11 +63,12 @@ installed `llms.txt` wins (it matches the installed version).
 
 **Storage** - pick one:
 
-| Situation                                                                                      | Storage                                                        |
-| ---------------------------------------------------------------------------------------------- | -------------------------------------------------------------- |
-| Demo, tests, preview, single long-lived process                                                | `@chatpack/adapter-memory`                                     |
-| Postgres reachable by **connection string** (Neon, RDS, Railway, Fly, Replit, Vercel Postgres) | `@chatpack/adapter-drizzle`                                    |
-| DB behind an HTTP client only (Supabase JS, Convex, Firestore)                                 | Custom adapter - follow Part 2 of `llms.txt`; do NOT improvise |
+| Situation                                                                                      | Storage                                                                 |
+| ---------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| Demo, tests, preview, single long-lived process                                                | `@chatpack/adapter-memory`                                              |
+| Postgres reachable by **connection string** (Neon, RDS, Railway, Fly, Replit, Vercel Postgres) | `@chatpack/adapter-drizzle`                                             |
+| DB behind Supabase JS                                                                          | `@chatpack/adapter-supabase` - use its server-only client and migration |
+| Non-SQL or unsupported store (Convex, Firestore)                                               | Custom adapter - follow Part 2 of `llms.txt`; do NOT improvise          |
 
 **Auth** - pick one:
 
@@ -686,7 +687,16 @@ Tell the maintainers - Discord <https://discord.gg/gY3GCTRv5Y> is the fastest,
 [issues](https://github.com/chddaniel/chatpack/issues/new/choose) also work.
 Friction reports are wanted, not tolerated.
 
-## Custom storage adapter (Supabase JS / Convex / Firestore / other)
+## Supabase storage adapter
+
+For Supabase/PostgREST, use the first-party `@chatpack/adapter-supabase`
+package. Apply `packages/adapter-supabase/supabase/migrations/0001_chatpack.sql`
+with the Supabase CLI, then construct the adapter with a server-only client
+that uses the service-role key. Disable session persistence and never expose
+the key, Chatpack tables, or adapter bundle to browser code. The migration
+enables RLS and keeps transaction-sensitive operations in PostgreSQL RPCs.
+
+## Custom storage adapter (Convex / Firestore / other)
 
 Do NOT improvise: read **Part 2 of `llms.txt`** and follow it exactly - it
 contains the 21-required-method `StorageAdapter` contract plus four optional

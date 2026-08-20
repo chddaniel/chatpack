@@ -16,6 +16,10 @@ const supportedProviders = new Set(["better-auth", "authjs", "auth0"]);
 const yarnVersion = "4.18.0";
 const children = new Set();
 
+function localTarballSpec(path) {
+  return `file://${path}`;
+}
+
 function parseArguments(argv) {
   const values = {};
   for (let index = 0; index < argv.length; index += 2) {
@@ -174,7 +178,7 @@ async function packLocalPackages(packDirectory) {
         if (!dependencyTarball) {
           throw new Error(`${manifest.name} depends on ${name}, which was not packed first.`);
         }
-        packedManifest.dependencies[name] = `file:${dependencyTarball}`;
+        packedManifest.dependencies[name] = localTarballSpec(dependencyTarball);
       }
       await writeFile(packedManifestPath, `${JSON.stringify(packedManifest, null, 2)}\n`);
       await rm(tarball);
@@ -227,7 +231,7 @@ async function useLocalPackages(fixtureRoot, tarballs, packageManager) {
     const section = manifest[sectionName] ?? {};
     for (const name of Object.keys(section)) {
       const tarball = tarballs.get(name);
-      if (tarball) section[name] = `file:${tarball}`;
+      if (tarball) section[name] = localTarballSpec(tarball);
     }
   }
   // Pin modern Yarn for this isolated check. The generated application remains

@@ -1,0 +1,69 @@
+---
+title: Supabase
+description: Server-side Supabase/Postgres storage with the first-party Chatpack adapter.
+---
+
+`@chatpack/adapter-supabase` is the first-party storage adapter for Supabase
+projects that expose Postgres through Supabase JS and PostgREST. It keeps
+transaction-sensitive work in PostgreSQL RPCs and applies Row Level Security
+to Chatpack's tables.
+
+## Install
+
+```sh
+npm install @chatpack/core @chatpack/adapter-supabase @supabase/supabase-js
+```
+
+## Apply the migration
+
+Copy the adapter migration into your Supabase project's migrations directory,
+then run:
+
+```sh
+supabase link --project-ref "$SUPABASE_PROJECT_REF"
+supabase db push
+```
+
+You can also run
+`packages/adapter-supabase/supabase/migrations/0001_chatpack.sql` in the
+Supabase SQL Editor. Apply it before starting Chatpack. The adapter does not
+apply database migrations automatically.
+
+## Server-only setup
+
+Create the Supabase client and adapter in trusted server code:
+
+```ts
+import { createClient } from "@supabase/supabase-js";
+import { chatpack } from "@chatpack/core";
+import { supabaseAdapter } from "@chatpack/adapter-supabase";
+
+const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
+  auth: {
+    persistSession: false,
+    autoRefreshToken: false,
+    detectSessionInUrl: false,
+  },
+});
+
+export const chat = chatpack({
+  storage: supabaseAdapter(supabase),
+  auth: resolveAppUser,
+});
+```
+
+Never expose the service-role key, the privileged client, or this adapter in
+browser code. The migration enables RLS and creates no public policies. The
+service-role key is required for the server-side PostgREST calls; Chatpack
+still performs application-level permission checks.
+
+## What it provides
+
+The adapter implements the complete current `StorageAdapter` contract,
+including participant-scoped search, invites and join requests, public
+channels, and moderation. Direct conversation creation, group creation,
+message sequence allocation, search-token maintenance, mention replacement,
+invite consumption, and active-ban creation use migration-provided RPCs.
+
+For the schema, migration details, integration-test setup, and source layout,
+see the package [README](https://github.com/chddaniel/chatpack/tree/main/packages/adapter-supabase).

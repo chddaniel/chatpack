@@ -79,10 +79,11 @@ usually serverless - use a database adapter and poll, which
 the same frontend works in both. The full decision table is in
 [Deployment](/docs/integrations/deployment).
 
-Platforms that only expose a database client (e.g. Supabase JS on
-Lovable/Bolt) can't use the Drizzle adapter directly - the
-[custom adapter guide](/docs/storage/custom-adapter) covers Supabase RPC,
-Convex, and Firestore shapes.
+Platforms that only expose a database client can use the first-party
+[`@chatpack/adapter-supabase`](/docs/storage/supabase) adapter when the app has
+server-side Supabase access. Use the [custom adapter
+guide](/docs/storage/custom-adapter) for Convex, Firestore, and other stores
+that do not have a first-party adapter.
 
 ## Verify before declaring success
 
