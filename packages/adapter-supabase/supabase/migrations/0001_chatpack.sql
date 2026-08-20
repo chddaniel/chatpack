@@ -1,6 +1,9 @@
 -- Chatpack Supabase schema.
 -- Apply with `supabase db push` or paste into Supabase SQL Editor.
 -- This migration follows @chatpack/adapter-drizzle table names and columns.
+-- The additive ALTER TABLE statements below intentionally support upgrading an
+-- existing Chatpack/Drizzle schema. They are idempotent and preserve rows and
+-- message sequence counters when this migration is re-applied.
 
 create table if not exists public.chatpack_conversations (
   id text primary key,
@@ -175,6 +178,43 @@ create index if not exists chatpack_user_bans_active_idx
 create index if not exists chatpack_user_bans_created_idx
   on public.chatpack_user_bans (created_at, id);
 
+-- Batched hydration uses RPC request bodies instead of unbounded PostgREST
+-- `in (...)` URL filters. The explicit ordering matches the adapter contract.
+create or replace function public.chatpack_list_participants(p_conversation_ids text[])
+returns setof public.chatpack_conversation_participants
+language sql stable as $$
+  select p.*
+  from public.chatpack_conversation_participants p
+  where p.conversation_id = any(coalesce(p_conversation_ids, '{}'))
+  order by p.conversation_id, p.joined_at, p.user_id;
+$$;
+
+create or replace function public.chatpack_get_messages(p_message_ids text[])
+returns setof public.chatpack_messages
+language sql stable as $$
+  select m.*
+  from public.chatpack_messages m
+  where m.id = any(coalesce(p_message_ids, '{}'));
+$$;
+
+create or replace function public.chatpack_list_reactions(p_message_ids text[])
+returns setof public.chatpack_message_reactions
+language sql stable as $$
+  select r.*
+  from public.chatpack_message_reactions r
+  where r.message_id = any(coalesce(p_message_ids, '{}'))
+  order by r.message_id, r.created_at, r.user_id;
+$$;
+
+create or replace function public.chatpack_list_mentions(p_message_ids text[])
+returns setof public.chatpack_message_mentions
+language sql stable as $$
+  select m.*
+  from public.chatpack_message_mentions m
+  where m.message_id = any(coalesce(p_message_ids, '{}'))
+  order by m.message_id, m.created_at, m.user_id;
+$$;
+
 -- Atomic direct creation. The partial unique index is repeated in ON CONFLICT.
 create or replace function public.chatpack_get_or_create_direct_conversation(
   p_pair_key text, p_user_ids text[], p_metadata jsonb, p_id text, p_created_at timestamptz
@@ -300,6 +340,34 @@ returns table(conversation_id text, count bigint) language sql as $$
   group by m.conversation_id;
 $$;
 
+-- Re-requesting a join resets the existing row in one statement and preserves
+-- its stable id. This matches the Drizzle adapter's conflict-update contract.
+create or replace function public.chatpack_create_join_request(
+  p_id text, p_conversation_id text, p_user_id text, p_message text,
+  p_invite_code text, p_metadata jsonb, p_created_at timestamptz
+) returns setof public.chatpack_join_requests
+language plpgsql as $$
+declare v_row public.chatpack_join_requests%rowtype;
+begin
+  insert into public.chatpack_join_requests
+    (id, conversation_id, user_id, status, message, invite_code, created_at,
+     resolved_at, resolved_by, metadata)
+  values
+    (p_id, p_conversation_id, p_user_id, 'pending', p_message, p_invite_code,
+     p_created_at, null, null, coalesce(p_metadata, '{}'))
+  on conflict (conversation_id, user_id) do update
+    set status = 'pending',
+        message = excluded.message,
+        invite_code = excluded.invite_code,
+        created_at = excluded.created_at,
+        resolved_at = null,
+        resolved_by = null,
+        metadata = excluded.metadata
+  returning * into v_row;
+  return next v_row;
+end;
+$$;
+
 create or replace function public.chatpack_consume_invite(p_code text, p_now timestamptz)
 returns setof public.chatpack_conversation_invites language sql as $$
   update public.chatpack_conversation_invites
@@ -395,63 +463,48 @@ language sql stable as $$
   limit greatest(p_limit, 0);
 $$;
 
--- Chatpack data is server-only. RLS is enabled with no public policies.
-do $$ declare t text; begin
-  foreach t in array array[
-    'chatpack_conversations', 'chatpack_conversation_participants', 'chatpack_messages',
-    'chatpack_message_search_tokens', 'chatpack_message_reactions', 'chatpack_message_mentions',
-    'chatpack_conversation_invites', 'chatpack_join_requests', 'chatpack_user_blocks',
-    'chatpack_conversation_mutes', 'chatpack_moderation_reports', 'chatpack_user_bans'
-  ] loop execute format('alter table public.%I enable row level security', t); end loop;
-end $$;
+-- Chatpack data is server-only. RLS and explicit Data API grants are applied
+-- by prefix so future Chatpack tables/functions in this schema get the same
+-- boundary without changing host application objects.
+do $$
+declare
+  object_row record;
+begin
+  for object_row in
+    select tablename
+    from pg_tables
+    where schemaname = 'public'
+      and tablename like 'chatpack\_%' escape '\'
+  loop
+    execute format('alter table public.%I enable row level security', object_row.tablename);
+    execute format(
+      'revoke all on table public.%I from public, anon, authenticated',
+      object_row.tablename
+    );
+    execute format('grant all on table public.%I to service_role', object_row.tablename);
+  end loop;
 
-revoke all on table
-  public.chatpack_conversations,
-  public.chatpack_conversation_participants,
-  public.chatpack_messages,
-  public.chatpack_message_search_tokens,
-  public.chatpack_message_reactions,
-  public.chatpack_message_mentions,
-  public.chatpack_conversation_invites,
-  public.chatpack_join_requests,
-  public.chatpack_user_blocks,
-  public.chatpack_conversation_mutes,
-  public.chatpack_moderation_reports,
-  public.chatpack_user_bans
-from public, anon, authenticated;
--- New Supabase projects can require explicit Data API grants. Keep these
--- tables reachable only by the privileged server-side adapter client.
-grant all on table
-  public.chatpack_conversations,
-  public.chatpack_conversation_participants,
-  public.chatpack_messages,
-  public.chatpack_message_search_tokens,
-  public.chatpack_message_reactions,
-  public.chatpack_message_mentions,
-  public.chatpack_conversation_invites,
-  public.chatpack_join_requests,
-  public.chatpack_user_blocks,
-  public.chatpack_conversation_mutes,
-  public.chatpack_moderation_reports,
-  public.chatpack_user_bans
-to service_role;
-revoke execute on function public.chatpack_get_or_create_direct_conversation(text,text[],jsonb,text,timestamptz) from public, anon, authenticated;
-revoke execute on function public.chatpack_create_group_conversation(text,text,text[],text,text,text,jsonb,timestamptz) from public, anon, authenticated;
-revoke execute on function public.chatpack_list_conversations(text,boolean,timestamptz,text,integer) from public, anon, authenticated;
-revoke execute on function public.chatpack_add_message(text,text,text,text,text,text,text,text,text,jsonb,timestamptz,jsonb) from public, anon, authenticated;
-revoke execute on function public.chatpack_update_message(text,text,boolean,timestamptz,boolean,timestamptz,boolean,jsonb) from public, anon, authenticated;
-revoke execute on function public.chatpack_replace_message_mentions(text,text[],timestamptz) from public, anon, authenticated;
-revoke execute on function public.chatpack_count_unread(text,text[]) from public, anon, authenticated;
-revoke execute on function public.chatpack_consume_invite(text,timestamptz) from public, anon, authenticated;
-revoke execute on function public.chatpack_create_ban(text,text,text,text,timestamptz,timestamptz) from public, anon, authenticated;
-revoke execute on function public.chatpack_search_messages(text,text[],integer,timestamptz,text,integer) from public, anon, authenticated;
-grant execute on function public.chatpack_get_or_create_direct_conversation(text,text[],jsonb,text,timestamptz) to service_role;
-grant execute on function public.chatpack_create_group_conversation(text,text,text[],text,text,text,jsonb,timestamptz) to service_role;
-grant execute on function public.chatpack_list_conversations(text,boolean,timestamptz,text,integer) to service_role;
-grant execute on function public.chatpack_add_message(text,text,text,text,text,text,text,text,text,jsonb,timestamptz,jsonb) to service_role;
-grant execute on function public.chatpack_update_message(text,text,boolean,timestamptz,boolean,timestamptz,boolean,jsonb) to service_role;
-grant execute on function public.chatpack_replace_message_mentions(text,text[],timestamptz) to service_role;
-grant execute on function public.chatpack_count_unread(text,text[]) to service_role;
-grant execute on function public.chatpack_consume_invite(text,timestamptz) to service_role;
-grant execute on function public.chatpack_create_ban(text,text,text,text,timestamptz,timestamptz) to service_role;
-grant execute on function public.chatpack_search_messages(text,text[],integer,timestamptz,text,integer) to service_role;
+  for object_row in
+    select n.nspname as schema_name,
+           p.proname as function_name,
+           pg_get_function_identity_arguments(p.oid) as arguments
+    from pg_proc p
+    join pg_namespace n on n.oid = p.pronamespace
+    where n.nspname = 'public'
+      and p.prokind = 'f'
+      and p.proname like 'chatpack\_%' escape '\'
+  loop
+    execute format(
+      'revoke execute on function %I.%I(%s) from public, anon, authenticated',
+      object_row.schema_name,
+      object_row.function_name,
+      object_row.arguments
+    );
+    execute format(
+      'grant execute on function %I.%I(%s) to service_role',
+      object_row.schema_name,
+      object_row.function_name,
+      object_row.arguments
+    );
+  end loop;
+end $$;

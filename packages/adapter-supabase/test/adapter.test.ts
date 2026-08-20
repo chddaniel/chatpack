@@ -90,7 +90,7 @@ describe("supabaseAdapter conversion and query boundaries", () => {
   it("converts nullable timestamps, bigint sequences, metadata, and participant order", async () => {
     const client = fakeClient(({ pathname }) => {
       if (pathname.endsWith("/chatpack_conversations")) return { body: [conversationRow] };
-      if (pathname.endsWith("/chatpack_conversation_participants")) {
+      if (pathname.endsWith("/rpc/chatpack_list_participants")) {
         return { body: participantRows };
       }
       throw new Error(`unexpected request ${pathname}`);
@@ -207,7 +207,7 @@ describe("supabaseAdapter conversion and query boundaries", () => {
     const client = fakeClient(({ pathname, body }) => {
       requests.push({ pathname, body });
       if (pathname.endsWith("/rpc/chatpack_list_conversations")) return { body: rows };
-      if (pathname.endsWith("/chatpack_conversation_participants")) return { body: [] };
+      if (pathname.endsWith("/rpc/chatpack_list_participants")) return { body: [] };
       throw new Error(`unexpected request ${pathname}`);
     });
     const storage = supabaseAdapter(client);
@@ -299,5 +299,75 @@ describe("supabaseAdapter conversion and query boundaries", () => {
     expect(deleted.deletedAt).toBeInstanceOf(Date);
     expect(requests[0]?.body).toMatchObject({ p_user_ids: ["bob", "carol"] });
     expect(requests[1]?.body).toMatchObject({ p_body_set: true, p_deleted_at_set: true });
+  });
+
+  it("checks both block directions without interpolating user ids into a filter", async () => {
+    const requests: Array<{ pathname: string; search: string }> = [];
+    const client = fakeClient(({ pathname, search }) => {
+      requests.push({ pathname, search });
+      if (pathname.endsWith("/chatpack_user_blocks")) return { body: [] };
+      throw new Error(`unexpected request ${pathname}`);
+    });
+    const userId = "alice),and(blocker_user_id.eq.eve";
+    await expect(supabaseAdapter(client).moderation?.isBlocked(userId, "bob")).resolves.toBe(false);
+    expect(requests).toHaveLength(2);
+    expect(requests.every(({ search }) => !search.includes("or="))).toBe(true);
+  });
+
+  it("uses the unread RPC name from the shared map", async () => {
+    const requests: string[] = [];
+    const client = fakeClient(({ pathname }) => {
+      requests.push(pathname);
+      if (pathname.endsWith("/rpc/chatpack_count_unread")) {
+        return { body: [{ conversation_id: "conv_1", count: "2" }] };
+      }
+      throw new Error(`unexpected request ${pathname}`);
+    });
+    await expect(
+      supabaseAdapter(client).countUnread({
+        userId: "alice",
+        conversationIds: ["conv_1"],
+      }),
+    ).resolves.toEqual({ conv_1: 2 });
+    expect(requests).toEqual(["/rest/v1/rpc/chatpack_count_unread"]);
+  });
+
+  it("creates join requests through the atomic RPC and keeps the stored id", async () => {
+    const requests: Array<{ pathname: string; body: unknown }> = [];
+    const client = fakeClient(({ pathname, body }) => {
+      requests.push({ pathname, body });
+      if (pathname.endsWith("/rpc/chatpack_create_join_request")) {
+        return {
+          body: [
+            {
+              id: "jreq_existing",
+              conversation_id: "conv_1",
+              user_id: "alice",
+              status: "pending",
+              message: "again",
+              invite_code: null,
+              created_at: "2026-01-01T00:00:00.000Z",
+              resolved_at: null,
+              resolved_by: null,
+              metadata: {},
+            },
+          ],
+        };
+      }
+      throw new Error(`unexpected request ${pathname}`);
+    });
+    const request = await supabaseAdapter(client).invites?.createJoinRequest({
+      conversationId: "conv_1",
+      userId: "alice",
+      message: "again",
+      inviteCode: null,
+      metadata: {},
+    });
+    expect(request?.id).toBe("jreq_existing");
+    expect(requests[0]?.body).toMatchObject({
+      p_conversation_id: "conv_1",
+      p_user_id: "alice",
+      p_message: "again",
+    });
   });
 });

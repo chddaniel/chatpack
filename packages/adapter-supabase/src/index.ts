@@ -140,12 +140,9 @@ export function supabaseAdapter(
   ): Promise<Map<string, ParticipantRow[]>> {
     if (conversationIds.length === 0) return new Map();
     const rows = requiredRows(
-      (await client
-        .from(TABLE.participants)
-        .select("*")
-        .in("conversation_id", conversationIds)
-        .order("joined_at", { ascending: true })
-        .order("user_id", { ascending: true })) as QueryResult<ParticipantRow[]>,
+      (await client.rpc(RPC.listParticipants, {
+        p_conversation_ids: conversationIds,
+      })) as QueryResult<ParticipantRow[]>,
       "load participants",
     );
     const result = new Map<string, ParticipantRow[]>();
@@ -227,17 +224,29 @@ export function supabaseAdapter(
     },
 
     async isBlocked(userIdA, userIdB) {
-      const rows = requiredRows(
-        (await client
+      const [forward, reverse] = await Promise.all([
+        client
           .from(TABLE.blocks)
           .select("blocker_user_id")
-          .or(
-            `and(blocker_user_id.eq.${userIdA},blocked_user_id.eq.${userIdB}),and(blocker_user_id.eq.${userIdB},blocked_user_id.eq.${userIdA})`,
-          )
-          .limit(1)) as QueryResult<Array<{ blocker_user_id: string }>>,
+          .eq("blocker_user_id", userIdA)
+          .eq("blocked_user_id", userIdB)
+          .limit(1),
+        client
+          .from(TABLE.blocks)
+          .select("blocker_user_id")
+          .eq("blocker_user_id", userIdB)
+          .eq("blocked_user_id", userIdA)
+          .limit(1),
+      ]);
+      const forwardRows = requiredRows(
+        forward as QueryResult<Array<{ blocker_user_id: string }>>,
         "check block",
       );
-      return rows.length > 0;
+      const reverseRows = requiredRows(
+        reverse as QueryResult<Array<{ blocker_user_id: string }>>,
+        "check block",
+      );
+      return forwardRows.length > 0 || reverseRows.length > 0;
     },
 
     async createBlock(input: StorageBlockUserInput) {
@@ -706,9 +715,9 @@ export function supabaseAdapter(
     async getMessagesByIds(messageIds: string[]): Promise<Message[]> {
       if (messageIds.length === 0) return [];
       const rows = requiredRows(
-        (await client.from(TABLE.messages).select("*").in("id", messageIds)) as QueryResult<
-          MessageRow[]
-        >,
+        (await client.rpc(RPC.getMessages, {
+          p_message_ids: messageIds,
+        })) as QueryResult<MessageRow[]>,
         "get messages",
       );
       return rows.map(message);
@@ -822,7 +831,7 @@ export function supabaseAdapter(
       for (const conversationId of input.conversationIds) counts[conversationId] = 0;
       if (input.conversationIds.length === 0) return counts;
       const rows = requiredRows(
-        (await client.rpc("chatpack_count_unread", {
+        (await client.rpc(RPC.countUnread, {
           p_user_id: input.userId,
           p_conversation_ids: input.conversationIds,
         })) as QueryResult<CountRow[]>,
@@ -864,12 +873,9 @@ export function supabaseAdapter(
     async listReactionsByMessageIds(messageIds: string[]): Promise<Reaction[]> {
       if (messageIds.length === 0) return [];
       const rows = requiredRows(
-        (await client
-          .from(TABLE.reactions)
-          .select("*")
-          .in("message_id", messageIds)
-          .order("created_at", { ascending: true })
-          .order("user_id", { ascending: true })) as QueryResult<ReactionRow[]>,
+        (await client.rpc(RPC.listReactions, {
+          p_message_ids: messageIds,
+        })) as QueryResult<ReactionRow[]>,
         "list reactions",
       );
       return rows.map(reaction);
@@ -889,12 +895,9 @@ export function supabaseAdapter(
     async listMentionsByMessageIds(messageIds: string[]): Promise<MessageMention[]> {
       if (messageIds.length === 0) return [];
       const rows = requiredRows(
-        (await client
-          .from(TABLE.mentions)
-          .select("*")
-          .in("message_id", messageIds)
-          .order("created_at", { ascending: true })
-          .order("user_id", { ascending: true })) as QueryResult<MentionRow[]>,
+        (await client.rpc(RPC.listMentions, {
+          p_message_ids: messageIds,
+        })) as QueryResult<MentionRow[]>,
         "list mentions",
       );
       return rows.map(mention);
@@ -980,28 +983,20 @@ export function supabaseAdapter(
 
       async createJoinRequest(input: CreateJoinRequestInput): Promise<JoinRequest> {
         const now = new Date().toISOString();
-        const row = requiredRow(
-          (await client
-            .from(TABLE.joinRequests)
-            .upsert(
-              {
-                id: id("jreq", idPrefix),
-                conversation_id: input.conversationId,
-                user_id: input.userId,
-                status: "pending",
-                message: input.message,
-                invite_code: input.inviteCode,
-                created_at: now,
-                resolved_at: null,
-                resolved_by: null,
-                metadata: input.metadata,
-              },
-              { onConflict: "conversation_id,user_id" },
-            )
-            .select("*")
-            .single()) as QueryResult<JoinRequestRow | null>,
+        const rows = requiredRows(
+          (await client.rpc(RPC.createJoinRequest, {
+            p_id: id("jreq", idPrefix),
+            p_conversation_id: input.conversationId,
+            p_user_id: input.userId,
+            p_message: input.message,
+            p_invite_code: input.inviteCode,
+            p_metadata: input.metadata,
+            p_created_at: now,
+          })) as QueryResult<JoinRequestRow[]>,
           "create join request",
         );
+        const row = rows[0];
+        if (!row) throw new Error("supabaseAdapter: create join request RPC returned no row.");
         return joinRequest(row);
       },
 
