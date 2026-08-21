@@ -43,7 +43,7 @@ chat.handler()        one Web-standard handler (Request → Response)
 chat.api.*            domain logic, permissions         (also callable directly)
       │
       ▼
-StorageAdapter        memory · Drizzle/Postgres · your own
+StorageAdapter        memory · Drizzle/Postgres · Drizzle/SQLite · your own
       │
       ▼
 Your database
@@ -57,7 +57,8 @@ One `chatpack()` instance gives you three things:
 - **`chat.api.*`** - the same domain logic, callable directly from your server
   code with explicit user ids.
 - **A storage seam** - persistence is an interface. Use the in-memory adapter
-  for demos, the Drizzle/Postgres adapter for production, or write your own.
+  for demos, the Drizzle/Postgres adapter for production, the SQLite adapter
+  for local or single-node persistence, or write your own.
 
 ## Packages
 
@@ -66,6 +67,7 @@ One `chatpack()` instance gives you three things:
 | [`@chatpack/core`](https://www.npmjs.com/package/@chatpack/core)                       | The engine: API, HTTP handler, SSE, plugins             |
 | [`@chatpack/adapter-memory`](https://www.npmjs.com/package/@chatpack/adapter-memory)   | In-memory storage - demos/tests, single process only    |
 | [`@chatpack/adapter-drizzle`](https://www.npmjs.com/package/@chatpack/adapter-drizzle) | Postgres storage via Drizzle - production               |
+| [`@chatpack/adapter-sqlite`](https://www.npmjs.com/package/@chatpack/adapter-sqlite)   | SQLite storage via Drizzle - local/single node          |
 | [`@chatpack/next`](https://www.npmjs.com/package/@chatpack/next)                       | Next.js App Router mount helper (`toNextRouteHandlers`) |
 | [`@chatpack/client`](https://www.npmjs.com/package/@chatpack/client)                   | Typed browser client + React hooks, cache, and realtime |
 | [`@chatpack/cli`](https://www.npmjs.com/package/@chatpack/cli)                         | `npx @chatpack/cli init` - scaffold the wiring          |

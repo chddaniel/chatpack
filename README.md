@@ -67,7 +67,7 @@ chat.handler()        one Web-standard handler (Request → Response)
 chat.api.*            domain logic, permissions         (also callable directly)
       │
       ▼
-StorageAdapter        memory · Drizzle/Postgres · your own
+StorageAdapter        memory · Drizzle/Postgres · Drizzle/SQLite · your own
       │
       ▼
 Your database
@@ -834,6 +834,7 @@ threads. See [docs/MVP.md](./docs/MVP.md) for the full scope and reasoning.
 | --------------------------------------------------------- | ------------------------------------------------ |
 | [`@chatpack/core`](./packages/core)                       | The chat engine: domain logic, permissions, API  |
 | [`@chatpack/adapter-drizzle`](./packages/adapter-drizzle) | Drizzle/Postgres storage (production)            |
+| [`@chatpack/adapter-sqlite`](./packages/adapter-sqlite)   | Drizzle/SQLite storage (local, single node)      |
 | [`@chatpack/adapter-memory`](./packages/adapter-memory)   | In-memory storage (demos, tests)                 |
 | [`@chatpack/next`](./packages/next)                       | Next.js App Router integration                   |
 | [`@chatpack/client`](./packages/client)                   | Typed REST, SSE, React hooks, and client plugins |
