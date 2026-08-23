@@ -17,6 +17,7 @@ Packages (all on npm):
 | `@chatpack/core`           | The engine: API, HTTP handler, SSE, plugins            |
 | `@chatpack/adapter-memory` | In-memory storage - demos/tests, single process only   |
 | `@chatpack/adapter-drizzle`| Postgres storage via Drizzle - production              |
+| `@chatpack/adapter-turso`  | Turso/libSQL storage via Drizzle                      |
 | `@chatpack/next`           | Next.js App Router mount helper (`toNextRouteHandlers`)|
 | `@chatpack/client`         | Framework-agnostic REST + SSE client (+ React hooks)   |
 | `@chatpack/cli`            | Setup CLI: wires an existing app, or generates a starter|
@@ -25,7 +26,7 @@ Packages (all on npm):
 
 Current releases include direct and group conversations, text messages,
 permissions, read state and unread counts, SSE with reconnect gap-fill, memory
-and Drizzle adapters, Redis event fan-out, typing/presence/receipts, reactions,
+and Drizzle/Turso adapters, Redis event fan-out, typing/presence/receipts, reactions,
 quote-replies, participant-scoped search, `afterMessageMutation`, the browser
 client with React hooks and polling fallback, `@chatpack/cli init` (wires an
 existing app, or generates a Next.js/Hono/Express starter),

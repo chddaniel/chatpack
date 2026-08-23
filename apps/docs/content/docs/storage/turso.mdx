@@ -1,0 +1,45 @@
+---
+title: Turso / libSQL
+description: Persistent Chatpack storage with Turso or a local libSQL database.
+---
+
+`@chatpack/adapter-turso` provides Chatpack persistence through Drizzle ORM's
+libSQL driver. It works with a hosted Turso database or a local file-backed
+libSQL database.
+
+## Install
+
+```sh
+pnpm add @chatpack/core @chatpack/adapter-turso @libsql/client drizzle-orm
+```
+
+## Configure
+
+```ts
+import { createClient } from "@libsql/client";
+import { drizzle } from "drizzle-orm/libsql";
+import { chatpack } from "@chatpack/core";
+import { migrationStatements, tursoAdapter } from "@chatpack/adapter-turso";
+
+const client = createClient({
+  url: process.env.TURSO_DATABASE_URL!,
+  authToken: process.env.TURSO_AUTH_TOKEN!,
+});
+
+for (const statement of migrationStatements) await client.execute(statement);
+
+export const chat = chatpack({
+  storage: tursoAdapter(drizzle({ client })),
+  auth,
+});
+```
+
+Run migrations during deployment or startup before handling requests. The
+exported statements are idempotent and safe for drivers that execute one SQL
+statement per call. `migrationSql` is available when the driver accepts a
+multi-statement string.
+
+The adapter serializes writes that share one client and retries transient
+`SQLITE_BUSY` failures. Test cross-client concurrency when deploying multiple
+processes against a local libSQL file; hosted Turso should be verified with a
+non-production database before rollout.

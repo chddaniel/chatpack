@@ -67,7 +67,7 @@ chat.handler()        one Web-standard handler (Request → Response)
 chat.api.*            domain logic, permissions         (also callable directly)
       │
       ▼
-StorageAdapter        memory · Drizzle/Postgres · your own
+StorageAdapter        memory · Drizzle/Postgres · Turso/libSQL · your own
       │
       ▼
 Your database
@@ -169,7 +169,11 @@ export const chat = chatpack({
 > mount recipes, preview-iframe cookie recipe, verification steps). It also
 > ships inside every `@chatpack/*` npm package as `llms.txt` - point your
 > agent at `node_modules/@chatpack/core/llms.txt`.
->
+
+For Turso/libSQL, install `@chatpack/adapter-turso`, `@libsql/client`, and
+`drizzle-orm`, then run its exported migration statements before creating the
+Chatpack instance. See the [Turso adapter guide](./apps/docs/content/docs/storage/turso.mdx).
+
 > Using a coding agent (Claude Code, Cursor, Codex)? Install the
 > [Chatpack agent skill](./skills) into your app's repo so the agent follows
 > the correct workflow automatically:
@@ -804,6 +808,7 @@ Want to write your own plugin? The seam is public - see `ChatpackPlugin` in
 | Real-time delivery (SSE)                 | ✅ Done (M3)      |
 | SSE reconnect gap-fill                   | ✅ Done (M3)      |
 | Drizzle/Postgres adapter                 | ✅ Done (M4)      |
+| Turso/libSQL adapter                     | ✅ Done (v1.next) |
 | Launch polish + npm release              | ✅ Done (M5)      |
 | Typing / presence / read-tick plugins    | ✅ Done (v0.next) |
 | Unread counts (`unreadCount`)            | ✅ Done (v0.next) |
@@ -834,6 +839,7 @@ threads. See [docs/MVP.md](./docs/MVP.md) for the full scope and reasoning.
 | --------------------------------------------------------- | ------------------------------------------------ |
 | [`@chatpack/core`](./packages/core)                       | The chat engine: domain logic, permissions, API  |
 | [`@chatpack/adapter-drizzle`](./packages/adapter-drizzle) | Drizzle/Postgres storage (production)            |
+| [`@chatpack/adapter-turso`](./packages/adapter-turso)     | Turso/libSQL storage via Drizzle                 |
 | [`@chatpack/adapter-memory`](./packages/adapter-memory)   | In-memory storage (demos, tests)                 |
 | [`@chatpack/next`](./packages/next)                       | Next.js App Router integration                   |
 | [`@chatpack/client`](./packages/client)                   | Typed REST, SSE, React hooks, and client plugins |

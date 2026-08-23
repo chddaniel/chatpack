@@ -1,5 +1,5 @@
 {
   "title": "Storage",
   "icon": "Database",
-  "pages": ["memory", "drizzle", "custom-adapter"]
+  "pages": ["memory", "drizzle", "turso", "custom-adapter"]
 }

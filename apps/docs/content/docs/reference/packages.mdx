@@ -117,6 +117,22 @@ dependency on `drizzle-orm`.
 
 → [Drizzle / Postgres](/docs/storage/drizzle)
 
+## `@chatpack/adapter-turso`
+
+Drizzle ORM storage backed by Turso/libSQL. It provides the full persistent
+adapter contract, optional channels, invite links, join requests, and
+moderation storage.
+
+| Export                             | What it is                                                |
+| ---------------------------------- | --------------------------------------------------------- |
+| `tursoAdapter(db)`                 | Create the adapter from a Drizzle libSQL instance         |
+| `chatpackSchema` and table exports | Drizzle schema objects                                    |
+| `migrationSql`                     | Idempotent DDL as one string                              |
+| `migrationStatements`              | The same DDL split for one-statement-per-call drivers     |
+| `backfillMessageSearchTokens(db)`  | Index existing message bodies for search after an upgrade |
+
+→ [Turso / libSQL](/docs/storage/turso)
+
 ## `@chatpack/next`
 
 Next.js App Router integration - sugar for mounting the handler.
