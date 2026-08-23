@@ -57,6 +57,38 @@ describe("Turso migrations", () => {
 });
 
 describe("Turso storage", () => {
+  it("serializes mixed writes on one adapter without SQLITE_BUSY", async () => {
+    const conversation = await chat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "bob",
+    });
+    const seed = await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "seed",
+    });
+
+    const results = await Promise.all(
+      Array.from({ length: 20 }, (_, index) =>
+        Promise.all([
+          chat.api.sendMessage({
+            userId: "alice",
+            conversationId: conversation.id,
+            body: "message " + index,
+          }),
+          chat.api.addReaction({ userId: "bob", messageId: seed.id, emoji: "👍" }),
+          chat.api.markRead({
+            userId: "bob",
+            conversationId: conversation.id,
+            messageId: seed.id,
+          }),
+        ]),
+      ),
+    );
+
+    expect(results).toHaveLength(20);
+  });
+
   it("persists direct conversations, ordered messages, edits, and search", async () => {
     const conversation = await chat.api.getOrCreateConversation({
       userId: "alice",

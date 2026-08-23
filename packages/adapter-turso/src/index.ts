@@ -113,12 +113,13 @@ import {
   SEARCH_TOKEN_BATCH_SIZE,
   searchTokenRows,
 } from "./utils";
-import type { ParticipantRow, DrizzleTursoDatabase } from "./types";
+import type { ParticipantRow, DrizzleTursoDatabase, WriteScheduler } from "./types";
 import { createModerationStorage } from "./moderation";
 
 type TursoTransactionCallback = Parameters<DrizzleTursoDatabase["transaction"]>[0];
 type TursoTransaction = TursoTransactionCallback extends (tx: infer Tx) => unknown ? Tx : never;
 type TransactionQueue = { tail: Promise<void> };
+const MAX_BUSY_RETRIES = 12;
 
 function isBusyError(error: unknown): boolean {
   if (typeof error !== "object" || error === null) return false;
@@ -132,11 +133,7 @@ function isBusyError(error: unknown): boolean {
  * with a local file or a busy Turso primary. Retry only that transient error;
  * all other failures propagate immediately.
  */
-async function withTransaction<T>(
-  db: DrizzleTursoDatabase,
-  queue: TransactionQueue,
-  callback: (tx: TursoTransaction) => Promise<T>,
-): Promise<T> {
+async function withWrite<T>(queue: TransactionQueue, callback: () => Promise<T>): Promise<T> {
   const previous = queue.tail;
   let release!: () => void;
   queue.tail = new Promise<void>((resolve) => {
@@ -146,15 +143,23 @@ async function withTransaction<T>(
   try {
     for (let attempt = 0; ; attempt += 1) {
       try {
-        return await db.transaction(callback);
+        return await callback();
       } catch (error) {
-        if (!isBusyError(error) || attempt >= 7) throw error;
-        await new Promise((resolve) => setTimeout(resolve, 10 * 2 ** attempt));
+        if (!isBusyError(error) || attempt >= MAX_BUSY_RETRIES) throw error;
+        await new Promise((resolve) => setTimeout(resolve, Math.min(10 * 2 ** attempt, 1000)));
       }
     }
   } finally {
     release();
   }
+}
+
+async function withTransaction<T>(
+  db: DrizzleTursoDatabase,
+  queue: TransactionQueue,
+  callback: (tx: TursoTransaction) => Promise<T>,
+): Promise<T> {
+  return withWrite(queue, () => db.transaction(callback));
 }
 
 export type { DrizzleTursoDatabase } from "./types";
@@ -204,6 +209,7 @@ export async function backfillMessageSearchTokens(db: DrizzleTursoDatabase): Pro
  */
 export function tursoAdapter(db: DrizzleTursoDatabase): StorageAdapter {
   const transactionQueue: TransactionQueue = { tail: Promise.resolve() };
+  const write: WriteScheduler = (callback) => withWrite(transactionQueue, callback);
 
   /**
    * Load participant rows for a set of conversation ids.
@@ -318,7 +324,7 @@ export function tursoAdapter(db: DrizzleTursoDatabase): StorageAdapter {
       nextCursor,
     };
   }
-  const moderation = createModerationStorage(db);
+  const moderation = createModerationStorage(db, write);
 
   return {
     moderation,
@@ -428,20 +434,22 @@ export function tursoAdapter(db: DrizzleTursoDatabase): StorageAdapter {
         // Idempotent via the (conversation_id, user_id) unique index: a replayed
         // add leaves the existing row untouched, so it can never demote an admin
         // back to member or reset their read-state (ADR 0017 §3).
-        await db
-          .insert(conversationParticipants)
-          .values(
-            input.userIds.map((userId) => ({
-              conversationId: input.conversationId,
-              userId,
-              role: "member",
-              joinedAt: now,
-              lastReadMessageId: null,
-            })),
-          )
-          .onConflictDoNothing({
-            target: [conversationParticipants.conversationId, conversationParticipants.userId],
-          });
+        await withWrite(transactionQueue, () =>
+          db
+            .insert(conversationParticipants)
+            .values(
+              input.userIds.map((userId) => ({
+                conversationId: input.conversationId,
+                userId,
+                role: "member",
+                joinedAt: now,
+                lastReadMessageId: null,
+              })),
+            )
+            .onConflictDoNothing({
+              target: [conversationParticipants.conversationId, conversationParticipants.userId],
+            }),
+        );
       }
       return reloadConversation(input.conversationId);
     },
@@ -449,37 +457,43 @@ export function tursoAdapter(db: DrizzleTursoDatabase): StorageAdapter {
     async removeParticipant(input: RemoveParticipantInput): Promise<Conversation> {
       // Idempotent: deleting a row that isn't there affects zero rows. Messages
       // are left alone - departure does not rewrite history (ADR 0017 §6).
-      await db
-        .delete(conversationParticipants)
-        .where(
-          and(
-            eq(conversationParticipants.conversationId, input.conversationId),
-            eq(conversationParticipants.userId, input.userId),
+      await withWrite(transactionQueue, () =>
+        db
+          .delete(conversationParticipants)
+          .where(
+            and(
+              eq(conversationParticipants.conversationId, input.conversationId),
+              eq(conversationParticipants.userId, input.userId),
+            ),
           ),
-        );
+      );
       return reloadConversation(input.conversationId);
     },
 
     async setParticipantRole(input: SetParticipantRoleInput): Promise<Conversation> {
-      await db
-        .update(conversationParticipants)
-        .set({ role: input.role })
-        .where(
-          and(
-            eq(conversationParticipants.conversationId, input.conversationId),
-            eq(conversationParticipants.userId, input.userId),
+      await withWrite(transactionQueue, () =>
+        db
+          .update(conversationParticipants)
+          .set({ role: input.role })
+          .where(
+            and(
+              eq(conversationParticipants.conversationId, input.conversationId),
+              eq(conversationParticipants.userId, input.userId),
+            ),
           ),
-        );
+      );
       return reloadConversation(input.conversationId);
     },
 
     async updateConversation(input: UpdateConversationInput): Promise<Conversation> {
-      await db
-        .update(conversations)
-        // Every field is the resolved new value, not a patch - core read the row
-        // and filled in whatever the caller omitted (ADR 0020 §5).
-        .set({ name: input.name, visibility: input.visibility, joinPolicy: input.joinPolicy })
-        .where(eq(conversations.id, input.conversationId));
+      await withWrite(transactionQueue, () =>
+        db
+          .update(conversations)
+          // Every field is the resolved new value, not a patch - core read the row
+          // and filled in whatever the caller omitted (ADR 0020 §5).
+          .set({ name: input.name, visibility: input.visibility, joinPolicy: input.joinPolicy })
+          .where(eq(conversations.id, input.conversationId)),
+      );
       return reloadConversation(input.conversationId);
     },
 
@@ -697,16 +711,18 @@ export function tursoAdapter(db: DrizzleTursoDatabase): StorageAdapter {
     },
 
     async updateLastRead(input: UpdateLastReadInput): Promise<void> {
-      const updated = await db
-        .update(conversationParticipants)
-        .set({ lastReadMessageId: input.messageId })
-        .where(
-          and(
-            eq(conversationParticipants.conversationId, input.conversationId),
-            eq(conversationParticipants.userId, input.userId),
-          ),
-        )
-        .returning({ userId: conversationParticipants.userId });
+      const updated = await withWrite(transactionQueue, () =>
+        db
+          .update(conversationParticipants)
+          .set({ lastReadMessageId: input.messageId })
+          .where(
+            and(
+              eq(conversationParticipants.conversationId, input.conversationId),
+              eq(conversationParticipants.userId, input.userId),
+            ),
+          )
+          .returning({ userId: conversationParticipants.userId }),
+      );
 
       if (updated.length === 0) {
         throw new Error(
@@ -757,31 +773,35 @@ export function tursoAdapter(db: DrizzleTursoDatabase): StorageAdapter {
       // Idempotent (ADR 0013): the unique (message_id, user_id, emoji) index is
       // the arbiter, so a double-tap or a replayed request is a no-op rather
       // than a duplicate row or an error.
-      await db
-        .insert(messageReactions)
-        .values({
-          messageId: input.messageId,
-          userId: input.userId,
-          emoji: input.emoji,
-          createdAt: new Date(),
-        })
-        .onConflictDoNothing({
-          target: [messageReactions.messageId, messageReactions.userId, messageReactions.emoji],
-        });
+      await withWrite(transactionQueue, () =>
+        db
+          .insert(messageReactions)
+          .values({
+            messageId: input.messageId,
+            userId: input.userId,
+            emoji: input.emoji,
+            createdAt: new Date(),
+          })
+          .onConflictDoNothing({
+            target: [messageReactions.messageId, messageReactions.userId, messageReactions.emoji],
+          }),
+      );
       return reactionsFor(input.messageId);
     },
 
     async removeReaction(input: ReactionInput): Promise<Reaction[]> {
       // Idempotent: deleting zero rows is success, not an error.
-      await db
-        .delete(messageReactions)
-        .where(
-          and(
-            eq(messageReactions.messageId, input.messageId),
-            eq(messageReactions.userId, input.userId),
-            eq(messageReactions.emoji, input.emoji),
+      await withWrite(transactionQueue, () =>
+        db
+          .delete(messageReactions)
+          .where(
+            and(
+              eq(messageReactions.messageId, input.messageId),
+              eq(messageReactions.userId, input.userId),
+              eq(messageReactions.emoji, input.emoji),
+            ),
           ),
-        );
+      );
       return reactionsFor(input.messageId);
     },
 
@@ -865,24 +885,26 @@ export function tursoAdapter(db: DrizzleTursoDatabase): StorageAdapter {
     invites: {
       async createInvite(input: CreateInviteInput): Promise<ConversationInvite> {
         // The code is supplied by core, which owns entropy (ADR 0019 §3).
-        const [row] = await db
-          .insert(conversationInvites)
-          .values({
-            code: input.code,
-            conversationId: input.conversationId,
-            createdBy: input.createdBy,
-            createdAt: new Date(),
-            expiresAt: input.expiresAt,
-            maxUses: input.maxUses,
-            uses: 0,
-            requiresApproval: input.requiresApproval,
-            metadata: input.metadata,
-          })
-          .returning();
-        if (!row) {
-          throw new Error("tursoAdapter: failed to create invite.");
-        }
-        return toInvite(row);
+        return write(async () => {
+          const [row] = await db
+            .insert(conversationInvites)
+            .values({
+              code: input.code,
+              conversationId: input.conversationId,
+              createdBy: input.createdBy,
+              createdAt: new Date(),
+              expiresAt: input.expiresAt,
+              maxUses: input.maxUses,
+              uses: 0,
+              requiresApproval: input.requiresApproval,
+              metadata: input.metadata,
+            })
+            .returning();
+          if (!row) {
+            throw new Error("tursoAdapter: failed to create invite.");
+          }
+          return toInvite(row);
+        });
       },
 
       async getInvite(code: string): Promise<ConversationInvite | null> {
@@ -908,14 +930,16 @@ export function tursoAdapter(db: DrizzleTursoDatabase): StorageAdapter {
       async deleteInvite(input: DeleteInviteInput): Promise<void> {
         // Scoped by conversation so an admin of one group cannot revoke
         // another's by guessing a code. Deleting zero rows is success.
-        await db
-          .delete(conversationInvites)
-          .where(
-            and(
-              eq(conversationInvites.code, input.code),
-              eq(conversationInvites.conversationId, input.conversationId),
+        await write(() =>
+          db
+            .delete(conversationInvites)
+            .where(
+              and(
+                eq(conversationInvites.code, input.code),
+                eq(conversationInvites.conversationId, input.conversationId),
+              ),
             ),
-          );
+        );
       },
 
       async consumeInvite(code: string): Promise<ConversationInvite | null> {
@@ -925,46 +949,33 @@ export function tursoAdapter(db: DrizzleTursoDatabase): StorageAdapter {
         // `maxUses: 1` invite and both of them succeeding (ADR 0019 §2).
         // Turso/libSQL evaluates the WHERE and applies the increment under a single
         // row lock, so the loser matches zero rows and gets `null`.
-        const [row] = await db
-          .update(conversationInvites)
-          .set({ uses: sql`${conversationInvites.uses} + 1` })
-          .where(
-            and(
-              eq(conversationInvites.code, code),
-              or(
-                isNull(conversationInvites.maxUses),
-                lt(conversationInvites.uses, conversationInvites.maxUses),
+        return write(async () => {
+          const [row] = await db
+            .update(conversationInvites)
+            .set({ uses: sql`${conversationInvites.uses} + 1` })
+            .where(
+              and(
+                eq(conversationInvites.code, code),
+                or(
+                  isNull(conversationInvites.maxUses),
+                  lt(conversationInvites.uses, conversationInvites.maxUses),
+                ),
+                or(isNull(conversationInvites.expiresAt), gt(conversationInvites.expiresAt, now)),
               ),
-              or(isNull(conversationInvites.expiresAt), gt(conversationInvites.expiresAt, now)),
-            ),
-          )
-          .returning();
-        return row ? toInvite(row) : null;
+            )
+            .returning();
+          return row ? toInvite(row) : null;
+        });
       },
 
       async createJoinRequest(input: CreateJoinRequestInput): Promise<JoinRequest> {
-        const [row] = await db
-          .insert(joinRequests)
-          .values({
-            id: generateId("jreq"),
-            conversationId: input.conversationId,
-            userId: input.userId,
-            status: "pending",
-            message: input.message,
-            inviteCode: input.inviteCode,
-            createdAt: new Date(),
-            resolvedAt: null,
-            resolvedBy: null,
-            metadata: input.metadata,
-          })
-          // One row per (conversation, user): a previously denied user asking
-          // again overwrites their old row with a fresh pending one, rather
-          // than stacking up in the queue (ADR 0019 §5). The resolution fields
-          // are reset explicitly - a leftover `resolvedBy` on a pending row
-          // would make it look decided.
-          .onConflictDoUpdate({
-            target: [joinRequests.conversationId, joinRequests.userId],
-            set: {
+        return write(async () => {
+          const [row] = await db
+            .insert(joinRequests)
+            .values({
+              id: generateId("jreq"),
+              conversationId: input.conversationId,
+              userId: input.userId,
               status: "pending",
               message: input.message,
               inviteCode: input.inviteCode,
@@ -972,13 +983,30 @@ export function tursoAdapter(db: DrizzleTursoDatabase): StorageAdapter {
               resolvedAt: null,
               resolvedBy: null,
               metadata: input.metadata,
-            },
-          })
-          .returning();
-        if (!row) {
-          throw new Error("tursoAdapter: failed to create join request.");
-        }
-        return toJoinRequest(row);
+            })
+            // One row per (conversation, user): a previously denied user asking
+            // again overwrites their old row with a fresh pending one, rather
+            // than stacking up in the queue (ADR 0019 §5). The resolution fields
+            // are reset explicitly - a leftover `resolvedBy` on a pending row
+            // would make it look decided.
+            .onConflictDoUpdate({
+              target: [joinRequests.conversationId, joinRequests.userId],
+              set: {
+                status: "pending",
+                message: input.message,
+                inviteCode: input.inviteCode,
+                createdAt: new Date(),
+                resolvedAt: null,
+                resolvedBy: null,
+                metadata: input.metadata,
+              },
+            })
+            .returning();
+          if (!row) {
+            throw new Error("tursoAdapter: failed to create join request.");
+          }
+          return toJoinRequest(row);
+        });
       },
 
       async getJoinRequest(input: GetJoinRequestInput): Promise<JoinRequest | null> {
@@ -1015,26 +1043,28 @@ export function tursoAdapter(db: DrizzleTursoDatabase): StorageAdapter {
       },
 
       async resolveJoinRequest(input: ResolveJoinRequestInput): Promise<JoinRequest> {
-        const [row] = await db
-          .update(joinRequests)
-          .set({
-            status: input.status,
-            resolvedAt: input.resolvedAt,
-            resolvedBy: input.resolvedBy,
-          })
-          .where(
-            and(
-              eq(joinRequests.conversationId, input.conversationId),
-              eq(joinRequests.userId, input.userId),
-            ),
-          )
-          .returning();
-        if (!row) {
-          throw new Error(
-            `tursoAdapter: no join request from user "${input.userId}" in "${input.conversationId}".`,
-          );
-        }
-        return toJoinRequest(row);
+        return write(async () => {
+          const [row] = await db
+            .update(joinRequests)
+            .set({
+              status: input.status,
+              resolvedAt: input.resolvedAt,
+              resolvedBy: input.resolvedBy,
+            })
+            .where(
+              and(
+                eq(joinRequests.conversationId, input.conversationId),
+                eq(joinRequests.userId, input.userId),
+              ),
+            )
+            .returning();
+          if (!row) {
+            throw new Error(
+              `tursoAdapter: no join request from user "${input.userId}" in "${input.conversationId}".`,
+            );
+          }
+          return toJoinRequest(row);
+        });
       },
     },
   };

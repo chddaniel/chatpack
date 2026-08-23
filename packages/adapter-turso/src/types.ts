@@ -17,6 +17,9 @@ import type {
 /** A Drizzle database created with `drizzle-orm/libsql` and `@libsql/client`. */
 export type DrizzleTursoDatabase = LibSQLDatabase<Record<string, unknown>>;
 
+/** Serialize and retry writes that share one libSQL client. */
+export type WriteScheduler = <T>(callback: () => Promise<T>) => Promise<T>;
+
 export type ConversationRow = typeof conversations.$inferSelect;
 export type ParticipantRow = typeof conversationParticipants.$inferSelect;
 export type MessageRow = typeof messages.$inferSelect;

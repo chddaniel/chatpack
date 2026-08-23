@@ -11,9 +11,12 @@ import type {
 import { conversationMutes, moderationReports, userBans, userBlocks } from "./schema";
 import { toBan, toBlock, toMute, toReport } from "./converters";
 import { generateId } from "./utils";
-import type { DrizzleTursoDatabase } from "./types";
+import type { DrizzleTursoDatabase, WriteScheduler } from "./types";
 
-export function createModerationStorage(db: DrizzleTursoDatabase): ModerationStorage {
+export function createModerationStorage(
+  db: DrizzleTursoDatabase,
+  write: WriteScheduler,
+): ModerationStorage {
   const moderation: ModerationStorage = {
     async isUserBanned(userId, now = new Date()) {
       return moderation.getActiveBan(userId, now);
@@ -35,10 +38,12 @@ export function createModerationStorage(db: DrizzleTursoDatabase): ModerationSto
 
     async createBlock(input) {
       const createdAt = new Date();
-      await db
-        .insert(userBlocks)
-        .values({ ...input, createdAt })
-        .onConflictDoNothing({ target: [userBlocks.blockerUserId, userBlocks.blockedUserId] });
+      await write(() =>
+        db
+          .insert(userBlocks)
+          .values({ ...input, createdAt })
+          .onConflictDoNothing({ target: [userBlocks.blockerUserId, userBlocks.blockedUserId] }),
+      );
       const [row] = await db
         .select()
         .from(userBlocks)
@@ -54,14 +59,16 @@ export function createModerationStorage(db: DrizzleTursoDatabase): ModerationSto
     },
 
     async removeBlock(input) {
-      await db
-        .delete(userBlocks)
-        .where(
-          and(
-            eq(userBlocks.blockerUserId, input.blockerUserId),
-            eq(userBlocks.blockedUserId, input.blockedUserId),
+      await write(() =>
+        db
+          .delete(userBlocks)
+          .where(
+            and(
+              eq(userBlocks.blockerUserId, input.blockerUserId),
+              eq(userBlocks.blockedUserId, input.blockedUserId),
+            ),
           ),
-        );
+      );
     },
 
     async listBlocks(input): Promise<ModerationPage<UserBlock>> {
@@ -84,12 +91,14 @@ export function createModerationStorage(db: DrizzleTursoDatabase): ModerationSto
     },
 
     async createMute(input) {
-      await db
-        .insert(conversationMutes)
-        .values({ ...input, createdAt: new Date() })
-        .onConflictDoNothing({
-          target: [conversationMutes.userId, conversationMutes.conversationId],
-        });
+      await write(() =>
+        db
+          .insert(conversationMutes)
+          .values({ ...input, createdAt: new Date() })
+          .onConflictDoNothing({
+            target: [conversationMutes.userId, conversationMutes.conversationId],
+          }),
+      );
       const [row] = await db
         .select()
         .from(conversationMutes)
@@ -105,14 +114,16 @@ export function createModerationStorage(db: DrizzleTursoDatabase): ModerationSto
     },
 
     async removeMute(input) {
-      await db
-        .delete(conversationMutes)
-        .where(
-          and(
-            eq(conversationMutes.userId, input.userId),
-            eq(conversationMutes.conversationId, input.conversationId),
+      await write(() =>
+        db
+          .delete(conversationMutes)
+          .where(
+            and(
+              eq(conversationMutes.userId, input.userId),
+              eq(conversationMutes.conversationId, input.conversationId),
+            ),
           ),
-        );
+      );
     },
 
     async listMutes(input): Promise<ModerationPage<ConversationMute>> {
@@ -153,18 +164,20 @@ export function createModerationStorage(db: DrizzleTursoDatabase): ModerationSto
     async createReport(input) {
       const now = new Date();
       const id = generateId("report");
-      await db.insert(moderationReports).values({
-        id,
-        reporterUserId: input.reporterUserId,
-        targetType: input.targetType,
-        targetId: input.targetId,
-        reason: input.reason,
-        status: "open",
-        moderatorNote: null,
-        evidence: input.evidence,
-        createdAt: now,
-        updatedAt: now,
-      });
+      await write(() =>
+        db.insert(moderationReports).values({
+          id,
+          reporterUserId: input.reporterUserId,
+          targetType: input.targetType,
+          targetId: input.targetId,
+          reason: input.reason,
+          status: "open",
+          moderatorNote: null,
+          evidence: input.evidence,
+          createdAt: now,
+          updatedAt: now,
+        }),
+      );
       const [row] = await db
         .select()
         .from(moderationReports)
@@ -207,13 +220,15 @@ export function createModerationStorage(db: DrizzleTursoDatabase): ModerationSto
     },
 
     async updateReport(input) {
-      const [row] = await db
-        .update(moderationReports)
-        .set({ status: input.status, moderatorNote: input.moderatorNote, updatedAt: new Date() })
-        .where(eq(moderationReports.id, input.reportId))
-        .returning();
-      if (!row) throw new Error(`tursoAdapter: unknown report "${input.reportId}".`);
-      return toReport(row);
+      return write(async () => {
+        const [row] = await db
+          .update(moderationReports)
+          .set({ status: input.status, moderatorNote: input.moderatorNote, updatedAt: new Date() })
+          .where(eq(moderationReports.id, input.reportId))
+          .returning();
+        if (!row) throw new Error(`tursoAdapter: unknown report "${input.reportId}".`);
+        return toReport(row);
+      });
     },
 
     async getActiveBan(userId, now = new Date()) {
@@ -245,19 +260,21 @@ export function createModerationStorage(db: DrizzleTursoDatabase): ModerationSto
       // index can express, so the guard rides along in the INSERT itself: two
       // moderators banning the same user at the same moment cannot both land a
       // row. The loser reads the winner's ban back below.
-      await db.run(sql`
-        insert into "chatpack_user_bans"
-          ("id", "user_id", "created_by_user_id", "reason", "created_at",
-           "expires_at", "revoked_at", "revoked_by_user_id")
-        select ${id}, ${input.userId}, ${input.createdByUserId},
-               ${input.reason}, ${now.getTime()}, ${input.expiresAt?.getTime() ?? null},
-               null, null
-        where not exists (
-          select 1 from "chatpack_user_bans"
-          where "user_id" = ${input.userId}
-            and "revoked_at" is null
-            and ("expires_at" is null or "expires_at" > ${now.getTime()})
-        )`);
+      await write(() =>
+        db.run(sql`
+          insert into "chatpack_user_bans"
+            ("id", "user_id", "created_by_user_id", "reason", "created_at",
+             "expires_at", "revoked_at", "revoked_by_user_id")
+          select ${id}, ${input.userId}, ${input.createdByUserId},
+                 ${input.reason}, ${now.getTime()}, ${input.expiresAt?.getTime() ?? null},
+                 null, null
+          where not exists (
+            select 1 from "chatpack_user_bans"
+            where "user_id" = ${input.userId}
+              and "revoked_at" is null
+              and ("expires_at" is null or "expires_at" > ${now.getTime()})
+          )`),
+      );
 
       const active = await moderation.getActiveBan(input.userId, now);
       if (!active) throw new Error("tursoAdapter: ban insert returned no row.");
@@ -288,21 +305,21 @@ export function createModerationStorage(db: DrizzleTursoDatabase): ModerationSto
     },
 
     async revokeBan(input) {
-      const [row] = await db
-        .update(userBans)
-        .set({ revokedAt: new Date(), revokedByUserId: input.revokedByUserId })
-        .where(and(eq(userBans.id, input.banId), isNull(userBans.revokedAt)))
-        .returning();
-      if (!row) {
-        const existing = await db
-          .select()
-          .from(userBans)
-          .where(eq(userBans.id, input.banId))
-          .limit(1);
-        if (!existing[0]) throw new Error(`tursoAdapter: unknown ban "${input.banId}".`);
-        return toBan(existing[0]);
-      }
-      return toBan(row);
+      const [row] = await write(() =>
+        db
+          .update(userBans)
+          .set({ revokedAt: new Date(), revokedByUserId: input.revokedByUserId })
+          .where(and(eq(userBans.id, input.banId), isNull(userBans.revokedAt)))
+          .returning(),
+      );
+      if (row) return toBan(row);
+      const existing = await db
+        .select()
+        .from(userBans)
+        .where(eq(userBans.id, input.banId))
+        .limit(1);
+      if (!existing[0]) throw new Error(`tursoAdapter: unknown ban "${input.banId}".`);
+      return toBan(existing[0]);
     },
   };
 
