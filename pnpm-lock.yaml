@@ -182,7 +182,7 @@ importers:
         version: link:../../packages/core
       drizzle-orm:
         specifier: ^0.45.2
-        version: 0.45.2(@electric-sql/pglite@0.5.4)(@types/pg@8.20.0)(pg@8.22.0)
+        version: 0.45.2(@electric-sql/pglite@0.5.4)(@types/better-sqlite3@7.6.13)(@types/pg@8.20.0)(better-sqlite3@13.0.3)(pg@8.22.0)
       pg:
         specifier: ^8.22.0
         version: 8.22.0
@@ -214,7 +214,7 @@ importers:
         version: 26.1.1
       drizzle-orm:
         specifier: ^0.45.2
-        version: 0.45.2(@electric-sql/pglite@0.5.4)(@types/pg@8.20.0)(pg@8.22.0)
+        version: 0.45.2(@electric-sql/pglite@0.5.4)(@types/better-sqlite3@7.6.13)(@types/pg@8.20.0)(better-sqlite3@13.0.3)(pg@8.22.0)
       tsup:
         specifier: ^8.3.5
         version: 8.5.1(jiti@2.7.0)(postcss@8.5.25)(typescript@5.9.3)(yaml@2.9.0)
@@ -243,6 +243,34 @@ importers:
       vitest:
         specifier: ^3.0.0
         version: 3.2.7(@types/debug@4.1.13)(@types/node@26.1.1)(jiti@2.7.0)(lightningcss@1.32.0)(yaml@2.9.0)
+
+  packages/adapter-sqlite:
+    dependencies:
+      '@chatpack/core':
+        specifier: workspace:^
+        version: link:../core
+    devDependencies:
+      '@types/better-sqlite3':
+        specifier: ^7.6.13
+        version: 7.6.13
+      '@types/node':
+        specifier: ^26.1.1
+        version: 26.1.2
+      better-sqlite3:
+        specifier: ^13.0.3
+        version: 13.0.3
+      drizzle-orm:
+        specifier: ^0.45.2
+        version: 0.45.2(@electric-sql/pglite@0.5.4)(@types/better-sqlite3@7.6.13)(@types/pg@8.20.0)(better-sqlite3@13.0.3)(pg@8.22.0)
+      tsup:
+        specifier: ^8.3.5
+        version: 8.5.1(jiti@2.7.0)(postcss@8.5.25)(typescript@5.9.3)(yaml@2.9.0)
+      typescript:
+        specifier: ^5.7.2
+        version: 5.9.3
+      vitest:
+        specifier: ^3.0.0
+        version: 3.2.7(@types/debug@4.1.13)(@types/node@26.1.2)(jiti@2.7.0)(lightningcss@1.32.0)(yaml@2.9.0)
 
   packages/adapter-supabase:
     dependencies:
@@ -1725,6 +1753,9 @@ packages:
   '@tybys/wasm-util@0.10.3':
     resolution: {integrity: sha512-F3fo1MYrRJYL3zER0OUOmkutjr1Vp23m7OsSgp7nq4SP6OqX6C/56XFIPAl5bt3zaBRjmW7SGz3u/6LwFpYcOg==}
 
+  '@types/better-sqlite3@7.6.13':
+    resolution: {integrity: sha512-NMv9ASNARoKksWtsq/SHakpYAYnhBrQgGD8zkLYk/jaK8jUGn08CfEdTRgYhMypUQAfzSP8W6gNLe0q19/t4VA==}
+
   '@types/chai@5.2.3':
     resolution: {integrity: sha512-Mw558oeA9fFbv65/y4mHtXDs9bPnFMZAL/jxdPFUpOHHIXX91mcgEHbS5Lahr+pwZFR8A7GQleRWeI6cGFC2UA==}
 
@@ -2184,6 +2215,10 @@ packages:
   better-path-resolve@1.0.0:
     resolution: {integrity: sha512-pbnl5XzGBdrFU/wT4jqmJVPn2B6UHPBOhzMQkY/SPUPB6QtUXtmBHBIwCbXJol93mOpGMnQyP/+BB19q04xj7g==}
     engines: {node: '>=4'}
+
+  better-sqlite3@13.0.3:
+    resolution: {integrity: sha512-RbOBxmLBG8uvFUc15X9+9SFemKcQ0WBuISBVkpuiaUB2qblC8UWlHEjdWVoZ8AdhSwmoEgsiXKfopX0CQxaACQ==}
+    engines: {node: '>=22'}
 
   brace-expansion@1.1.16:
     resolution: {integrity: sha512-IDw48K2/2kRkg9LdJxurvq3lV3aBgq0REY89duEqFRthjlPdXHKMj7EnQOXVckxzgisinf3nHfrcE2FufFLXMw==}
@@ -3710,6 +3745,10 @@ packages:
         optional: true
       sass:
         optional: true
+
+  node-addon-api@8.9.2:
+    resolution: {integrity: sha512-VijLXbi3UACN69I0JVXJsX4tjACjNoQDgv2gTF6sx2wWEi8tkSg2eX8p5gSIFi8z2+DL3oHmY6OyKce38SDolg==}
+    engines: {node: ^18 || ^20 || >= 21}
 
   node-exports-info@1.6.2:
     resolution: {integrity: sha512-kXs9Go0cah0qHVV2v389IXQLdLCeE1xfFtjOAF+iobu0OIoG1pje8At2vMHyaPMiPMnG/LWP50twML21eMcAag==}
@@ -5820,6 +5859,10 @@ snapshots:
       tslib: 2.8.1
     optional: true
 
+  '@types/better-sqlite3@7.6.13':
+    dependencies:
+      '@types/node': 26.1.2
+
   '@types/chai@5.2.3':
     dependencies:
       '@types/deep-eql': 4.0.2
@@ -6352,6 +6395,10 @@ snapshots:
     dependencies:
       is-windows: 1.0.2
 
+  better-sqlite3@13.0.3:
+    dependencies:
+      node-addon-api: 8.9.2
+
   brace-expansion@1.1.16:
     dependencies:
       balanced-match: 1.0.2
@@ -6550,10 +6597,12 @@ snapshots:
     dependencies:
       esutils: 2.0.3
 
-  drizzle-orm@0.45.2(@electric-sql/pglite@0.5.4)(@types/pg@8.20.0)(pg@8.22.0):
+  drizzle-orm@0.45.2(@electric-sql/pglite@0.5.4)(@types/better-sqlite3@7.6.13)(@types/pg@8.20.0)(better-sqlite3@13.0.3)(pg@8.22.0):
     optionalDependencies:
       '@electric-sql/pglite': 0.5.4
+      '@types/better-sqlite3': 7.6.13
       '@types/pg': 8.20.0
+      better-sqlite3: 13.0.3
       pg: 8.22.0
 
   dunder-proto@1.0.1:
@@ -8268,6 +8317,8 @@ snapshots:
     transitivePeerDependencies:
       - '@babel/core'
       - babel-plugin-macros
+
+  node-addon-api@8.9.2: {}
 
   node-exports-info@1.6.2:
     dependencies:

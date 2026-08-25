@@ -834,6 +834,7 @@ threads. See [docs/MVP.md](./docs/MVP.md) for the full scope and reasoning.
 | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
 | [`@chatpack/core`](https://www.npmjs.com/package/@chatpack/core) ([source](./packages/core))                                  | The chat engine: domain logic, permissions, API  |
 | [`@chatpack/adapter-drizzle`](https://www.npmjs.com/package/@chatpack/adapter-drizzle) ([source](./packages/adapter-drizzle)) | Drizzle/Postgres storage (production)            |
+| [`@chatpack/adapter-sqlite`](./packages/adapter-sqlite)                                                                       | Drizzle/SQLite storage (local, single node)      |
 | [`@chatpack/adapter-memory`](https://www.npmjs.com/package/@chatpack/adapter-memory) ([source](./packages/adapter-memory))    | In-memory storage (demos, tests)                 |
 | [`@chatpack/adapter-supabase`](./packages/adapter-supabase)                                                                   | Supabase/Postgres storage (server-side)          |
 | [`@chatpack/next`](https://www.npmjs.com/package/@chatpack/next) ([source](./packages/next))                                  | Next.js App Router integration                   |
