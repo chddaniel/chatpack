@@ -17,6 +17,7 @@ Packages (all on npm):
 | `@chatpack/core`           | The engine: API, HTTP handler, SSE, plugins            |
 | `@chatpack/adapter-memory` | In-memory storage - demos/tests, single process only   |
 | `@chatpack/adapter-drizzle`| Postgres storage via Drizzle - production              |
+| `@chatpack/adapter-supabase` | Server-side Supabase/Postgres storage                 |
 | `@chatpack/next`           | Next.js App Router mount helper (`toNextRouteHandlers`)|
 | `@chatpack/client`         | Framework-agnostic REST + SSE client (+ React hooks)   |
 | `@chatpack/cli`            | Setup CLI: wires an existing app, or generates a starter|
@@ -1135,9 +1136,9 @@ chatpack({
 
 # Part 2 - Writing a custom storage adapter
 
-Only needed on platforms where the official adapters don't fit
-(Supabase/PostgREST clients, Convex, Firebase, proprietary AI-builder
-clouds, ...).
+Only needed on platforms where the official adapters don't fit (Convex,
+Firebase, proprietary AI-builder clouds, or another store without a first-party
+adapter).
 
 ## Decide if you even need a custom adapter
 
@@ -1145,8 +1146,10 @@ clouds, ...).
 - Any Postgres you can reach with a **connection string** (Neon, RDS, Railway,
   Fly, Replit, Vercel Postgres): `@chatpack/adapter-drizzle`. Do NOT write a
   custom adapter for these.
-- Postgres behind an HTTP client only (e.g. Supabase JS on Lovable/Bolt), or a
-  non-SQL store (Convex, Firestore, DynamoDB): write a custom adapter -
+- Supabase/PostgREST through Supabase JS: use the first-party
+  `@chatpack/adapter-supabase` adapter and its migration. It runs server-side
+  with a privileged client; do not write a custom adapter for Supabase.
+- A non-SQL store (Convex, Firestore, DynamoDB): write a custom adapter -
   continue below.
 
 ## The contract
