@@ -18,6 +18,7 @@ Packages (all on npm):
 | `@chatpack/adapter-memory` | In-memory storage - demos/tests, single process only   |
 | `@chatpack/adapter-drizzle`| Postgres storage via Drizzle - production              |
 | `@chatpack/adapter-turso`  | Turso/libSQL storage via Drizzle                      |
+| `@chatpack/adapter-sqlite` | SQLite storage via Drizzle - local/single node         |
 | `@chatpack/adapter-supabase` | Server-side Supabase/Postgres storage                 |
 | `@chatpack/next`           | Next.js App Router mount helper (`toNextRouteHandlers`)|
 | `@chatpack/client`         | Framework-agnostic REST + SSE client (+ React hooks)   |

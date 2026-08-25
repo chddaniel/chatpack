@@ -117,6 +117,20 @@ dependency on `drizzle-orm`.
 
 → [Drizzle / Postgres](/docs/storage/drizzle)
 
+## `@chatpack/adapter-sqlite`
+
+Drizzle ORM SQLite storage for durable local and single-node deployments.
+Requires `drizzle-orm`, `better-sqlite3`, and Node.js 22 or newer.
+
+| Export                                 | What it is                                                  |
+| -------------------------------------- | ----------------------------------------------------------- |
+| `sqliteAdapter(db)`                    | Create the adapter from a Drizzle `better-sqlite3` database |
+| `chatpackSchema`                       | Drizzle table objects                                       |
+| `migrationSql` / `migrationStatements` | Idempotent SQLite DDL                                       |
+| `backfillMessageSearchTokens(db)`      | Rebuild search tokens after importing existing messages     |
+
+→ [SQLite](/docs/storage/sqlite)
+
 ## `@chatpack/adapter-turso`
 
 Drizzle ORM storage backed by Turso/libSQL. It provides the full persistent

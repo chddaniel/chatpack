@@ -1,0 +1,48 @@
+---
+title: SQLite
+description: Durable local and single-node persistence with the Chatpack SQLite adapter.
+---
+
+`@chatpack/adapter-sqlite` provides durable SQLite storage through Drizzle ORM
+and `better-sqlite3`. It supports the complete Chatpack storage contract,
+including message search, reactions, invites, public channels, and moderation.
+
+Use it for local applications and single-node deployments. SQLite serializes
+writes, so use a different topology for multi-process or multi-region writes.
+
+## Install
+
+```sh
+npm install @chatpack/core @chatpack/adapter-sqlite drizzle-orm better-sqlite3
+```
+
+The adapter requires Node.js 22 or newer because current `better-sqlite3`
+releases use the supported Node native-API range.
+
+## Use
+
+```ts
+import Database from "better-sqlite3";
+import { drizzle } from "drizzle-orm/better-sqlite3";
+import { chatpack } from "@chatpack/core";
+import { migrationSql, sqliteAdapter } from "@chatpack/adapter-sqlite";
+
+const database = new Database("./chatpack.sqlite");
+database.exec(migrationSql);
+
+const chat = chatpack({
+  storage: sqliteAdapter(drizzle(database)),
+  telemetry: false,
+});
+```
+
+## Schema and migrations
+
+The package exports `chatpackSchema`, all table objects, `migrationSql`, and
+`migrationStatements`. Apply `migrationSql` to a fresh database at startup, or
+run each statement from `migrationStatements` with `database.exec(statement)`.
+The migration is idempotent for the exported schema.
+
+SQLite stores dates as millisecond integers, JSON as text, and booleans as
+integers. The adapter converts rows back to real `Date` instances and metadata
+objects before returning them to Chatpack.
