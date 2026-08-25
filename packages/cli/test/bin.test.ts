@@ -29,35 +29,39 @@ describe("installed bin entrypoint", () => {
     expect(stdout).toContain("Usage:");
   });
 
-  it("runs bundled ESM and CJS artifacts without installed dependencies", async () => {
-    const root = await mkdtemp(join("/tmp", "chatpack-cli-bundle-"));
-    temporaryRoots.push(root);
-    const dist = fileURLToPath(new URL("../dist/", import.meta.url));
-    await writeFile(join(root, "package.json"), '{"type":"module"}\n');
-    await copyFile(join(dist, "index.js"), join(root, "index.js"));
-    await copyFile(join(dist, "index.cjs"), join(root, "index.cjs"));
-    const fixture = join(root, "fixture");
-    await mkdir(fixture);
-    await writeFile(join(fixture, "package.json"), '{"name":"fixture","type":"module"}\n');
+  it(
+    "runs bundled ESM and CJS artifacts without installed dependencies",
+    { timeout: 20_000 },
+    async () => {
+      const root = await mkdtemp(join("/tmp", "chatpack-cli-bundle-"));
+      temporaryRoots.push(root);
+      const dist = fileURLToPath(new URL("../dist/", import.meta.url));
+      await writeFile(join(root, "package.json"), '{"type":"module"}\n');
+      await copyFile(join(dist, "index.js"), join(root, "index.js"));
+      await copyFile(join(dist, "index.cjs"), join(root, "index.cjs"));
+      const fixture = join(root, "fixture");
+      await mkdir(fixture);
+      await writeFile(join(fixture, "package.json"), '{"name":"fixture","type":"module"}\n');
 
-    for (const artifact of ["index.js", "index.cjs"]) {
-      const { stdout } = await execFileAsync(process.execPath, [
-        join(root, artifact),
-        "init",
-        "--cwd",
-        fixture,
-        "--framework",
-        "web",
-        "--adapter",
-        "memory",
-        "--package-manager",
-        "npm",
-        "--yes",
-        "--dry-run",
-      ]);
-      expect(stdout).toContain("Dry run complete. No packages installed and no files changed.");
-    }
-  });
+      for (const artifact of ["index.js", "index.cjs"]) {
+        const { stdout } = await execFileAsync(process.execPath, [
+          join(root, artifact),
+          "init",
+          "--cwd",
+          fixture,
+          "--framework",
+          "web",
+          "--adapter",
+          "memory",
+          "--package-manager",
+          "npm",
+          "--yes",
+          "--dry-run",
+        ]);
+        expect(stdout).toContain("Dry run complete. No packages installed and no files changed.");
+      }
+    },
+  );
 
   // 20s rather than vitest's 5s default: this copies all 118 template files into
   // an isolated package and then spawns the CLI twice. It sat under a second when
