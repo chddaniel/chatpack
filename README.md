@@ -67,7 +67,7 @@ chat.handler()        one Web-standard handler (Request → Response)
 chat.api.*            domain logic, permissions         (also callable directly)
       │
       ▼
-StorageAdapter        memory · Drizzle/Postgres · Drizzle/SQLite · your own
+StorageAdapter        memory · Drizzle/Postgres · your own
       │
       ▼
 Your database
@@ -830,17 +830,18 @@ threads. See [docs/MVP.md](./docs/MVP.md) for the full scope and reasoning.
 
 ## Packages
 
-| Package                                                   | Description                                      |
-| --------------------------------------------------------- | ------------------------------------------------ |
-| [`@chatpack/core`](./packages/core)                       | The chat engine: domain logic, permissions, API  |
-| [`@chatpack/adapter-drizzle`](./packages/adapter-drizzle) | Drizzle/Postgres storage (production)            |
-| [`@chatpack/adapter-sqlite`](./packages/adapter-sqlite)   | Drizzle/SQLite storage (local, single node)      |
-| [`@chatpack/adapter-memory`](./packages/adapter-memory)   | In-memory storage (demos, tests)                 |
-| [`@chatpack/next`](./packages/next)                       | Next.js App Router integration                   |
-| [`@chatpack/client`](./packages/client)                   | Typed REST, SSE, React hooks, and client plugins |
-| [`@chatpack/cli`](./packages/cli)                         | Project setup and full starter CLI               |
-| [`@chatpack/transport-redis`](./packages/transport-redis) | Redis pub/sub transport (multi-node SSE)         |
-| [`@chatpack/file`](./packages/file)                       | Filepack-backed message attachments              |
+| Package                                                                                                                       | Description                                      |
+| ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------ |
+| [`@chatpack/core`](https://www.npmjs.com/package/@chatpack/core) ([source](./packages/core))                                  | The chat engine: domain logic, permissions, API  |
+| [`@chatpack/adapter-drizzle`](https://www.npmjs.com/package/@chatpack/adapter-drizzle) ([source](./packages/adapter-drizzle)) | Drizzle/Postgres storage (production)            |
+| [`@chatpack/adapter-sqlite`](./packages/adapter-sqlite)                                                                       | Drizzle/SQLite storage (local, single node)      |
+| [`@chatpack/adapter-memory`](https://www.npmjs.com/package/@chatpack/adapter-memory) ([source](./packages/adapter-memory))    | In-memory storage (demos, tests)                 |
+| [`@chatpack/adapter-supabase`](./packages/adapter-supabase)                                                                   | Supabase/Postgres storage (server-side)          |
+| [`@chatpack/next`](https://www.npmjs.com/package/@chatpack/next) ([source](./packages/next))                                  | Next.js App Router integration                   |
+| [`@chatpack/client`](https://www.npmjs.com/package/@chatpack/client) ([source](./packages/client))                            | Typed REST, SSE, React hooks, and client plugins |
+| [`@chatpack/cli`](https://www.npmjs.com/package/@chatpack/cli) ([source](./packages/cli))                                     | Project setup and full starter CLI               |
+| [`@chatpack/transport-redis`](https://www.npmjs.com/package/@chatpack/transport-redis) ([source](./packages/transport-redis)) | Redis pub/sub transport (multi-node SSE)         |
+| [`@chatpack/file`](https://www.npmjs.com/package/@chatpack/file) ([source](./packages/file))                                  | Filepack-backed message attachments              |
 
 ## Examples
 

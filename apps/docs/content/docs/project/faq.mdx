@@ -152,12 +152,13 @@ merging into it.
 
 <Accordions type="single">
 
-<Accordion title="I only have a Supabase client, no connection string - what now?">
+<Accordion title="How do I use Supabase as Chatpack storage?">
 
-Write a [custom adapter](/docs/storage/custom-adapter). Key points: run it
-server-side with the service-role key (never expose `chatpack_*` tables to
-anon clients), and wrap the atomic `seq` bump in a SQL function called via
-RPC - PostgREST can't express `UPDATE ... RETURNING` directly.
+Use the first-party [`@chatpack/adapter-supabase`](/docs/storage/supabase)
+adapter. Apply its migration, create the adapter with a server-only Supabase
+client using the service-role key, and never expose that client or key to
+browser code. The migration owns the Chatpack tables, RLS, and transaction-
+sensitive RPCs.
 
 </Accordion>
 
