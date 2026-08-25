@@ -3,9 +3,9 @@ title: Writing a Custom Adapter
 description: Implement the StorageAdapter contract for any database - invariants, reference schema, skeleton, pitfalls, and a verification checklist.
 ---
 
-Only needed on platforms where the official adapters don't fit -
-Supabase/PostgREST clients, Convex, Firebase, DynamoDB, proprietary
-AI-builder clouds.
+Only needed on platforms where the official adapters don't fit - Convex,
+Firebase, DynamoDB, proprietary AI-builder clouds, or another store without a
+first-party adapter.
 
 ## Decide if you even need one
 
@@ -14,8 +14,17 @@ AI-builder clouds.
 - Any Postgres you can reach with a **connection string** (Neon, RDS, Railway,
   Fly, Replit, Vercel Postgres): [`@chatpack/adapter-drizzle`](/docs/storage/drizzle).
   Do **not** write a custom adapter for these.
-- Postgres behind an HTTP client only (e.g. Supabase JS), or a non-SQL store
-  (Convex, Firestore, DynamoDB): write a custom adapter - continue below.
+- Supabase/PostgREST: use the first-party `@chatpack/adapter-supabase` adapter.
+  It is server-only, accepts an already-created privileged Supabase client, and
+  ships with its own RPC-backed migration.
+- A non-SQL store (Convex, Firestore, DynamoDB): write a custom adapter - continue below.
+
+Supabase setup must stay on the server. Use a service-role or server-secret key
+only in trusted server code, disable session persistence, and never expose the
+key or bundle the adapter into browser code. Apply
+`packages/adapter-supabase/supabase/migrations/0001_chatpack.sql`; it enables
+RLS on every Chatpack table and creates no public policies. Chatpack core still
+owns application permission checks.
 
 ## The contract
 

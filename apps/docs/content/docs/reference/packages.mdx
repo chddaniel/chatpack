@@ -133,6 +133,18 @@ moderation storage.
 
 → [Turso / libSQL](/docs/storage/turso)
 
+## `@chatpack/adapter-supabase`
+
+Server-side Supabase/Postgres storage. Pass an already-created privileged
+Supabase client; apply its RLS-safe migration before use.
+
+| Export                              | What it is                                            |
+| ----------------------------------- | ----------------------------------------------------- |
+| `supabaseAdapter(client, options?)` | Create the adapter from a server-side Supabase client |
+| `SupabaseAdapterOptions`            | Optional generated-id prefix configuration            |
+
+→ [Custom adapter and Supabase guidance](/docs/storage/custom-adapter)
+
 ## `@chatpack/next`
 
 Next.js App Router integration - sugar for mounting the handler.

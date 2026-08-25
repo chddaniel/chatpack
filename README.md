@@ -841,6 +841,7 @@ threads. See [docs/MVP.md](./docs/MVP.md) for the full scope and reasoning.
 | [`@chatpack/adapter-drizzle`](./packages/adapter-drizzle) | Drizzle/Postgres storage (production)            |
 | [`@chatpack/adapter-turso`](./packages/adapter-turso)     | Turso/libSQL storage via Drizzle                 |
 | [`@chatpack/adapter-memory`](./packages/adapter-memory)   | In-memory storage (demos, tests)                 |
+| [`@chatpack/adapter-supabase`](./packages/adapter-supabase) | Supabase/Postgres storage (server-side)         |
 | [`@chatpack/next`](./packages/next)                       | Next.js App Router integration                   |
 | [`@chatpack/client`](./packages/client)                   | Typed REST, SSE, React hooks, and client plugins |
 | [`@chatpack/cli`](./packages/cli)                         | Project setup and full starter CLI               |

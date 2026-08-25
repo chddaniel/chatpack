@@ -217,8 +217,9 @@ the adapter's own test suite does.)
 
 ## No connection string?
 
-Platforms that only expose a database client (Supabase's JS client, Convex,
-most AI-builder clouds) are supported through a
-[custom adapter](/docs/storage/custom-adapter). If you can reach Postgres with
-a **connection string** (Neon, RDS, Railway, Fly, Replit, Vercel Postgres),
+Supabase projects that expose PostgREST through the Supabase JS client should
+use the first-party [Supabase adapter](/docs/storage/supabase). Convex,
+Firestore, and other stores without a first-party adapter are supported through
+a [custom adapter](/docs/storage/custom-adapter). If you can reach Postgres
+with a **connection string** (Neon, RDS, Railway, Fly, Replit, Vercel Postgres),
 use this adapter - don't write a custom one.
