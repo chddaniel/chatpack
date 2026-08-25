@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactElement } from "react";
 import { createChatClient } from "@chatpack/client/react";
 
 const chatClient = createChatClient();
@@ -14,7 +14,7 @@ function signInAs(userId: string): void {
   window.location.reload();
 }
 
-export default function ChatPage() {
+export default function ChatPage(): ReactElement {
   const [currentUserId, setCurrentUserId] = useState("alice");
   const [otherUserId, setOtherUserId] = useState("bob");
   const [selectedConversationId, setSelectedConversationId] = useState("");

@@ -28,6 +28,12 @@ jobs:
 
       - name: Build
         run: pnpm build
+        env:
+          # The generated app validates these at module load time. Its build
+          # does not open a database connection, so CI uses placeholders.
+          DATABASE_URL: postgresql://ci:ci@127.0.0.1:5432/chatpack?sslmode=disable
+          BETTER_AUTH_SECRET: chatpack-ci-build-secret-012345678901234567890123
+          BETTER_AUTH_URL: http://localhost:3000
 
       - name: Typecheck
         run: pnpm typecheck
