@@ -134,7 +134,8 @@ export {
  * Any Drizzle Postgres database instance, regardless of driver
  * (node-postgres, postgres.js, PGlite, Neon, ...).
  */
-export type DrizzlePgDatabase = PgDatabase<PgQueryResultHKT, Record<string, unknown>>;
+export type DrizzlePgDatabase<TQueryResult extends PgQueryResultHKT = PgQueryResultHKT> =
+  PgDatabase<TQueryResult, Record<string, unknown>>;
 
 type ConversationRow = typeof conversations.$inferSelect;
 type ParticipantRow = typeof conversationParticipants.$inferSelect;
@@ -178,7 +179,9 @@ async function insertSearchTokenRows(
  * a database that already contains messages. New messages and edits maintain
  * their rows automatically through {@link drizzleAdapter}.
  */
-export async function backfillMessageSearchTokens(db: DrizzlePgDatabase): Promise<void> {
+export async function backfillMessageSearchTokens<TQueryResult extends PgQueryResultHKT>(
+  db: DrizzlePgDatabase<TQueryResult>,
+): Promise<void> {
   const rows = await db
     .select({ id: messages.id, body: messages.body, deletedAt: messages.deletedAt })
     .from(messages);
@@ -360,7 +363,9 @@ function toConversation(row: ConversationRow, participantRows: ParticipantRow[])
  *
  * @param db - Any Drizzle Postgres database instance.
  */
-export function drizzleAdapter(db: DrizzlePgDatabase): StorageAdapter {
+export function drizzleAdapter<TQueryResult extends PgQueryResultHKT>(
+  db: DrizzlePgDatabase<TQueryResult>,
+): StorageAdapter {
   /**
    * Load participant rows for a set of conversation ids.
    *

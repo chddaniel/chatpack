@@ -1,7 +1,9 @@
+import type { ReactElement } from "react";
+
 /**
  * A tiny index page linking to the client example and mounted endpoints.
  */
-export default function Home() {
+export default function Home(): ReactElement {
   return (
     <main>
       <h1>Chatpack is mounted at /api/chat</h1>

@@ -57,6 +57,7 @@
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.4",
+    "pg": "^8.22.0",
     "@types/node": "^26.1.1",
     "drizzle-orm": "^0.45.2",
     "tsup": "^8.3.5",

@@ -1,0 +1,9 @@
+node_modules
+.next
+.vercel
+dist
+.env
+.env.local
+*.tsbuildinfo
+drizzle/meta
+.chatpack-files
