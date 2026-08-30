@@ -35,3 +35,4 @@ export { ChatpackUIThemeProvider } from "./theme";
 export type { ChatpackUITheme, ChatpackUIThemeProviderProps } from "./theme";
 export { cx } from "./utils";
 export type { RenderUser } from "./utils";
+export * from "./gallery";
