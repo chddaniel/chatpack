@@ -60,6 +60,9 @@ export function ConversationList({
             className="chatpack-ui-conversation-row chatpack-ui-focus"
             onClick={() => onSelect?.(conversation)}
           >
+            <span className="chatpack-ui-avatar" aria-hidden="true">
+              {(other ?? conversation.id).slice(0, 2).toUpperCase()}
+            </span>
             <PresenceDot online={online} />
             <span>
               {conversation.type === "group"
@@ -232,7 +235,7 @@ export function MessageComposer({
       />
       <button
         type="submit"
-        className="chatpack-ui-button chatpack-ui-button-primary"
+        className="chatpack-ui-button chatpack-ui-button-primary chatpack-ui-send"
         disabled={sending || body.trim() === ""}
       >
         {sending ? "Sending…" : "Send"}

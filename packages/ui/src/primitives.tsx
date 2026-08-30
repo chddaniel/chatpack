@@ -74,6 +74,7 @@ export function MessageBubble({
     <article
       className={cx(
         "chatpack-ui-bubble",
+        deleted && "chatpack-ui-bubble-deleted",
         own ? "chatpack-ui-bubble-own" : "chatpack-ui-bubble-other",
       )}
     >

@@ -626,7 +626,15 @@ export interface ChatAttachment {
 /** Displays a file picker and passes selected files to the host. */
 export function AttachmentComposer({ onFiles }: { onFiles: (files: readonly File[]) => void }) {
   return (
-    <input type="file" multiple onChange={(event) => onFiles([...(event.target.files ?? [])])} />
+    <label className="chatpack-ui-attachment-composer">
+      <span className="chatpack-ui-button chatpack-ui-button-ghost">Attach files</span>
+      <input
+        type="file"
+        hidden
+        multiple
+        onChange={(event) => onFiles([...(event.target.files ?? [])])}
+      />
+    </label>
   );
 }
 
@@ -640,6 +648,7 @@ export function AttachmentDropzone({
 }) {
   return (
     <label
+      className="chatpack-ui-attachment-dropzone"
       onDragOver={(event) => event.preventDefault()}
       onDrop={(event) => {
         event.preventDefault();
