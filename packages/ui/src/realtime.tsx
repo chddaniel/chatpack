@@ -30,13 +30,15 @@ export function PresenceIndicator({ userId }: { userId: string }) {
 export function ReadReceipts({
   conversationId,
   messageSeq,
+  messageId,
 }: {
   conversationId: string;
   messageSeq: number;
+  messageId?: string;
 }) {
   const { client } = useChatpackUI();
   const receipts = client.useReceipts({ conversationId }) as ReceiptState | null;
-  const read = receipts?.readMessageId !== undefined;
+  const read = messageId !== undefined && receipts?.readMessageId === messageId;
   const delivered = (receipts?.deliveredSeq ?? 0) >= messageSeq;
   return (
     <span aria-label={read ? "Read" : delivered ? "Delivered" : "Sent"}>

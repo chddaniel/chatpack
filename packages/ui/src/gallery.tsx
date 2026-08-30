@@ -128,7 +128,7 @@ export function MobileChatSheet({
 }) {
   if (!open) return null;
   return (
-    <dialog open>
+    <dialog className="chatpack-ui-mobile-sheet" open>
       <button type="button" onClick={onClose}>
         Close
       </button>

@@ -56,13 +56,15 @@ export function MessageActions({
           Edit
         </button>
       )}
-      <button
-        type="button"
-        disabled={pending || message.deletedAt !== null}
-        onClick={() => void remove()}
-      >
-        Delete
-      </button>
+      {message.senderId === userId && (
+        <button
+          type="button"
+          disabled={pending || message.deletedAt !== null}
+          onClick={() => void remove()}
+        >
+          Delete
+        </button>
+      )}
     </span>
   );
 }

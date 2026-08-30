@@ -115,6 +115,15 @@
   overflow-y: auto;
   padding: 1rem;
 }
+.chatpack-ui-flat-thread .chatpack-ui-bubble {
+  border-radius: 0.25rem;
+}
+.chatpack-ui-grouped-thread .chatpack-ui-message-row + .chatpack-ui-message-row {
+  margin-top: -0.5rem;
+}
+.chatpack-ui-assistant-thread .chatpack-ui-bubble-other {
+  background: color-mix(in srgb, var(--chatpack-ui-accent) 10%, var(--chatpack-ui-surface));
+}
 .chatpack-ui-message-thread-shell {
   height: 24rem;
 }
@@ -385,6 +394,15 @@
   background: var(--chatpack-ui-surface);
   color: var(--chatpack-ui-text);
   padding: 0;
+}
+.chatpack-ui-mobile-sheet {
+  position: fixed;
+  inset: auto 0 0;
+  width: 100%;
+  max-width: none;
+  height: min(90dvh, 40rem);
+  margin: 0;
+  border-radius: var(--chatpack-ui-radius) var(--chatpack-ui-radius) 0 0;
 }
 .chatpack-ui-root .chatpack-ui-bubble-deleted {
   background: var(--chatpack-ui-panel);
