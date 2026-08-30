@@ -72,27 +72,26 @@
   background: var(--chatpack-ui-surface);
   color: inherit;
   font: inherit;
-  padding: 0.625rem 0.75rem;
+  padding: 0.5rem 0.75rem;
 }
 .chatpack-ui-bubble {
   max-width: 85%;
   overflow-wrap: anywhere;
-  padding: 0.5rem 1rem;
+  padding: 0.5rem 0.75rem;
   font-size: 0.875rem;
+  line-height: 1.25rem;
   white-space: pre-wrap;
 }
 .chatpack-ui-bubble-own {
   align-self: flex-end;
   background: var(--chatpack-ui-accent);
-  border-radius: var(--chatpack-ui-radius) 0.25rem var(--chatpack-ui-radius)
-    var(--chatpack-ui-radius);
+  border-radius: var(--chatpack-ui-radius);
   color: var(--chatpack-ui-accent-contrast);
 }
 .chatpack-ui-bubble-other {
   align-self: flex-start;
   background: var(--chatpack-ui-bubble-other);
-  border-radius: 0.25rem var(--chatpack-ui-radius) var(--chatpack-ui-radius)
-    var(--chatpack-ui-radius);
+  border-radius: var(--chatpack-ui-radius);
 }
 
 .chatpack-ui-window,
@@ -278,6 +277,63 @@
 .chatpack-ui-error {
   color: #dc2626;
   font-size: 0.75rem;
+}
+.chatpack-ui-root {
+  color: var(--chatpack-ui-text);
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+}
+.chatpack-ui-root button,
+.chatpack-ui-root input,
+.chatpack-ui-root textarea,
+.chatpack-ui-root select {
+  font: inherit;
+}
+.chatpack-ui-root button {
+  appearance: none;
+  border: 0;
+  border-radius: var(--chatpack-ui-radius);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.chatpack-ui-root button:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--chatpack-ui-bubble-other) 70%, transparent);
+}
+.chatpack-ui-root button:focus-visible,
+.chatpack-ui-root input:focus-visible,
+.chatpack-ui-root textarea:focus-visible,
+.chatpack-ui-root select:focus-visible {
+  outline: 2px solid var(--chatpack-ui-focus);
+  outline-offset: 2px;
+}
+.chatpack-ui-root input,
+.chatpack-ui-root textarea,
+.chatpack-ui-root select {
+  border: 1px solid var(--chatpack-ui-border);
+  border-radius: var(--chatpack-ui-radius);
+  background: var(--chatpack-ui-surface);
+  color: var(--chatpack-ui-text);
+  padding: 0.5rem 0.75rem;
+}
+.chatpack-ui-root a {
+  color: var(--chatpack-ui-accent);
+}
+.chatpack-ui-root img {
+  max-width: 100%;
+  border-radius: var(--chatpack-ui-radius);
+}
+.chatpack-ui-root progress {
+  accent-color: var(--chatpack-ui-accent);
+}
+.chatpack-ui-root dialog {
+  max-width: calc(100vw - 2rem);
+  border: 1px solid var(--chatpack-ui-border);
+  border-radius: var(--chatpack-ui-radius);
+  background: var(--chatpack-ui-surface);
+  color: var(--chatpack-ui-text);
+  padding: 0;
 }
 @keyframes chatpack-ui-pulse {
   50% {

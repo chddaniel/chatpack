@@ -38,7 +38,7 @@ export function ChatpackUIProvider({
 }: ChatpackUIProviderProps) {
   return (
     <ChatpackUIContext.Provider value={{ client, userId, renderUser }}>
-      {children}
+      <div className="chatpack-ui-root">{children}</div>
     </ChatpackUIContext.Provider>
   );
 }
