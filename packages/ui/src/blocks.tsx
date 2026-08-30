@@ -150,16 +150,20 @@ function MessageThreadRow({
         own={own}
         renderUser={renderUser}
         footer={
-          <div className="chatpack-ui-message-meta">
-            <Timestamp date={message.createdAt} />
-            <button
-              type="button"
-              className="chatpack-ui-button chatpack-ui-button-ghost"
-              onClick={() => onReply?.(message)}
-            >
-              Reply
-            </button>
-          </div>
+          message.deletedAt === null ? (
+            <div className="chatpack-ui-message-meta">
+              <Timestamp date={message.createdAt} />
+              {onReply !== undefined && (
+                <button
+                  type="button"
+                  className="chatpack-ui-button chatpack-ui-button-ghost"
+                  onClick={() => onReply(message)}
+                >
+                  Reply
+                </button>
+              )}
+            </div>
+          ) : undefined
         }
       />
     </div>
@@ -229,7 +233,7 @@ export function MessageComposer({
         value={body}
         onChange={(event) => setBody(event.target.value)}
         onKeyDown={onKeyDown}
-        placeholder="Write a message"
+        placeholder="Write a message…"
         aria-label="Message"
         disabled={sending}
       />
@@ -237,8 +241,9 @@ export function MessageComposer({
         type="submit"
         className="chatpack-ui-button chatpack-ui-button-primary chatpack-ui-send"
         disabled={sending || body.trim() === ""}
+        aria-label={sending ? "Sending" : "Send message"}
       >
-        {sending ? "Sending…" : "Send"}
+        {sending ? "…" : "↑"}
       </button>
     </form>
   );
@@ -264,9 +269,21 @@ export function ChatWindow({
   conversationId: string;
   className?: string;
 }) {
+  const { client, userId, renderUser } = useChatpackUI();
+  const conversation = client.useConversation({ conversationId });
   const [replyTo, setReplyTo] = useState<ClientMessage | null>(null);
   return (
     <main className={cx("chatpack-ui-window chatpack-ui-surface", className)}>
+      <header className="chatpack-ui-window-header">
+        <strong>{conversation.data?.name ?? conversation.data?.id ?? "Conversation"}</strong>
+        {conversation.data !== null && (
+          <span className="chatpack-ui-muted">
+            {conversation.data.participants
+              .filter((participant) => participant.userId !== userId)
+              .map((participant) => renderUser(participant.userId))}
+          </span>
+        )}
+      </header>
       <ConnectionStatus />
       <MessageThread conversationId={conversationId} onReply={setReplyTo} />
       <MessageComposer

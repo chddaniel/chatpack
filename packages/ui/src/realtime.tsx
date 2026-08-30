@@ -102,9 +102,14 @@ export function PresenceAvatarStack({
   return (
     <div className="chatpack-ui-presence-stack" aria-label="Participants">
       {userIds.map((userId) => (
-        <span key={userId}>
-          <PresenceDot online={presence[userId]?.online ?? false} />{" "}
-          {renderFallback?.(userId) ?? renderUser(userId)}
+        <span className="chatpack-ui-avatar-stack-item" key={userId}>
+          <span className="chatpack-ui-avatar" aria-hidden="true">
+            {userId.slice(0, 2).toUpperCase()}
+          </span>
+          <PresenceDot online={presence[userId]?.online ?? false} />
+          <span className="chatpack-ui-presence-name">
+            {renderFallback?.(userId) ?? renderUser(userId)}
+          </span>
         </span>
       ))}
     </div>
