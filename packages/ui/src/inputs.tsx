@@ -13,7 +13,7 @@ export function MessageActions({
   canEdit?: boolean;
   onComplete?: () => void;
 }) {
-  const { client } = useChatpackUI();
+  const { client, userId } = useChatpackUI();
   const [pending, setPending] = useState(false);
   const [editing, setEditing] = useState(false);
   const [body, setBody] = useState(message.body);
@@ -51,7 +51,7 @@ export function MessageActions({
           </button>
         </>
       )}
-      {!editing && canEdit && !message.deletedAt && (
+      {!editing && canEdit && message.senderId === userId && !message.deletedAt && (
         <button type="button" disabled={pending} onClick={() => setEditing(true)}>
           Edit
         </button>

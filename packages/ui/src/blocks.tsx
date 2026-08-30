@@ -335,7 +335,12 @@ export function ChatWindow({
   return (
     <main className={cx("chatpack-ui-window chatpack-ui-surface", className)}>
       <header className="chatpack-ui-window-header">
-        <strong>{conversation.data?.name ?? conversation.data?.id ?? "Conversation"}</strong>
+        <strong>
+          {conversation.data?.type === "direct"
+            ? (conversation.data.participants.find((participant) => participant.userId !== userId)
+                ?.userId ?? "Conversation")
+            : (conversation.data?.name ?? conversation.data?.id ?? "Conversation")}
+        </strong>
         {conversation.data !== null && (
           <span className="chatpack-ui-muted">
             {conversation.data.participants
