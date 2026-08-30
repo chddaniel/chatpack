@@ -14,11 +14,13 @@ import {
   LoadingState,
   MessageBubble,
   PresenceDot,
+  ReactionPill,
   ReplyQuoteBar,
   Timestamp,
   UnreadBadge,
 } from "./primitives";
 import { cx } from "./utils";
+import { TypingIndicator } from "./realtime";
 
 /** Props for {@link ConversationList}. */
 export interface ConversationListProps {
@@ -179,6 +181,35 @@ function MessageThreadRow({
           ) : undefined
         }
       />
+      {message.forwardedFrom !== null && (
+        <small className="chatpack-ui-forwarded">
+          Forwarded from {renderUser(message.forwardedFrom.senderId)}
+        </small>
+      )}
+      {message.reactions.length > 0 && <MessageRowReactions message={message} />}
+    </div>
+  );
+}
+
+function MessageRowReactions({ message }: { message: ClientMessage }) {
+  const { client, userId } = useChatpackUI();
+  return (
+    <div className="chatpack-ui-reactions">
+      {message.reactions.map((reaction) => {
+        const mine = reaction.userIds.includes(userId);
+        return (
+          <ReactionPill
+            key={reaction.emoji}
+            reaction={reaction}
+            pressed={mine}
+            onClick={() =>
+              void (mine
+                ? client.messages.unreact({ messageId: message.id, emoji: reaction.emoji })
+                : client.messages.react({ messageId: message.id, emoji: reaction.emoji }))
+            }
+          />
+        );
+      })}
     </div>
   );
 }
@@ -279,10 +310,13 @@ export function MessageComposer({
 export function ConnectionStatus() {
   const { client } = useChatpackUI();
   const realtime = client.useRealtimeStatus();
-  if (realtime.status === "open") return null;
   return (
     <p role="status" className="chatpack-ui-muted">
-      {realtime.status === "polling" ? "Using polling" : "Reconnecting…"}
+      {realtime.status === "open"
+        ? "Live"
+        : realtime.status === "polling"
+          ? "Using polling"
+          : "Reconnecting…"}
     </p>
   );
 }
@@ -312,6 +346,7 @@ export function ChatWindow({
       </header>
       <ConnectionStatus />
       <MessageThread conversationId={conversationId} onReply={setReplyTo} showHeader={false} />
+      <TypingIndicator conversationId={conversationId} />
       <MessageComposer
         conversationId={conversationId}
         replyTo={replyTo}

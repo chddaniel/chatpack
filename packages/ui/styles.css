@@ -484,3 +484,39 @@
     padding: 0.75rem;
   }
 }
+
+.chatpack-ui-connection-status {
+  border-bottom: 1px solid var(--chatpack-ui-border);
+  margin: 0;
+  padding: 0.25rem 0.75rem;
+  color: var(--chatpack-ui-muted);
+  font-size: 0.6875rem;
+  line-height: 1rem;
+}
+.chatpack-ui-forwarded,
+.chatpack-ui-tombstone small {
+  color: var(--chatpack-ui-muted);
+  font-size: 0.6875rem;
+  line-height: 1rem;
+}
+.chatpack-ui-reactions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.5rem;
+}
+.chatpack-ui-tombstone {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.chatpack-ui-avatar-sm {
+  width: 2rem;
+  height: 2rem;
+  font-size: 0.625rem;
+}
+.chatpack-ui-avatar-lg {
+  width: 3rem;
+  height: 3rem;
+  font-size: 0.875rem;
+}

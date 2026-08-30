@@ -749,6 +749,15 @@ export function UserAvatarUnreadBadge({ userId, unread = 0 }: { userId: string; 
   );
 }
 
+/** Displays an initials avatar at the requested gallery size. */
+export function UserAvatar({ userId, size = "md" }: { userId: string; size?: "sm" | "md" | "lg" }) {
+  return (
+    <span className={`chatpack-ui-avatar chatpack-ui-avatar-${size}`} aria-label={userId}>
+      {userId.slice(0, 2).toUpperCase()}
+    </span>
+  );
+}
+
 /** Displays common divider, empty, and loading primitives. */
 export function ChatPrimitives({ children }: { children?: ReactNode }) {
   return <div>{children ?? <EmptyState />}</div>;
@@ -791,8 +800,14 @@ export function SystemMessage({ children }: { children: ReactNode }) {
 }
 
 /** Displays a deleted-message tombstone. */
-export function SoftDeletedTombstone() {
-  return <em>Message deleted</em>;
+export function SoftDeletedTombstone({ sender, at }: { sender?: ReactNode; at?: string }) {
+  return (
+    <span className="chatpack-ui-tombstone">
+      <em>Message deleted</em>
+      {sender !== undefined && <small>{sender}</small>}
+      {at !== undefined && <Timestamp date={at} />}
+    </span>
+  );
 }
 
 /** Displays an empty conversation inbox. */

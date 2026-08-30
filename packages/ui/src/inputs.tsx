@@ -67,6 +67,11 @@ export function MessageActions({
   );
 }
 
+/** Alias matching the published gallery name for message actions. */
+export function MessageActionsMenu(props: Parameters<typeof MessageActions>[0]) {
+  return <MessageActions {...props} />;
+}
+
 /** Adds one reaction to a message without mirroring reaction state locally. */
 export function QuickReactions({
   messageId,
