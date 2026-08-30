@@ -51,6 +51,8 @@ tokens existed.
 
 - MySQL's nullable unique `pair_key` allows unlimited group rows with `NULL`
   while concurrent non-NULL direct pairs converge on one row.
+- The migration uses binary UTF-8 collation so opaque IDs and canonical search
+  tokens remain exact instead of acquiring collation-specific matches.
 - Group and initial participant insertion use one transaction.
 - `addMessage` increments `last_seq` with an atomic update, then reads that
   value while InnoDB holds the conversation row lock until commit. It never

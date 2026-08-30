@@ -277,7 +277,9 @@ export const chatpackSchema = {
   userBans,
 };
 
-const tableOptions = "ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci";
+// Binary collation keeps opaque ids and canonical lowercase search tokens
+// exact. A case/accent-insensitive collation would merge distinct user ids.
+const tableOptions = "ENGINE=InnoDB DEFAULT CHARACTER SET=utf8mb4 COLLATE=utf8mb4_bin";
 
 /** MySQL 8 DDL. Each table includes its indexes, so rerunning is a no-op on a compatible schema. */
 export const migrationStatements: readonly string[] = [

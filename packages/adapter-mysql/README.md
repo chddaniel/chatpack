@@ -41,7 +41,8 @@ verification covers that combination only. MariaDB, PlanetScale, Aurora,
 serverless/HTTP MySQL drivers, replicas, and edge runtimes are not claimed
 compatible by this package. Verify those environments separately before use.
 
-MySQL's nullable unique `pair_key` permits many `NULL` values, so groups can
+The migration uses a binary UTF-8 collation so opaque IDs stay exact. MySQL's
+nullable unique `pair_key` permits many `NULL` values, so groups can
 always be distinct while non-NULL direct-conversation keys converge. Dates use
 `DATETIME(3)` and are converted to real `Date` objects. Metadata and moderation
 evidence use MySQL JSON columns.

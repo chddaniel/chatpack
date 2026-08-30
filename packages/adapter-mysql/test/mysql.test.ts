@@ -101,11 +101,18 @@ mysql("MySQL 8 storage", () => {
       visibility: "public",
       joinPolicy: "open",
     });
-    expect(group.participants.map((participant) => participant.userId)).toEqual(["alice", "bob"]);
-    const updated = await chat.api.addParticipants({
+    const secondGroup = await chat.api.createGroupConversation({
       userId: "alice",
+      userIds: ["bob"],
+      name: "MySQL again",
+      visibility: "private",
+      joinPolicy: "approval",
+    });
+    expect(secondGroup.id).not.toBe(group.id);
+    expect(group.participants.map((participant) => participant.userId)).toEqual(["alice", "bob"]);
+    const updated = await storage.addParticipants({
       conversationId: group.id,
-      userIds: ["bob", "carol"],
+      userIds: ["alice", "bob", "carol"],
     });
     expect(updated.participants.find((participant) => participant.userId === "alice")?.role).toBe(
       "admin",
