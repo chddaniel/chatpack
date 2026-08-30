@@ -102,6 +102,19 @@ mysql("MySQL 8 storage", () => {
       Array.from({ length: 24 }, (_, index) => index + 1),
     );
     expect(sent.every((message) => message.createdAt instanceof Date)).toBe(true);
+    const firstPage = await chat.api.listMessages({
+      userId: "bob",
+      conversationId: conversations[0]!.id,
+      limit: 5,
+    });
+    const secondPage = await chat.api.listMessages({
+      userId: "bob",
+      conversationId: conversations[0]!.id,
+      limit: 5,
+      cursor: firstPage.nextCursor!,
+    });
+    expect(firstPage.messages.map((message) => message.seq)).toEqual([24, 23, 22, 21, 20]);
+    expect(secondPage.messages.map((message) => message.seq)).toEqual([19, 18, 17, 16, 15]);
   });
 
   it("keeps group creation atomic and participant adds idempotent", async () => {
