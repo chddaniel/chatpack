@@ -828,9 +828,9 @@ Want to write your own plugin? The seam is public - see `ChatpackPlugin` in
 | Moderation: blocks, mutes, reports, bans | ✅ Done (v1.next) |
 | Multi-node presence                      | ✅ Done (v1.next) |
 
-Push notification providers, reusable UI packages, and true message threads
-have not shipped. Multi-node presence is available through the shared Redis
-presence store. Replies are flat pointers, not
+Push notification providers and true message threads have not shipped.
+Reusable UI blocks are available through `@chatpack/ui`. Multi-node presence is
+available through the shared Redis presence store. Replies are flat pointers, not
 threads. See [docs/MVP.md](./docs/MVP.md) for the full scope and reasoning.
 
 ## Packages

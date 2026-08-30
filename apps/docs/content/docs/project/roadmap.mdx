@@ -65,8 +65,9 @@ description: What shipped in v0, what's deliberately out of scope, and where Cha
   them in step is the app's job.
 - **Push notification providers** - applications can start their own delivery
   work from `afterMessageMutation`, but Chatpack does not ship providers.
-- **Reusable React UI package** - Chatpack remains headless. `chatpack init`
-  generates editable application-owned UI source, not an `@chatpack/ui` package.
+- **Reusable React UI package** - `@chatpack/ui` provides the reusable React
+  block catalog. `chatpack init` still generates editable application-owned UI
+  source when a host wants full control.
 - **Non-participant search access** - the initial search implementation scopes
   storage results to participant conversations; dynamic `canRead` access for
   support/admin users needs a separate design.
