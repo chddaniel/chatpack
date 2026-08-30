@@ -17,6 +17,7 @@ Packages (all on npm):
 | `@chatpack/core`           | The engine: API, HTTP handler, SSE, plugins            |
 | `@chatpack/adapter-memory` | In-memory storage - demos/tests, single process only   |
 | `@chatpack/adapter-drizzle`| Postgres storage via Drizzle - production              |
+| `@chatpack/adapter-mysql`  | MySQL 8 storage via Drizzle/mysql2 - server-side       |
 | `@chatpack/adapter-turso`  | Turso/libSQL storage via Drizzle                      |
 | `@chatpack/adapter-sqlite` | SQLite storage via Drizzle - local/single node         |
 | `@chatpack/adapter-supabase` | Server-side Supabase/Postgres storage                 |
@@ -1153,6 +1154,10 @@ adapter).
   with a privileged client; do not write a custom adapter for Supabase.
 - A non-SQL store (Convex, Firestore, DynamoDB): write a custom adapter -
   continue below.
+- MySQL 8 with a server-side transaction-capable `mysql2` connection or pool:
+  use first-party `@chatpack/adapter-mysql`. Verified target is MySQL 8 plus
+  Drizzle's `mysql2` driver. Do not infer MariaDB, PlanetScale, Aurora,
+  HTTP/serverless driver, or edge-runtime support from generic MySQL tests.
 
 ## The contract
 

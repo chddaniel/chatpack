@@ -46,7 +46,10 @@ export function toMessage(row: MessageRow): Message {
   };
 }
 
-export function toConversation(row: ConversationRow, participantRows: ParticipantRow[]): Conversation {
+export function toConversation(
+  row: ConversationRow,
+  participantRows: ParticipantRow[],
+): Conversation {
   return {
     id: row.id,
     type: row.type === "group" ? "group" : "direct",
@@ -58,7 +61,12 @@ export function toConversation(row: ConversationRow, participantRows: Participan
     metadata: metadata(row.metadata),
     participants: participantRows
       .slice()
-      .sort((a, b) => asDate(a.joinedAt, "participant.joinedAt").getTime() - asDate(b.joinedAt, "participant.joinedAt").getTime() || a.userId.localeCompare(b.userId))
+      .sort(
+        (a, b) =>
+          asDate(a.joinedAt, "participant.joinedAt").getTime() -
+            asDate(b.joinedAt, "participant.joinedAt").getTime() ||
+          a.userId.localeCompare(b.userId),
+      )
       .map((participant) => ({
         conversationId: participant.conversationId,
         userId: participant.userId,
@@ -70,11 +78,20 @@ export function toConversation(row: ConversationRow, participantRows: Participan
 }
 
 export function toReaction(row: ReactionRow): Reaction {
-  return { messageId: row.messageId, userId: row.userId, emoji: row.emoji, createdAt: asDate(row.createdAt, "reaction.createdAt") };
+  return {
+    messageId: row.messageId,
+    userId: row.userId,
+    emoji: row.emoji,
+    createdAt: asDate(row.createdAt, "reaction.createdAt"),
+  };
 }
 
 export function toMention(row: MentionRow): MessageMention {
-  return { messageId: row.messageId, userId: row.userId, createdAt: asDate(row.createdAt, "mention.createdAt") };
+  return {
+    messageId: row.messageId,
+    userId: row.userId,
+    createdAt: asDate(row.createdAt, "mention.createdAt"),
+  };
 }
 
 export function toInvite(row: InviteRow): ConversationInvite {
@@ -96,7 +113,10 @@ export function toJoinRequest(row: JoinRequestRow): JoinRequest {
     id: row.id,
     conversationId: row.conversationId,
     userId: row.userId,
-    status: row.status === "approved" || row.status === "denied" ? (row.status as JoinRequestStatus) : "pending",
+    status:
+      row.status === "approved" || row.status === "denied"
+        ? (row.status as JoinRequestStatus)
+        : "pending",
     message: row.message,
     inviteCode: row.inviteCode,
     createdAt: asDate(row.createdAt, "joinRequest.createdAt"),
@@ -107,11 +127,19 @@ export function toJoinRequest(row: JoinRequestRow): JoinRequest {
 }
 
 export function toBlock(row: BlockRow): UserBlock {
-  return { blockerUserId: row.blockerUserId, blockedUserId: row.blockedUserId, createdAt: asDate(row.createdAt, "block.createdAt") };
+  return {
+    blockerUserId: row.blockerUserId,
+    blockedUserId: row.blockedUserId,
+    createdAt: asDate(row.createdAt, "block.createdAt"),
+  };
 }
 
 export function toMute(row: MuteRow): ConversationMute {
-  return { userId: row.userId, conversationId: row.conversationId, createdAt: asDate(row.createdAt, "mute.createdAt") };
+  return {
+    userId: row.userId,
+    conversationId: row.conversationId,
+    createdAt: asDate(row.createdAt, "mute.createdAt"),
+  };
 }
 
 export function toReport(row: ReportRow): ModerationReport {

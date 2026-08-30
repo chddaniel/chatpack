@@ -35,14 +35,21 @@ export const conversations = mysqlTable(
   (table) => [
     uniqueIndex("chatpack_conversations_pair_key_unique_idx").on(table.pairKey),
     index("chatpack_conversations_activity_idx").on(table.lastActivityAt, table.id),
-    index("chatpack_conversations_public_idx").on(table.visibility, table.type, table.lastActivityAt, table.id),
+    index("chatpack_conversations_public_idx").on(
+      table.visibility,
+      table.type,
+      table.lastActivityAt,
+      table.id,
+    ),
   ],
 );
 
 export const conversationParticipants = mysqlTable(
   "chatpack_conversation_participants",
   {
-    conversationId: id("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
+    conversationId: id("conversation_id")
+      .notNull()
+      .references(() => conversations.id, { onDelete: "cascade" }),
     userId: id("user_id").notNull(),
     role: varchar("role", { length: 16 }).notNull().default("member"),
     joinedAt: stamp("joined_at").notNull(),
@@ -58,7 +65,9 @@ export const messages = mysqlTable(
   "chatpack_messages",
   {
     id: id("id").primaryKey(),
-    conversationId: id("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
+    conversationId: id("conversation_id")
+      .notNull()
+      .references(() => conversations.id, { onDelete: "cascade" }),
     senderId: id("sender_id").notNull(),
     body: text("body").notNull(),
     role: varchar("role", { length: 16 }).notNull().default("user"),
@@ -81,12 +90,17 @@ export const messages = mysqlTable(
 export const messageSearchTokens = mysqlTable(
   "chatpack_message_search_tokens",
   {
-    messageId: id("message_id").notNull().references(() => messages.id, { onDelete: "cascade" }),
+    messageId: id("message_id")
+      .notNull()
+      .references(() => messages.id, { onDelete: "cascade" }),
     token: varchar("token", { length: 255 }).notNull(),
     occurrences: int("occurrences").notNull(),
   },
   (table) => [
-    primaryKey({ columns: [table.messageId, table.token], name: "chatpack_message_search_tokens_pk" }),
+    primaryKey({
+      columns: [table.messageId, table.token],
+      name: "chatpack_message_search_tokens_pk",
+    }),
     index("chatpack_message_search_tokens_token_idx").on(table.token, table.messageId),
   ],
 );
@@ -94,13 +108,19 @@ export const messageSearchTokens = mysqlTable(
 export const messageReactions = mysqlTable(
   "chatpack_message_reactions",
   {
-    messageId: id("message_id").notNull().references(() => messages.id, { onDelete: "cascade" }),
+    messageId: id("message_id")
+      .notNull()
+      .references(() => messages.id, { onDelete: "cascade" }),
     userId: id("user_id").notNull(),
     emoji: varchar("emoji", { length: 32 }).notNull(),
     createdAt: stamp("created_at").notNull(),
   },
   (table) => [
-    uniqueIndex("chatpack_reactions_msg_user_emoji_idx").on(table.messageId, table.userId, table.emoji),
+    uniqueIndex("chatpack_reactions_msg_user_emoji_idx").on(
+      table.messageId,
+      table.userId,
+      table.emoji,
+    ),
     index("chatpack_reactions_message_idx").on(table.messageId, table.createdAt),
   ],
 );
@@ -108,7 +128,9 @@ export const messageReactions = mysqlTable(
 export const messageMentions = mysqlTable(
   "chatpack_message_mentions",
   {
-    messageId: id("message_id").notNull().references(() => messages.id, { onDelete: "cascade" }),
+    messageId: id("message_id")
+      .notNull()
+      .references(() => messages.id, { onDelete: "cascade" }),
     userId: id("user_id").notNull(),
     createdAt: stamp("created_at").notNull(),
   },
@@ -123,7 +145,9 @@ export const conversationInvites = mysqlTable(
   "chatpack_conversation_invites",
   {
     code: id("code").primaryKey(),
-    conversationId: id("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
+    conversationId: id("conversation_id")
+      .notNull()
+      .references(() => conversations.id, { onDelete: "cascade" }),
     createdBy: id("created_by").notNull(),
     createdAt: stamp("created_at").notNull(),
     expiresAt: nullableStamp("expires_at"),
@@ -139,7 +163,9 @@ export const joinRequests = mysqlTable(
   "chatpack_join_requests",
   {
     id: id("id").primaryKey(),
-    conversationId: id("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
+    conversationId: id("conversation_id")
+      .notNull()
+      .references(() => conversations.id, { onDelete: "cascade" }),
     userId: id("user_id").notNull(),
     status: varchar("status", { length: 16 }).notNull().default("pending"),
     message: text("message"),
@@ -151,7 +177,11 @@ export const joinRequests = mysqlTable(
   },
   (table) => [
     uniqueIndex("chatpack_join_requests_conv_user_idx").on(table.conversationId, table.userId),
-    index("chatpack_join_requests_status_idx").on(table.conversationId, table.status, table.createdAt),
+    index("chatpack_join_requests_status_idx").on(
+      table.conversationId,
+      table.status,
+      table.createdAt,
+    ),
   ],
 );
 
@@ -163,7 +193,10 @@ export const userBlocks = mysqlTable(
     createdAt: stamp("created_at").notNull(),
   },
   (table) => [
-    primaryKey({ columns: [table.blockerUserId, table.blockedUserId], name: "chatpack_user_blocks_pk" }),
+    primaryKey({
+      columns: [table.blockerUserId, table.blockedUserId],
+      name: "chatpack_user_blocks_pk",
+    }),
     index("chatpack_user_blocks_blocker_idx").on(table.blockerUserId, table.createdAt),
   ],
 );
@@ -172,11 +205,16 @@ export const conversationMutes = mysqlTable(
   "chatpack_conversation_mutes",
   {
     userId: id("user_id").notNull(),
-    conversationId: id("conversation_id").notNull().references(() => conversations.id, { onDelete: "cascade" }),
+    conversationId: id("conversation_id")
+      .notNull()
+      .references(() => conversations.id, { onDelete: "cascade" }),
     createdAt: stamp("created_at").notNull(),
   },
   (table) => [
-    primaryKey({ columns: [table.userId, table.conversationId], name: "chatpack_conversation_mutes_pk" }),
+    primaryKey({
+      columns: [table.userId, table.conversationId],
+      name: "chatpack_conversation_mutes_pk",
+    }),
     index("chatpack_conversation_mutes_user_idx").on(table.userId, table.createdAt),
   ],
 );
@@ -197,7 +235,12 @@ export const moderationReports = mysqlTable(
   },
   (table) => [
     index("chatpack_moderation_reports_queue_idx").on(table.status, table.createdAt, table.id),
-    index("chatpack_moderation_reports_target_idx").on(table.reporterUserId, table.targetType, table.targetId, table.status),
+    index("chatpack_moderation_reports_target_idx").on(
+      table.reporterUserId,
+      table.targetType,
+      table.targetId,
+      table.status,
+    ),
   ],
 );
 

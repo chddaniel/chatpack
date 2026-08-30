@@ -17,6 +17,11 @@ first-party adapter.
 - Supabase/PostgREST: use the first-party `@chatpack/adapter-supabase` adapter.
   It is server-only, accepts an already-created privileged Supabase client, and
   ships with its own RPC-backed migration.
+- MySQL 8 with a server-side transaction-capable `mysql2` connection or pool:
+  use the first-party `@chatpack/adapter-mysql` adapter and its MySQL migration.
+  Its verified target is MySQL 8 plus Drizzle's `mysql2` driver. It does not
+  claim MariaDB, PlanetScale, Aurora, HTTP/serverless drivers, or edge-runtime
+  support.
 - A non-SQL store (Convex, Firestore, DynamoDB): write a custom adapter - continue below.
 
 Supabase setup must stay on the server. Use a service-role or server-secret key

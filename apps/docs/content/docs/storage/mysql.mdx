@@ -1,0 +1,63 @@
+---
+title: MySQL
+description: Server-side MySQL 8 persistence with the Chatpack MySQL adapter.
+---
+
+`@chatpack/adapter-mysql` provides full Chatpack persistence through Drizzle
+ORM's MySQL dialect and the `mysql2` driver.
+
+## Install
+
+```sh
+pnpm add @chatpack/core @chatpack/adapter-mysql drizzle-orm mysql2
+```
+
+## Configure
+
+```ts
+import mysql from "mysql2/promise";
+import { drizzle } from "drizzle-orm/mysql2";
+import { chatpack } from "@chatpack/core";
+import { migrationStatements, mysqlAdapter } from "@chatpack/adapter-mysql";
+
+const pool = mysql.createPool(process.env.DATABASE_URL!);
+for (const statement of migrationStatements) await pool.query(statement);
+
+export const chat = chatpack({ storage: mysqlAdapter(drizzle(pool)), auth });
+```
+
+Create the pool and apply migrations in server-only application code. Never
+expose the pool or adapter to browser code.
+
+## Support boundary
+
+The supported target is MySQL 8 with Drizzle `mysql2` and a transaction-capable
+server-side connection or pool. This package does not claim MariaDB, Aurora,
+PlanetScale, HTTP/serverless MySQL drivers, read replicas, or edge-runtime
+support. Verify each alternative against its real driver and database before
+deployment.
+
+## Migrations
+
+The package exports `chatpackSchema`, all twelve tables, `migrationSql`, and
+`migrationStatements`. Use `migrationStatements` for one-statement-per-call
+drivers. Each table includes its indexes, so rerunning statements is safe for
+a compatible existing schema. `IF NOT EXISTS` does not repair an incompatible
+table; inspect such a database and perform an explicit migration. Run
+`backfillMessageSearchTokens(db)` after importing messages from before search
+tokens existed.
+
+## Correctness
+
+- MySQL's nullable unique `pair_key` allows unlimited group rows with `NULL`
+  while concurrent non-NULL direct pairs converge on one row.
+- Group and initial participant insertion use one transaction.
+- `addMessage` increments `last_seq` with an atomic update, then reads that
+  value while InnoDB holds the conversation row lock until commit. It never
+  uses `MAX(seq) + 1`.
+- Invite use checks and increments in one conditional update. Mentions replace
+  inside one transaction. Reactions and participant inserts use unique-key
+  idempotent upserts. Active ban creation locks the indexed user range in one
+  transaction.
+
+All adapter results convert database timestamps to real `Date` instances.

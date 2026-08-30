@@ -5,7 +5,11 @@ import type { SearchTokenRow } from "./types";
 export const SEARCH_TOKEN_BATCH_SIZE = 500;
 
 export function searchTokenRows(messageId: string, body: string): SearchTokenRow[] {
-  return [...countSearchTokens(body)].map(([token, occurrences]) => ({ messageId, token, occurrences }));
+  return [...countSearchTokens(body)].map(([token, occurrences]) => ({
+    messageId,
+    token,
+    occurrences,
+  }));
 }
 
 export async function insertSearchTokenRows(
@@ -37,7 +41,8 @@ export function metadata(value: Metadata | null): Metadata {
 
 export function seq(value: number | string): number {
   const result = typeof value === "number" ? value : Number(value);
-  if (!Number.isSafeInteger(result) || result < 0) throw new Error("mysqlAdapter: invalid message sequence.");
+  if (!Number.isSafeInteger(result) || result < 0)
+    throw new Error("mysqlAdapter: invalid message sequence.");
   return result;
 }
 
@@ -45,11 +50,19 @@ export function encodeActivityCursor(activityAt: Date, id: string): string {
   return encodeURIComponent(JSON.stringify([activityAt.getTime(), id]));
 }
 
-export function decodeActivityCursor(cursor: string | undefined): { activityMs: number; id: string } | null {
+export function decodeActivityCursor(
+  cursor: string | undefined,
+): { activityMs: number; id: string } | null {
   if (!cursor) return null;
   try {
     const value: unknown = JSON.parse(decodeURIComponent(cursor));
-    if (Array.isArray(value) && typeof value[0] === "number" && Number.isFinite(value[0]) && typeof value[1] === "string" && value[1]) {
+    if (
+      Array.isArray(value) &&
+      typeof value[0] === "number" &&
+      Number.isFinite(value[0]) &&
+      typeof value[1] === "string" &&
+      value[1]
+    ) {
       return { activityMs: value[0], id: value[1] };
     }
   } catch {
@@ -66,7 +79,13 @@ export function decodeSearchCursor(cursor: string | undefined): [number, number,
   if (!cursor) return null;
   try {
     const value: unknown = JSON.parse(decodeURIComponent(cursor));
-    if (Array.isArray(value) && typeof value[0] === "number" && typeof value[1] === "number" && typeof value[2] === "string") return [value[0], value[1], value[2]];
+    if (
+      Array.isArray(value) &&
+      typeof value[0] === "number" &&
+      typeof value[1] === "number" &&
+      typeof value[2] === "string"
+    )
+      return [value[0], value[1], value[2]];
   } catch {
     // Invalid cursors restart from the first page.
   }
