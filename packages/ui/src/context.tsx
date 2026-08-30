@@ -1,9 +1,13 @@
 import { createContext, useContext, type ReactNode } from "react";
 import type { ReactChatClient } from "@chatpack/client/react";
 import type { ChatClientPlugin } from "@chatpack/client";
+import type { TypingActions } from "@chatpack/client/plugins";
 import { defaultRenderUser, type RenderUser } from "./utils";
 
-type UIClient = ReactChatClient<readonly ChatClientPlugin[]>;
+type UIClient = ReactChatClient<readonly ChatClientPlugin[]> & {
+  /** Present when host configured the first-party typing plugin. */
+  typing?: TypingActions;
+};
 
 /** Values shared by connected Chatpack UI blocks. */
 export interface ChatpackUIContextValue {

@@ -21,6 +21,7 @@ export {
   UnreadBadge,
   UserLabel,
 } from "./primitives";
+export type { ReactionPillProps, ReplyQuoteBarProps } from "./primitives";
 export {
   OnlineStatusChip,
   PresenceAvatarStack,

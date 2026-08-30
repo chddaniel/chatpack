@@ -30,6 +30,8 @@ export interface ConversationListProps {
   onSelect?: (conversation: ClientConversation) => void;
   /** Optional class name. */
   className?: string;
+  /** Optional profile renderer override. */
+  renderUser?: (userId: string) => ReactNode;
 }
 
 /** Lists conversations with selection and viewer-relative unread counts. */
@@ -37,8 +39,10 @@ export function ConversationList({
   selectedId = null,
   onSelect,
   className,
+  renderUser: renderUserOverride,
 }: ConversationListProps) {
-  const { client, userId, renderUser } = useChatpackUI();
+  const { client, userId, renderUser: defaultRenderUser } = useChatpackUI();
+  const renderUser = renderUserOverride ?? defaultRenderUser;
   const conversations = client.useConversations();
   const presence = client.usePresence();
   if (conversations.error !== null)
@@ -94,6 +98,8 @@ export interface MessageThreadProps {
   className?: string;
   /** Whether to render the standalone block header. */
   showHeader?: boolean;
+  /** Optional profile renderer override. */
+  renderUser?: (userId: string) => ReactNode;
 }
 
 /** Displays a live message history, gap-filled by the Chatpack client. */
@@ -102,8 +108,10 @@ export function MessageThread({
   onReply,
   className,
   showHeader = true,
+  renderUser: renderUserOverride,
 }: MessageThreadProps) {
-  const { client, userId, renderUser } = useChatpackUI();
+  const { client, userId, renderUser: defaultRenderUser } = useChatpackUI();
+  const renderUser = renderUserOverride ?? defaultRenderUser;
   const messages = client.useMessages({ conversationId, limit: 50 });
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const page = messages.data?.messages ?? [];
@@ -220,6 +228,10 @@ export interface MessageComposerProps {
   conversationId: string;
   /** Reply target, if any. */
   replyTo?: ClientMessage | null;
+  /** Disables interaction while host switches conversations. */
+  disabled?: boolean;
+  /** Placeholder shown in composer. */
+  placeholder?: string;
   /** Called after a successful send. */
   onSent?: () => void;
   /** Called when the reply target should be cleared. */
@@ -230,6 +242,8 @@ export interface MessageComposerProps {
 export function MessageComposer({
   conversationId,
   replyTo = null,
+  disabled = false,
+  placeholder = "Write a message…",
   onSent,
   onClearReply,
 }: MessageComposerProps) {
@@ -237,6 +251,18 @@ export function MessageComposer({
   const [body, setBody] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<{ code: string; message: string } | null>(null);
+  const typingUntil = useRef(0);
+  function signalTyping(): void {
+    if (conversationId === "") return;
+    const now = Date.now();
+    if (now < typingUntil.current) return;
+    typingUntil.current = now + 3000;
+    void client.typing?.start({ conversationId });
+  }
+  function stopTyping(): void {
+    typingUntil.current = 0;
+    if (conversationId !== "") void client.typing?.stop({ conversationId });
+  }
   async function send(event?: FormEvent): Promise<void> {
     event?.preventDefault();
     const text = body.trim();
@@ -254,6 +280,7 @@ export function MessageComposer({
       return;
     }
     setBody("");
+    stopTyping();
     onClearReply?.();
     onSent?.();
   }
@@ -285,16 +312,23 @@ export function MessageComposer({
       <textarea
         className="chatpack-ui-input chatpack-ui-focus"
         value={body}
-        onChange={(event) => setBody(event.target.value)}
+        onChange={(event) => {
+          setBody(event.target.value);
+          signalTyping();
+        }}
         onKeyDown={onKeyDown}
-        placeholder="Write a message…"
+        onBlur={stopTyping}
+        placeholder={placeholder}
         aria-label="Message"
-        disabled={sending}
+        disabled={disabled || sending || conversationId === ""}
       />
+      <small className="chatpack-ui-composer-count" aria-live="polite">
+        {body.length} characters
+      </small>
       <button
         type="submit"
         className="chatpack-ui-button chatpack-ui-button-primary chatpack-ui-send"
-        disabled={sending || body.trim() === ""}
+        disabled={disabled || sending || body.trim() === "" || conversationId === ""}
         aria-label={sending ? "Sending" : "Send message"}
       >
         {sending ? "…" : "↑"}
@@ -345,7 +379,9 @@ export function ChatWindow({
           <span className="chatpack-ui-muted">
             {conversation.data.participants
               .filter((participant) => participant.userId !== userId)
-              .map((participant) => renderUser(participant.userId))}
+              .map((participant) => (
+                <span key={participant.userId}>{renderUser(participant.userId)}</span>
+              ))}
           </span>
         )}
       </header>

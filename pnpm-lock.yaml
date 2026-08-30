@@ -600,6 +600,9 @@ importers:
       '@chatpack/client':
         specifier: workspace:^
         version: link:../client
+      '@chatpack/file':
+        specifier: workspace:^
+        version: link:../file
     devDependencies:
       '@types/react':
         specifier: ^19.2.13

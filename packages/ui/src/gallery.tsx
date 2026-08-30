@@ -1,10 +1,33 @@
-import { useState, type ComponentProps, type ReactNode } from "react";
-import type { ClientConversation, ClientMessage } from "@chatpack/client";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type ComponentProps,
+  type ReactNode,
+} from "react";
+import type {
+  ClientChannelPreview,
+  ClientConversation,
+  ClientConversationInvite,
+  ClientConversationMute,
+  ClientJoinRequest,
+  ClientMessage,
+  ClientModerationReport,
+  ClientUserBan,
+  ClientUserBlock,
+} from "@chatpack/client";
+import {
+  parseFileAttachmentMetadata,
+  type FileAttachmentReference,
+  type ResolvedFileAttachment,
+} from "@chatpack/file";
 import { useChatpackUI } from "./context";
 import { ChatWindow, ConversationList, MessageComposer, MessageThread } from "./blocks";
 import {
   EmptyState,
   MessageBubble,
+  LoadingState,
   ReactionPill,
   ReplyQuoteBar,
   Timestamp,
@@ -13,25 +36,60 @@ import {
 import { QuickReactions } from "./inputs";
 import { PresenceAvatarStack, TypingIndicator } from "./realtime";
 
+type ReportStatus = "open" | "triaged" | "resolved" | "dismissed";
+type ReportTargetType = "user" | "message" | "conversation";
+
 /** Displays a conversation heading without assuming a profile schema. */
 export function ConversationHeader({
-  conversation,
-  children,
+  conversationId,
+  renderUser = (id) => id,
 }: {
-  conversation: ClientConversation;
-  children?: ReactNode;
+  conversationId: string;
+  renderUser?: (userId: string) => ReactNode;
 }) {
+  const { client, userId } = useChatpackUI();
+  const conversation = client.useConversation({ conversationId });
+  const data = conversation.data;
+  const title =
+    data === null
+      ? "Conversation"
+      : data.type === "group"
+        ? (data.name ?? data.id)
+        : renderUser(
+            data.participants.find((participant) => participant.userId !== userId)?.userId ??
+              data.id,
+          );
   return (
-    <header>
-      <h2>{conversation.name ?? conversation.id}</h2>
-      {children}
+    <header className="chatpack-ui-conversation-header">
+      <h2>{title}</h2>
+      {data !== null && (
+        <small>
+          {data.type === "group" ? String(data.participants.length) + " members" : "Direct message"}
+        </small>
+      )}
     </header>
   );
 }
 
 /** Displays a compact conversation list for narrow navigation rails. */
-export function CompactChatList(props: ComponentProps<typeof ConversationList>) {
-  return <ConversationList {...props} className="chatpack-ui-compact-list" />;
+export function CompactChatList({
+  selectedId,
+  onSelect,
+  renderUser,
+}: {
+  selectedId: string | null;
+  onSelect: (conversationId: string) => void;
+  renderUser?: (userId: string) => ReactNode;
+}) {
+  const handleSelect = (conversation: ClientConversation): void => onSelect(conversation.id);
+  return (
+    <ConversationList
+      selectedId={selectedId}
+      onSelect={handleSelect}
+      className="chatpack-ui-compact-list"
+      {...(renderUser === undefined ? {} : { renderUser })}
+    />
+  );
 }
 
 /** Displays one conversation row for a caller-owned conversation page. */
@@ -39,22 +97,29 @@ export function ConversationRow({
   conversation,
   selected,
   onSelect,
+  renderUser = (id) => id,
 }: {
   conversation: ClientConversation;
   selected?: boolean;
-  onSelect?: () => void;
+  onSelect?: (conversationId: string) => void;
+  renderUser?: (userId: string) => ReactNode;
 }) {
-  const { userId, renderUser } = useChatpackUI();
+  const { userId, renderUser: contextRenderUser } = useChatpackUI();
+  const profile = renderUser ?? contextRenderUser;
   const other = conversation.participants.find(
     (participant) => participant.userId !== userId,
   )?.userId;
   return (
-    <button type="button" aria-current={selected ? "page" : undefined} onClick={onSelect}>
+    <button
+      type="button"
+      aria-current={selected ? "page" : undefined}
+      onClick={() => onSelect?.(conversation.id)}
+    >
       {conversation.type === "group"
         ? (conversation.name ?? conversation.id)
         : other === undefined
           ? conversation.id
-          : renderUser(other)}
+          : profile(other)}
       <UnreadBadge count={conversation.unreadCount} />
     </button>
   );
@@ -98,59 +163,92 @@ export function GroupedMessageThread(props: ComponentProps<typeof MessageThread>
 
 /** Provides a sidebar and chat pane for an inbox-style layout. */
 export function InboxLayout({
-  conversationId,
-  onSelect,
-  children,
+  renderUser = (id) => id,
+  className = "chatpack-ui-inbox-layout",
 }: {
-  conversationId: string;
-  onSelect?: (conversation: ClientConversation) => void;
-  children?: ReactNode;
+  renderUser?: (userId: string) => ReactNode;
+  className?: string;
 }) {
+  const [selectedId, setSelectedId] = useState<string | null>(null);
   return (
-    <div className="chatpack-ui-inbox-layout">
+    <div className={className}>
       <aside>
-        <ConversationList {...(onSelect === undefined ? {} : { onSelect })} />
+        <ConversationList
+          selectedId={selectedId}
+          onSelect={(conversation) => setSelectedId(conversation.id)}
+          renderUser={renderUser}
+        />
       </aside>
-      <section>{children ?? <ChatWindow conversationId={conversationId} />}</section>
+      <section>
+        {selectedId === null ? (
+          <EmptyState>Select a conversation</EmptyState>
+        ) : (
+          <ChatWindow conversationId={selectedId} />
+        )}
+      </section>
     </div>
   );
 }
 
-/** Provides a mobile-friendly chat sheet using native dialog semantics. */
+/** Provides a mobile-friendly one-pane chat sheet with back navigation. */
 export function MobileChatSheet({
-  open,
-  onClose,
-  conversationId,
+  renderUser,
+  className = "chatpack-ui-mobile-sheet",
 }: {
-  open: boolean;
-  onClose: () => void;
-  conversationId: string;
+  renderUser?: (userId: string) => ReactNode;
+  className?: string;
 }) {
-  if (!open) return null;
+  const [conversationId, setConversationId] = useState<string | null>(null);
   return (
-    <dialog className="chatpack-ui-mobile-sheet" open>
-      <button type="button" onClick={onClose}>
-        Close
-      </button>
-      <ChatWindow conversationId={conversationId} />
-    </dialog>
+    <div className={className}>
+      {conversationId === null ? (
+        <ConversationList
+          selectedId={null}
+          onSelect={(conversation) => setConversationId(conversation.id)}
+          {...(renderUser === undefined ? {} : { renderUser })}
+        />
+      ) : (
+        <>
+          <button type="button" onClick={() => setConversationId(null)}>
+            Back
+          </button>
+          <ChatWindow conversationId={conversationId} />
+        </>
+      )}
+    </div>
   );
 }
 
 /** Displays a floating chat window anchored to the caller's page. */
 export function FloatingChatWidget({
-  conversationId,
-  label = "Open chat",
+  renderUser,
+  embedded = false,
 }: {
-  conversationId: string;
-  label?: string;
+  renderUser?: (userId: string) => ReactNode;
+  embedded?: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  const [conversationId, setConversationId] = useState<string | null>(null);
   return (
-    <div className="chatpack-ui-floating-widget">
-      {open && <ChatWindow conversationId={conversationId} />}
-      <button type="button" onClick={() => setOpen((value) => !value)}>
-        {open ? "Close chat" : label}
+    <div
+      className={embedded ? "chatpack-ui-floating-widget embedded" : "chatpack-ui-floating-widget"}
+    >
+      {open && (
+        <div className="chatpack-ui-floating-panel">
+          <CompactChatList
+            selectedId={conversationId}
+            onSelect={setConversationId}
+            {...(renderUser === undefined ? {} : { renderUser })}
+          />
+          {conversationId === null ? (
+            <EmptyState>Select a conversation</EmptyState>
+          ) : (
+            <ChatWindow conversationId={conversationId} />
+          )}
+        </div>
+      )}
+      <button type="button" aria-expanded={open} onClick={() => setOpen((value) => !value)}>
+        {open ? "Close chat" : "Open chat"}
       </button>
     </div>
   );
@@ -175,37 +273,124 @@ export function ReplyComposer(props: ComponentProps<typeof MessageComposer>) {
   return <MessageComposer {...props} />;
 }
 
-/** Composer hook-up point for host-owned mention selection. */
+/** Renders a message composer with mention ids selected from conversation members. */
 export function MentionComposer({
-  children,
-  ...props
-}: ComponentProps<typeof MessageComposer> & { children?: ReactNode }) {
+  conversationId,
+  renderUser = (userId) => userId,
+}: {
+  conversationId: string;
+  renderUser?: (userId: string) => ReactNode;
+}) {
+  const { client } = useChatpackUI();
+  const conversation = client.useConversation({ conversationId });
+  const [body, setBody] = useState("");
+  const [mentions, setMentions] = useState<string[]>([]);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const members = useMemo(
+    () => (conversation.data?.participants ?? []).map((participant) => participant.userId),
+    [conversation.data?.participants],
+  );
+  async function send(): Promise<void> {
+    const text = body.trim();
+    if (conversationId === "" || text === "" || sending) return;
+    setSending(true);
+    setError(null);
+    const result = await client.messages.send({
+      conversationId,
+      body: text,
+      ...(mentions.length === 0 ? {} : { mentions }),
+    });
+    setSending(false);
+    if (result.error !== null) {
+      setError(result.error.message);
+      return;
+    }
+    setBody("");
+    setMentions([]);
+  }
   return (
-    <>
-      <MessageComposer {...props} />
-      {children}
-    </>
+    <form
+      className="chatpack-ui-mention-composer"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void send();
+      }}
+    >
+      <MentionAutocomplete
+        conversationId={conversationId}
+        value={mentions}
+        onChange={setMentions}
+        renderUser={renderUser}
+      />
+      <textarea
+        value={body}
+        onChange={(event) => setBody(event.target.value)}
+        aria-label="Message with mentions"
+        placeholder="Mention someone…"
+        disabled={sending}
+      />
+      {error !== null && <p role="alert">{error}</p>}
+      <button type="submit" disabled={sending || body.trim() === ""}>
+        Send
+      </button>
+      <span>{members.length} mentionable members</span>
+    </form>
   );
 }
 
-/** Displays host-provided mention candidates. */
+/** Selects supplied participant ids without parsing display names or message text. */
 export function MentionAutocomplete({
-  items,
-  onSelect,
+  conversationId,
+  value,
+  onChange,
+  renderUser = (userId) => userId,
 }: {
-  items: readonly string[];
-  onSelect: (userId: string) => void;
+  conversationId: string;
+  value: readonly string[];
+  onChange: (mentions: string[]) => void;
+  renderUser?: (userId: string) => ReactNode;
 }) {
+  const { client, userId } = useChatpackUI();
+  const conversation = client.useConversation({ conversationId });
+  const [query, setQuery] = useState("");
+  const members = useMemo(
+    () =>
+      (conversation.data?.participants ?? [])
+        .map((participant) => participant.userId)
+        .filter((id) => id !== userId),
+    [conversation.data?.participants, userId],
+  );
+  const filtered = members.filter((id) => {
+    const needle = query.trim().toLowerCase();
+    return needle === "" || id.toLowerCase().includes(needle);
+  });
+  function toggle(id: string): void {
+    onChange(value.includes(id) ? value.filter((item) => item !== id) : [...value, id]);
+  }
   return (
-    <ul role="listbox">
-      {items.map((item) => (
-        <li key={item}>
-          <button type="button" onClick={() => onSelect(item)}>
-            {item}
-          </button>
-        </li>
-      ))}
-    </ul>
+    <div className="chatpack-ui-mention-autocomplete">
+      <input
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        aria-label="Filter members to mention"
+        placeholder="Filter members…"
+      />
+      <ul role="listbox" aria-label="Mentionable members">
+        {filtered.map((id) => (
+          <li key={id}>
+            <button
+              type="button"
+              role="option"
+              aria-selected={value.includes(id)}
+              onClick={() => toggle(id)}
+            >
+              {renderUser(id)}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
@@ -363,7 +548,7 @@ export function MessageReactions({ message }: { message: ClientMessage }) {
       >
         +
       </button>
-      {pickerOpen && <QuickReactions messageId={message.id} />}
+      {pickerOpen && <QuickReactions message={message} />}
     </div>
   );
 }
@@ -397,42 +582,155 @@ export function PresenceBar({ userIds }: { userIds: readonly string[] }) {
   return <PresenceAvatarStack userIds={userIds} />;
 }
 
-/** Adds or removes a group participant through caller-provided action. */
+/** Adds, removes, promotes, or demotes group participants through Chatpack actions. */
 export function ParticipantManager({
-  onAdd,
-  onRemove,
+  conversationId,
+  renderUser = (id) => id,
 }: {
-  onAdd?: () => void;
-  onRemove?: () => void;
+  conversationId: string;
+  renderUser?: (userId: string) => ReactNode;
 }) {
+  const { client, userId } = useChatpackUI();
+  const conversation = client.useConversation({ conversationId });
+  const [newUserId, setNewUserId] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  async function run(action: () => Promise<{ error: { message: string } | null }>): Promise<void> {
+    setBusy(true);
+    setError(null);
+    const result = await action();
+    setBusy(false);
+    if (result.error !== null) setError(result.error.message);
+    else await conversation.refetch();
+  }
+  if (conversationId === "") return <EmptyState>Select a group conversation.</EmptyState>;
   return (
-    <div>
-      <button type="button" onClick={onAdd}>
-        Add participant
-      </button>
-      <button type="button" onClick={onRemove}>
-        Remove participant
-      </button>
+    <div className="chatpack-ui-management-card">
+      <h3>Members</h3>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          const id = newUserId.trim();
+          if (id !== "")
+            void run(async () => {
+              const result = await client.conversations.addParticipants({
+                conversationId,
+                userIds: [id],
+              });
+              if (result.error === null) setNewUserId("");
+              return result;
+            });
+        }}
+      >
+        <input
+          value={newUserId}
+          onChange={(event) => setNewUserId(event.target.value)}
+          aria-label="User id to add"
+          placeholder="User id"
+        />
+        <button type="submit" disabled={busy || newUserId.trim() === ""}>
+          Add
+        </button>
+      </form>
+      {error !== null && <p role="alert">{error}</p>}
+      <ul>
+        {(conversation.data?.participants ?? []).map((participant) => (
+          <li key={participant.userId}>
+            <span>
+              {renderUser(participant.userId)}
+              {participant.userId === userId ? " (you)" : ""}
+            </span>
+            <small>{participant.role}</small>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() =>
+                void run(() =>
+                  client.conversations.setParticipantRole({
+                    conversationId,
+                    userId: participant.userId,
+                    role: participant.role === "admin" ? "member" : "admin",
+                  }),
+                )
+              }
+            >
+              {participant.role === "admin" ? "Demote" : "Promote"}
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() =>
+                void run(() =>
+                  client.conversations.removeParticipant({
+                    conversationId,
+                    userId: participant.userId,
+                  }),
+                )
+              }
+            >
+              {participant.userId === userId ? "Leave" : "Remove"}
+            </button>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
 
-/** Displays invite controls through caller-provided actions. */
-export function InviteManager({
-  onCreate,
-  onRevoke,
-}: {
-  onCreate?: () => void;
-  onRevoke?: () => void;
-}) {
+/** Creates, lists, copies, and revokes group invite links. */
+export function InviteManager({ conversationId }: { conversationId: string }) {
+  const { client } = useChatpackUI();
+  const [invites, setInvites] = useState<ClientConversationInvite[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const load = useCallback(async () => {
+    if (conversationId === "") return;
+    const result = await client.invites.list({ conversationId });
+    if (result.error !== null) setError(result.error.message);
+    else setInvites(result.data.invites);
+  }, [client, conversationId]);
+  useEffect(() => {
+    void load();
+  }, [load]);
+  async function create(): Promise<void> {
+    setBusy(true);
+    setError(null);
+    const result = await client.invites.create({ conversationId, expiresInSeconds: 604800 });
+    setBusy(false);
+    if (result.error !== null) setError(result.error.message);
+    else await load();
+  }
+  async function revoke(code: string): Promise<void> {
+    setBusy(true);
+    const result = await client.invites.revoke({ conversationId, code });
+    setBusy(false);
+    if (result.error !== null) setError(result.error.message);
+    else await load();
+  }
   return (
-    <div>
-      <button type="button" onClick={onCreate}>
-        Create invite
+    <div className="chatpack-ui-management-card">
+      <h3>Invite links</h3>
+      <button type="button" disabled={busy || conversationId === ""} onClick={() => void create()}>
+        New link
       </button>
-      <button type="button" onClick={onRevoke}>
-        Revoke invite
-      </button>
+      {error !== null && <p role="alert">{error}</p>}
+      <ul>
+        {invites.map((invite) => (
+          <li key={invite.code}>
+            <code>{invite.code}</code>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => void navigator.clipboard?.writeText(invite.code)}
+            >
+              Copy
+            </button>
+            <button type="button" disabled={busy} onClick={() => void revoke(invite.code)}>
+              Revoke
+            </button>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }
@@ -453,43 +751,167 @@ export function InviteAccept({ code, onAccepted }: { code: string; onAccepted?: 
   );
 }
 
-/** Displays join-request controls through caller-provided actions. */
-export function JoinRequests({ onResolve }: { onResolve?: () => void }) {
-  return (
-    <button type="button" onClick={onResolve}>
-      Resolve request
-    </button>
-  );
-}
-
-/** Lists public channels from the caller-provided client page. */
-export function ChannelDirectory({
-  channels,
-  onJoin,
+/** Lists pending join requests and resolves them through Chatpack actions. */
+export function JoinRequests({
+  conversationId,
+  renderUser = (id) => id,
 }: {
-  channels: readonly { id: string; name: string | null }[];
-  onJoin?: (id: string) => void;
+  conversationId: string;
+  renderUser?: (userId: string) => ReactNode;
 }) {
+  const { client } = useChatpackUI();
+  const [requests, setRequests] = useState<ClientJoinRequest[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const load = useCallback(async () => {
+    if (conversationId === "") return;
+    const result = await client.joinRequests.list({ conversationId, status: "pending" });
+    if (result.error !== null) setError(result.error.message);
+    else setRequests(result.data.joinRequests);
+  }, [client, conversationId]);
+  useEffect(() => {
+    void load();
+  }, [load]);
   return (
-    <ul>
-      {channels.map((channel) => (
-        <li key={channel.id}>
-          {channel.name ?? channel.id}
-          <button type="button" onClick={() => onJoin?.(channel.id)}>
-            Join
-          </button>
-        </li>
-      ))}
-    </ul>
+    <div className="chatpack-ui-management-card">
+      <h3>Join requests</h3>
+      {error !== null && <p role="alert">{error}</p>}
+      <ul>
+        {requests.map((request) => (
+          <li key={request.id}>
+            <span>{renderUser(request.userId)}</span>
+            {request.message !== null && <small>{request.message}</small>}
+            <button
+              type="button"
+              onClick={() =>
+                void client.joinRequests
+                  .resolve({ conversationId, userId: request.userId, decision: "approve" })
+                  .then(load)
+              }
+            >
+              Approve
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                void client.joinRequests
+                  .resolve({ conversationId, userId: request.userId, decision: "deny" })
+                  .then(load)
+              }
+            >
+              Deny
+            </button>
+          </li>
+        ))}
+      </ul>
+    </div>
   );
 }
 
-/** Displays caller-owned channel settings controls. */
-export function ChannelSettings({ onSave }: { onSave?: () => void }) {
+/** Lists public channels and joins them through Chatpack actions. */
+export function ChannelDirectory({ onJoined }: { onJoined?: (conversationId: string) => void }) {
+  const { client } = useChatpackUI();
+  const [channels, setChannels] = useState<ClientChannelPreview[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [joining, setJoining] = useState<string | null>(null);
+  const load = useCallback(async () => {
+    const result = await client.channels.list();
+    if (result.error !== null) setError(result.error.message);
+    else setChannels(result.data.channels);
+  }, [client]);
+  useEffect(() => {
+    void load();
+  }, [load]);
+  async function join(conversationId: string): Promise<void> {
+    setJoining(conversationId);
+    const result = await client.channels.join({ conversationId });
+    setJoining(null);
+    if (result.error !== null) setError(result.error.message);
+    else if (result.data.status === "joined") onJoined?.(conversationId);
+  }
   return (
-    <button type="button" onClick={onSave}>
-      Save channel settings
-    </button>
+    <section className="chatpack-ui-management-card">
+      <h3>Public channels</h3>
+      {error !== null && <p role="alert">{error}</p>}
+      <ul>
+        {channels.map((channel) => (
+          <li key={channel.conversationId}>
+            <span>{channel.name ?? "Unnamed channel"}</span>
+            <small>{channel.participantCount} members</small>
+            <button
+              type="button"
+              disabled={joining === channel.conversationId}
+              onClick={() => void join(channel.conversationId)}
+            >
+              {joining === channel.conversationId ? "Joining…" : "Join"}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+/** Reads and saves public-channel settings through Chatpack actions. */
+export function ChannelSettings({ conversationId }: { conversationId: string }) {
+  const { client } = useChatpackUI();
+  const conversation = client.useConversation({ conversationId });
+  const [name, setName] = useState("");
+  const [visibility, setVisibility] = useState<"private" | "public">("private");
+  const [joinPolicy, setJoinPolicy] = useState<"open" | "approval">("approval");
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    if (conversation.data !== null) {
+      setName(conversation.data.name ?? "");
+      setVisibility(conversation.data.visibility);
+      setJoinPolicy(conversation.data.joinPolicy);
+    }
+  }, [conversation.data]);
+  async function save(): Promise<void> {
+    const result = await client.conversations.update({
+      conversationId,
+      name: name.trim() === "" ? null : name.trim(),
+      visibility,
+      joinPolicy,
+    });
+    if (result.error !== null) setError(result.error.message);
+    else await conversation.refetch();
+  }
+  return (
+    <form
+      className="chatpack-ui-management-card"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void save();
+      }}
+    >
+      <h3>Channel settings</h3>
+      <input
+        value={name}
+        onChange={(event) => setName(event.target.value)}
+        aria-label="Channel name"
+        placeholder="Channel name"
+      />
+      <select
+        value={visibility}
+        onChange={(event) => setVisibility(event.target.value as "private" | "public")}
+        aria-label="Visibility"
+      >
+        <option value="private">Private</option>
+        <option value="public">Public</option>
+      </select>
+      <select
+        value={joinPolicy}
+        onChange={(event) => setJoinPolicy(event.target.value as "open" | "approval")}
+        aria-label="Join policy"
+      >
+        <option value="open">Open join</option>
+        <option value="approval">Admin approval</option>
+      </select>
+      {error !== null && <p role="alert">{error}</p>}
+      <button type="submit" disabled={conversationId === ""}>
+        Save settings
+      </button>
+    </form>
   );
 }
 
@@ -515,121 +937,316 @@ export function LeaveGroup({
   );
 }
 
-/** Lists users blocked by the viewer using caller-provided records. */
+/** Lists and manages viewer-scoped blocked users through Chatpack actions. */
 export function BlockedUsers({
-  userIds,
-  onUnblock,
+  renderUser = (id) => id,
 }: {
-  userIds: readonly string[];
-  onUnblock?: (userId: string) => void;
+  renderUser?: (userId: string) => ReactNode;
 }) {
-  const { renderUser } = useChatpackUI();
+  const { client } = useChatpackUI();
+  const [blocks, setBlocks] = useState<ClientUserBlock[]>([]);
+  const [target, setTarget] = useState("");
+  const [error, setError] = useState<string | null>(null);
+  const load = useCallback(async () => {
+    const result = await client.moderation.listBlockedUsers();
+    if (result.error !== null) setError(result.error.message);
+    else setBlocks(result.data.blocks);
+  }, [client]);
+  useEffect(() => {
+    void load();
+  }, [load]);
+  async function block(): Promise<void> {
+    const id = target.trim();
+    if (id === "") return;
+    const result = await client.moderation.blockUser({ targetUserId: id });
+    if (result.error !== null) setError(result.error.message);
+    else {
+      setTarget("");
+      await load();
+    }
+  }
+  async function unblock(id: string): Promise<void> {
+    const result = await client.moderation.unblockUser({ targetUserId: id });
+    if (result.error !== null) setError(result.error.message);
+    else await load();
+  }
   return (
-    <ul>
-      {userIds.map((userId) => (
-        <li key={userId}>
-          {renderUser(userId)}
-          <button type="button" onClick={() => onUnblock?.(userId)}>
-            Unblock
-          </button>
-        </li>
-      ))}
-    </ul>
+    <section className="chatpack-ui-management-card">
+      <h3>Blocked users</h3>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          void block();
+        }}
+      >
+        <input
+          value={target}
+          onChange={(event) => setTarget(event.target.value)}
+          aria-label="User id to block"
+          placeholder="User id"
+        />
+        <button type="submit" disabled={target.trim() === ""}>
+          Block
+        </button>
+      </form>
+      {error !== null && <p role="alert">{error}</p>}
+      <ul>
+        {blocks.map((entry) => (
+          <li key={entry.blockedUserId}>
+            <span>{renderUser(entry.blockedUserId)}</span>
+            <button type="button" onClick={() => void unblock(entry.blockedUserId)}>
+              Unblock
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
-/** Toggles a conversation mute through caller-provided actions. */
-export function MuteToggle({ muted, onToggle }: { muted: boolean; onToggle: () => void }) {
+/** Loads and toggles viewer-scoped mute state through Chatpack actions. */
+export function MuteToggle({ conversationId }: { conversationId: string }) {
+  const { client } = useChatpackUI();
+  const [muted, setMuted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    void client.moderation.listMutedConversations().then((result) => {
+      if (result.error !== null) setError(result.error.message);
+      else setMuted(result.data.mutes.some((mute) => mute.conversationId === conversationId));
+    });
+  }, [client, conversationId]);
+  async function toggle(): Promise<void> {
+    const result = muted
+      ? await client.moderation.unmuteConversation({ conversationId })
+      : await client.moderation.muteConversation({ conversationId });
+    if (result.error !== null) setError(result.error.message);
+    else setMuted(!muted);
+  }
   return (
-    <button type="button" aria-pressed={muted} onClick={onToggle}>
-      {muted ? "Unmute" : "Mute"}
-    </button>
+    <span className="chatpack-ui-mute-toggle">
+      <button type="button" aria-pressed={muted} onClick={() => void toggle()}>
+        {muted ? "Unmute" : "Mute"}
+      </button>
+      {error !== null && <small role="alert">{error}</small>}
+    </span>
   );
 }
 
-/** Lists muted conversations. */
+/** Lists and un-mutes viewer-scoped muted conversations. */
 export function MutedList({
-  conversationIds,
-  onSelect,
+  renderUser = (id) => id,
 }: {
-  conversationIds: readonly string[];
-  onSelect?: (id: string) => void;
+  renderUser?: (userId: string) => ReactNode;
 }) {
+  const { client, userId } = useChatpackUI();
+  const conversations = client.useConversations();
+  const [mutes, setMutes] = useState<ClientConversationMute[]>([]);
+  const load = useCallback(async () => {
+    const result = await client.moderation.listMutedConversations();
+    if (result.error === null) setMutes(result.data.mutes);
+  }, [client]);
+  useEffect(() => {
+    void load();
+  }, [load]);
   return (
-    <ul>
-      {conversationIds.map((id) => (
-        <li key={id}>
-          <button type="button" onClick={() => onSelect?.(id)}>
-            {id}
-          </button>
-        </li>
-      ))}
+    <ul className="chatpack-ui-management-list">
+      {mutes.map((mute) => {
+        const conversation = conversations.data?.conversations.find(
+          (item) => item.id === mute.conversationId,
+        );
+        const title =
+          conversation?.type === "group"
+            ? (conversation.name ?? conversation.id)
+            : renderUser(
+                conversation?.participants.find((item) => item.userId !== userId)?.userId ??
+                  mute.conversationId,
+              );
+        return (
+          <li key={mute.conversationId}>
+            <span>{title}</span>
+            <button
+              type="button"
+              onClick={() =>
+                void client.moderation
+                  .unmuteConversation({ conversationId: mute.conversationId })
+                  .then(load)
+              }
+            >
+              Unmute
+            </button>
+          </li>
+        );
+      })}
     </ul>
   );
 }
 
-/** Presents a moderation report form through a host-owned submit action. */
-export function ReportDialog({ onSubmit }: { onSubmit?: (reason: string) => void }) {
+/** Submits a report through the Chatpack moderation action. */
+export function ReportDialog({
+  targetType,
+  targetId,
+  onDone,
+}: {
+  targetType: ReportTargetType;
+  targetId: string;
+  onDone?: () => void;
+}) {
+  const { client } = useChatpackUI();
   const [reason, setReason] = useState("");
+  const [error, setError] = useState<string | null>(null);
   return (
     <form
       onSubmit={(event) => {
         event.preventDefault();
-        onSubmit?.(reason);
+        void client.moderation
+          .report({ targetType, targetId, reason: reason.trim() })
+          .then((result) => {
+            if (result.error !== null) setError(result.error.message);
+            else {
+              setReason("");
+              onDone?.();
+            }
+          });
       }}
     >
       <textarea
         aria-label="Report reason"
         value={reason}
         onChange={(event) => setReason(event.target.value)}
+        required
       />
-      <button type="submit">Report</button>
+      {error !== null && <p role="alert">{error}</p>}
+      <button type="submit" disabled={reason.trim() === ""}>
+        Report
+      </button>
     </form>
   );
 }
 
-/** Displays moderation reports supplied by the host. */
-export function ModerationQueue({
-  reports,
-  onSelect,
-}: {
-  reports: readonly { id: string; status: string }[];
-  onSelect?: (id: string) => void;
-}) {
+/** Lists and updates moderator report lifecycle state through Chatpack actions. */
+export function ModerationQueue() {
+  const { client } = useChatpackUI();
+  const [status, setStatus] = useState<ReportStatus>("open");
+  const [reports, setReports] = useState<ClientModerationReport[]>([]);
+  const load = useCallback(async () => {
+    const result = await client.moderation.listReports({ status });
+    if (result.error === null) setReports(result.data.reports);
+  }, [client, status]);
+  useEffect(() => {
+    void load();
+  }, [load]);
   return (
-    <ul>
-      {reports.map((report) => (
-        <li key={report.id}>
-          <button type="button" onClick={() => onSelect?.(report.id)}>
-            {report.id} · {report.status}
-          </button>
-        </li>
-      ))}
-    </ul>
+    <section className="chatpack-ui-management-card">
+      <h3>Report queue</h3>
+      <select
+        value={status}
+        onChange={(event) => setStatus(event.target.value as ReportStatus)}
+        aria-label="Report status"
+      >
+        <option value="open">Open</option>
+        <option value="triaged">Triaged</option>
+        <option value="resolved">Resolved</option>
+        <option value="dismissed">Dismissed</option>
+      </select>
+      <ul>
+        {reports.map((report) => (
+          <li key={report.id}>
+            <span>
+              {report.reason} · {report.targetType}
+            </span>
+            {(["open", "triaged", "resolved", "dismissed"] as const)
+              .filter((next) => next !== report.status)
+              .map((next) => (
+                <button
+                  key={next}
+                  type="button"
+                  onClick={() =>
+                    void client.moderation
+                      .updateReport({ reportId: report.id, status: next })
+                      .then(load)
+                  }
+                >
+                  Mark {next}
+                </button>
+              ))}
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
-/** Displays ban-management controls through host-owned actions. */
-export function BanManager({ onBan, onRevoke }: { onBan?: () => void; onRevoke?: () => void }) {
+/** Lists, creates, and revokes moderator bans through Chatpack actions. */
+export function BanManager() {
+  const { client } = useChatpackUI();
+  const [bans, setBans] = useState<ClientUserBan[]>([]);
+  const [target, setTarget] = useState("");
+  const load = useCallback(async () => {
+    const result = await client.moderation.listBans({ activeOnly: true });
+    if (result.error === null) setBans(result.data.bans);
+  }, [client]);
+  useEffect(() => {
+    void load();
+  }, [load]);
   return (
-    <div>
-      <button type="button" onClick={onBan}>
-        Ban
-      </button>
-      <button type="button" onClick={onRevoke}>
-        Revoke ban
-      </button>
-    </div>
+    <section className="chatpack-ui-management-card">
+      <h3>Bans</h3>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          const id = target.trim();
+          if (id !== "")
+            void client.moderation.banUser({ targetUserId: id }).then((result) => {
+              if (result.error === null) {
+                setTarget("");
+                return load();
+              }
+            });
+        }}
+      >
+        <input
+          value={target}
+          onChange={(event) => setTarget(event.target.value)}
+          aria-label="User id to ban"
+          placeholder="User id"
+        />
+        <button type="submit" disabled={target.trim() === ""}>
+          Ban
+        </button>
+      </form>
+      <ul>
+        {bans.map((ban) => (
+          <li key={ban.id}>
+            <span>{ban.userId}</span>
+            <button
+              type="button"
+              onClick={() => void client.moderation.unbanUser({ banId: ban.id }).then(load)}
+            >
+              Revoke
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
-/** A generic attachment shape accepted by media blocks. */
-export interface ChatAttachment {
-  id: string;
-  name: string;
-  url?: string;
-  mimeType?: string;
-  size?: number;
+/** Filepack-backed attachment reference stored in message metadata. */
+export type ChatAttachment = FileAttachmentReference;
+
+/** Reads only validated Filepack attachment references from message metadata. */
+export function readAttachments(metadata: Record<string, unknown>): readonly ChatAttachment[] {
+  try {
+    return parseFileAttachmentMetadata(metadata)?.filepack.attachments ?? [];
+  } catch {
+    return [];
+  }
+}
+
+/** Filepack resolver supplied by the host's configured {@link @chatpack/file} client. */
+export interface ChatpackAttachmentResolver {
+  /** Resolves an authorized, short-lived rendering target. */
+  resolveTarget(input: { conversationId: string; fileId: string }): Promise<ResolvedFileAttachment>;
 }
 
 /** Displays a file picker and passes selected files to the host. */
@@ -676,15 +1293,31 @@ export function AttachmentDropzone({
 }
 
 /** Lists message attachments as accessible links. */
-export function MessageAttachments({ attachments }: { attachments: readonly ChatAttachment[] }) {
+export function MessageAttachments({
+  conversationId,
+  attachments,
+  resolver,
+}: {
+  conversationId: string;
+  attachments: readonly ChatAttachment[];
+  resolver: ChatpackAttachmentResolver;
+}) {
   return (
-    <ul>
+    <ul className="chatpack-ui-attachments">
       {attachments.map((attachment) => (
         <li key={attachment.id}>
-          {attachment.url === undefined ? (
-            <UnavailableAttachment />
+          {attachment.contentType.startsWith("image/") ? (
+            <ImageBubble
+              conversationId={conversationId}
+              attachment={attachment}
+              resolver={resolver}
+            />
           ) : (
-            <a href={attachment.url}>{attachment.name}</a>
+            <FileBubble
+              conversationId={conversationId}
+              attachment={attachment}
+              resolver={resolver}
+            />
           )}
         </li>
       ))}
@@ -692,21 +1325,65 @@ export function MessageAttachments({ attachments }: { attachments: readonly Chat
   );
 }
 
-/** Displays an image attachment when its URL is available. */
-export function ImageBubble({ attachment }: { attachment: ChatAttachment }) {
-  return attachment.url === undefined ? (
-    <UnavailableAttachment />
-  ) : (
-    <img src={attachment.url} alt={attachment.name} />
-  );
+/** Resolves and displays an authorized image attachment. */
+export function ImageBubble({
+  conversationId,
+  attachment,
+  resolver,
+}: {
+  conversationId: string;
+  attachment: ChatAttachment;
+  resolver: ChatpackAttachmentResolver;
+}) {
+  const [resolved, setResolved] = useState<ResolvedFileAttachment | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void resolver
+      .resolveTarget({ conversationId, fileId: attachment.id })
+      .then((result) => {
+        if (!cancelled) setResolved(result);
+      })
+      .catch(() => {
+        if (!cancelled) setResolved({ status: "unavailable", fileId: attachment.id });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [attachment.id, conversationId, resolver]);
+  if (resolved === null) return <LoadingState label={attachment.name} />;
+  if (resolved.status === "unavailable") return <UnavailableAttachment name={attachment.name} />;
+  return <img src={resolved.url} alt={attachment.name} />;
 }
 
-/** Displays a downloadable file attachment. */
-export function FileBubble({ attachment }: { attachment: ChatAttachment }) {
-  return attachment.url === undefined ? (
-    <UnavailableAttachment />
-  ) : (
-    <a href={attachment.url} download>
+/** Resolves and displays an authorized downloadable file attachment. */
+export function FileBubble({
+  conversationId,
+  attachment,
+  resolver,
+}: {
+  conversationId: string;
+  attachment: ChatAttachment;
+  resolver: ChatpackAttachmentResolver;
+}) {
+  const [resolved, setResolved] = useState<ResolvedFileAttachment | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    void resolver
+      .resolveTarget({ conversationId, fileId: attachment.id })
+      .then((result) => {
+        if (!cancelled) setResolved(result);
+      })
+      .catch(() => {
+        if (!cancelled) setResolved({ status: "unavailable", fileId: attachment.id });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [attachment.id, conversationId, resolver]);
+  if (resolved === null) return <LoadingState label={attachment.name} />;
+  if (resolved.status === "unavailable") return <UnavailableAttachment name={attachment.name} />;
+  return (
+    <a href={resolved.url} download={attachment.name}>
       {attachment.name}
     </a>
   );
@@ -722,19 +1399,32 @@ export function UploadProgress({ value }: { value: number }) {
 }
 
 /** Displays a responsive attachment collection. */
-export function AttachmentGallery({ attachments }: { attachments: readonly ChatAttachment[] }) {
+export function AttachmentGallery({
+  conversationId,
+  attachments,
+  resolver,
+}: {
+  conversationId: string;
+  attachments: readonly ChatAttachment[];
+  resolver: ChatpackAttachmentResolver;
+}) {
   return (
     <div>
       {attachments.map((attachment) => (
-        <ImageBubble key={attachment.id} attachment={attachment} />
+        <ImageBubble
+          key={attachment.id}
+          conversationId={conversationId}
+          attachment={attachment}
+          resolver={resolver}
+        />
       ))}
     </div>
   );
 }
 
 /** Displays an attachment whose URL is unavailable. */
-export function UnavailableAttachment() {
-  return <span role="status">Attachment unavailable</span>;
+export function UnavailableAttachment({ name = "Attachment" }: { name?: string }) {
+  return <span role="status">{name} unavailable</span>;
 }
 
 /** Displays a user avatar fallback and unread count. */
@@ -750,10 +1440,23 @@ export function UserAvatarUnreadBadge({ userId, unread = 0 }: { userId: string; 
 }
 
 /** Displays an initials avatar at the requested gallery size. */
-export function UserAvatar({ userId, size = "md" }: { userId: string; size?: "sm" | "md" | "lg" }) {
+export function UserAvatar({
+  userId,
+  label,
+  online = false,
+  size = "md",
+}: {
+  userId: string;
+  label?: ReactNode;
+  online?: boolean;
+  size?: "sm" | "md" | "lg";
+}) {
+  const text = label ?? userId;
+  const initials = String(text).slice(0, 2).toUpperCase();
   return (
     <span className={`chatpack-ui-avatar chatpack-ui-avatar-${size}`} aria-label={userId}>
-      {userId.slice(0, 2).toUpperCase()}
+      {initials}
+      {online && <span className="chatpack-ui-avatar-online" aria-label="Online" />}
     </span>
   );
 }
@@ -784,9 +1487,21 @@ export function ForwardedLabel() {
 }
 
 /** Displays a mention chip for an opaque user id. */
-export function MentionChip({ userId }: { userId: string }) {
+export function MentionChip({
+  userId,
+  label,
+  highlighted = false,
+}: {
+  userId: string;
+  label?: ReactNode;
+  highlighted?: boolean;
+}) {
   const { renderUser } = useChatpackUI();
-  return <span>@{renderUser(userId)}</span>;
+  return (
+    <span className={highlighted ? "chatpack-ui-mention-highlight" : "chatpack-ui-mention-chip"}>
+      @{label ?? renderUser(userId)}
+    </span>
+  );
 }
 
 /** Displays a participant role. */
@@ -811,22 +1526,36 @@ export function SoftDeletedTombstone({ sender, at }: { sender?: ReactNode; at?: 
 }
 
 /** Displays an empty conversation inbox. */
-export function EmptyInbox() {
-  return <EmptyState>No conversations yet</EmptyState>;
+export function EmptyInbox({
+  title = "No conversations yet",
+  description = "Start a DM or create a group — your inbox will fill in here.",
+  action,
+}: {
+  title?: string;
+  description?: string;
+  action?: ReactNode;
+}) {
+  return (
+    <div className="chatpack-ui-empty-inbox">
+      <EmptyState>{title}</EmptyState>
+      <p>{description}</p>
+      {action}
+    </div>
+  );
 }
 
 /** Presents a small fixed emoji set for reaction pickers. */
 export function EmojiPicker({
-  onSelect,
+  onPick,
   emojis = ["👍", "❤️", "🎉", "😂", "😮", "😢"],
 }: {
-  onSelect: (emoji: string) => void;
+  onPick: (emoji: string) => void;
   emojis?: readonly string[];
 }) {
   return (
     <div role="listbox" aria-label="Emoji picker">
       {emojis.map((emoji) => (
-        <button type="button" key={emoji} onClick={() => onSelect(emoji)}>
+        <button type="button" key={emoji} onClick={() => onPick(emoji)}>
           {emoji}
         </button>
       ))}

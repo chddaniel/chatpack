@@ -30,27 +30,58 @@ export function PresenceDot({ online, label = true }: { online: boolean; label?:
 
 /** Displays a message timestamp using the user's locale. */
 export function Timestamp({ date }: { date: string }) {
-  return <time dateTime={date}>{new Date(date).toLocaleString()}</time>;
+  return (
+    <time dateTime={date}>
+      {new Date(date).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+    </time>
+  );
 }
 
 /** Displays a reaction summary without owning reaction state. */
+export type ReactionPillProps =
+  | {
+      /** Client reaction summary. */
+      reaction: ClientReactionSummary;
+      /** Viewer has reacted. */
+      pressed?: boolean;
+      /** Called when viewer toggles reaction. */
+      onClick?: () => void;
+      emoji?: never;
+      count?: never;
+      mine?: never;
+    }
+  | {
+      /** Reaction identifier. */
+      emoji: string;
+      /** Reaction count. */
+      count: number;
+      /** Viewer has reacted. */
+      mine?: boolean;
+      /** Called when viewer toggles reaction. */
+      onClick?: () => void;
+      reaction?: never;
+      pressed?: never;
+    };
+
 export function ReactionPill({
   reaction,
+  emoji,
+  count,
+  mine,
   pressed,
   onClick,
-}: {
-  reaction: ClientReactionSummary;
-  pressed?: boolean;
-  onClick?: () => void;
-}) {
+}: ReactionPillProps) {
+  const resolvedEmoji = reaction?.emoji ?? emoji;
+  const resolvedCount = reaction?.count ?? count;
+  const resolvedPressed = reaction === undefined ? mine : pressed;
   return (
     <button
       type="button"
       className="chatpack-ui-reaction-pill"
-      aria-pressed={pressed}
+      aria-pressed={resolvedPressed}
       onClick={onClick}
     >
-      {reaction.emoji} {reaction.count}
+      {resolvedEmoji} {resolvedCount}
     </button>
   );
 }
@@ -89,8 +120,19 @@ export function MessageBubble({
 }
 
 /** Displays a quote preview for a reply, including deleted parents. */
-export function ReplyQuoteBar({ replyTo }: { replyTo: ClientMessage["replyTo"] }) {
-  if (replyTo === null) return null;
+export type ReplyQuoteBarProps =
+  | { replyTo: ClientMessage["replyTo"]; sender?: never; excerpt?: never; deleted?: never }
+  | { sender: ReactNode; excerpt: string; deleted?: boolean; replyTo?: never };
+
+export function ReplyQuoteBar({ replyTo, sender, excerpt, deleted = false }: ReplyQuoteBarProps) {
+  if (replyTo === null || replyTo === undefined) {
+    if (sender === undefined || excerpt === undefined) return null;
+    return (
+      <aside className="chatpack-ui-reply-quote">
+        <strong>{sender}</strong>: {deleted ? <em>Message deleted</em> : excerpt}
+      </aside>
+    );
+  }
   return (
     <aside className="chatpack-ui-reply-quote">
       <strong>{replyTo.senderId}</strong>:{" "}
