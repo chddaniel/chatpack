@@ -30,6 +30,7 @@ export {
   UnreadInbox,
 } from "./realtime";
 export { MessageActions, MessageSearch, QuickReactions } from "./inputs";
+export { MessageActionsMenu } from "./inputs";
 export { GroupList, MembersList } from "./groups";
 export { ChatpackUIThemeProvider } from "./theme";
 export type { ChatpackUITheme, ChatpackUIThemeProviderProps } from "./theme";
