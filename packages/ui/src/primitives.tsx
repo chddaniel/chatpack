@@ -101,9 +101,10 @@ export function ReplyQuoteBar({ replyTo }: { replyTo: ClientMessage["replyTo"] }
 /** Displays a consistent loading message for a block. */
 export function LoadingState({ label = "Loading" }: { label?: string }) {
   return (
-    <p role="status" aria-live="polite">
+    <div className="chatpack-ui-empty" role="status" aria-live="polite">
+      <div className="chatpack-ui-loading-skeleton" />
       {label}…
-    </p>
+    </div>
   );
 }
 
@@ -116,7 +117,7 @@ export function ErrorNotice({
   onRetry?: () => void;
 }) {
   return (
-    <div role="alert">
+    <div className="chatpack-ui-error" role="alert">
       <strong>{error.code}</strong>: {error.message}
       {onRetry !== undefined && (
         <button type="button" onClick={onRetry}>
@@ -129,5 +130,5 @@ export function ErrorNotice({
 
 /** Displays an empty state. */
 export function EmptyState({ children = "Nothing here yet" }: { children?: ReactNode }) {
-  return <p>{children}</p>;
+  return <p className="chatpack-ui-empty">{children}</p>;
 }
