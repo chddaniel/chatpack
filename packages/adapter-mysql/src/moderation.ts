@@ -13,6 +13,38 @@ import { encodeActivityCursor, generateId } from "./utils";
 import type { DrizzleMysqlDatabase } from "./types";
 
 type ModerationDb = DrizzleMysqlDatabase;
+type MysqlTransactionCallback = Parameters<DrizzleMysqlDatabase["transaction"]>[0];
+type MysqlTransaction = MysqlTransactionCallback extends (tx: infer Tx) => unknown ? Tx : never;
+
+function isRetryableTransactionError(error: unknown): boolean {
+  if (typeof error !== "object" || error === null) return false;
+  const candidate = error as {
+    code?: string;
+    errno?: number;
+    sqlState?: string;
+    cause?: unknown;
+  };
+  return (
+    candidate.code === "ER_LOCK_DEADLOCK" ||
+    candidate.errno === 1213 ||
+    candidate.sqlState === "40001" ||
+    (candidate.cause !== undefined && isRetryableTransactionError(candidate.cause))
+  );
+}
+
+async function transactionWithRetry<T>(
+  db: ModerationDb,
+  callback: (tx: MysqlTransaction) => Promise<T>,
+): Promise<T> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await db.transaction(callback);
+    } catch (error) {
+      if (!isRetryableTransactionError(error) || attempt >= 7) throw error;
+      await new Promise((resolve) => setTimeout(resolve, Math.min(5 * 2 ** attempt, 250)));
+    }
+  }
+}
 
 export function createModerationStorage(db: ModerationDb): ModerationStorage {
   const moderation: ModerationStorage = {
@@ -278,11 +310,12 @@ export function createModerationStorage(db: ModerationDb): ModerationStorage {
     },
 
     async createBan(input) {
-      // InnoDB's next-key lock on the indexed user_id range serializes this
-      // transaction for one user, including the no-existing-row case. The
-      // active check and insert therefore cannot race under MySQL's default
-      // REPEATABLE READ isolation.
-      return db.transaction(async (tx) => {
+      // InnoDB's next-key lock on the indexed user_id range protects the
+      // no-existing-row case under the default REPEATABLE READ isolation.
+      // Concurrent inserts can still form a deadlock while acquiring intent
+      // locks; retrying the whole transaction lets the winner commit and the
+      // loser observe that active ban on its next attempt.
+      return transactionWithRetry(db, async (tx) => {
         const existing = await tx
           .select()
           .from(userBans)

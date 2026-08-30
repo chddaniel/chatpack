@@ -444,7 +444,7 @@ export function mysqlAdapter(db: DrizzleMysqlDatabase): StorageAdapter {
       const matches = db
         .select({
           messageId: messageSearchTokens.messageId,
-          rank: sql<number>`sum(${messageSearchTokens.occurrences})`.as("rank"),
+          rank: sql<number>`sum(${messageSearchTokens.occurrences})`.mapWith(Number).as("rank"),
         })
         .from(messageSearchTokens)
         .where(inArray(messageSearchTokens.token, terms))
