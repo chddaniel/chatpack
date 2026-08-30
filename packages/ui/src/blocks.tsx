@@ -46,36 +46,39 @@ export function ConversationList({
   const rows = conversations.data?.conversations ?? [];
   if (rows.length === 0) return <EmptyState>No conversations yet</EmptyState>;
   return (
-    <nav className={cx("chatpack-ui-conversation-list", className)} aria-label="Conversations">
-      {rows.map((conversation) => {
-        const other = conversation.participants.find(
-          (participant) => participant.userId !== userId,
-        )?.userId;
-        const online = other === undefined ? false : (presence[other]?.online ?? false);
-        return (
-          <button
-            type="button"
-            key={conversation.id}
-            aria-current={selectedId === conversation.id ? "page" : undefined}
-            className="chatpack-ui-conversation-row chatpack-ui-focus"
-            onClick={() => onSelect?.(conversation)}
-          >
-            <span className="chatpack-ui-avatar" aria-hidden="true">
-              {(other ?? conversation.id).slice(0, 2).toUpperCase()}
-            </span>
-            <PresenceDot online={online} />
-            <span>
-              {conversation.type === "group"
-                ? (conversation.name ?? conversation.id)
-                : other === undefined
-                  ? conversation.id
-                  : renderUser(other)}
-            </span>
-            <UnreadBadge count={conversation.unreadCount} />
-          </button>
-        );
-      })}
-    </nav>
+    <section className={cx("chatpack-ui-conversation-list-shell", className)}>
+      <header className="chatpack-ui-list-header">Conversations</header>
+      <nav className="chatpack-ui-conversation-list" aria-label="Conversations">
+        {rows.map((conversation) => {
+          const other = conversation.participants.find(
+            (participant) => participant.userId !== userId,
+          )?.userId;
+          const online = other === undefined ? false : (presence[other]?.online ?? false);
+          return (
+            <button
+              type="button"
+              key={conversation.id}
+              aria-current={selectedId === conversation.id ? "page" : undefined}
+              className="chatpack-ui-conversation-row chatpack-ui-focus"
+              onClick={() => onSelect?.(conversation)}
+            >
+              <span className="chatpack-ui-avatar" aria-hidden="true">
+                {(other ?? conversation.id).slice(0, 2).toUpperCase()}
+              </span>
+              <PresenceDot online={online} />
+              <span>
+                {conversation.type === "group"
+                  ? (conversation.name ?? conversation.id)
+                  : other === undefined
+                    ? conversation.id
+                    : renderUser(other)}
+              </span>
+              <UnreadBadge count={conversation.unreadCount} />
+            </button>
+          );
+        })}
+      </nav>
+    </section>
   );
 }
 
@@ -87,10 +90,17 @@ export interface MessageThreadProps {
   onReply?: (message: ClientMessage) => void;
   /** Optional class name. */
   className?: string;
+  /** Whether to render the standalone block header. */
+  showHeader?: boolean;
 }
 
 /** Displays a live message history, gap-filled by the Chatpack client. */
-export function MessageThread({ conversationId, onReply, className }: MessageThreadProps) {
+export function MessageThread({
+  conversationId,
+  onReply,
+  className,
+  showHeader = true,
+}: MessageThreadProps) {
   const { client, userId, renderUser } = useChatpackUI();
   const messages = client.useMessages({ conversationId, limit: 50 });
   const bottomRef = useRef<HTMLDivElement | null>(null);
@@ -107,26 +117,29 @@ export function MessageThread({ conversationId, onReply, className }: MessageThr
     return <LoadingState label="Loading messages" />;
   if (page.length === 0) return <EmptyState>No messages yet</EmptyState>;
   return (
-    <section className={cx("chatpack-ui-message-thread", className)} aria-live="polite">
-      {messages.data?.nextCursor !== null && (
-        <button
-          type="button"
-          className="chatpack-ui-button chatpack-ui-button-ghost"
-          onClick={() => void messages.loadMore()}
-        >
-          Load older messages
-        </button>
-      )}
-      {[...page].reverse().map((message) => (
-        <MessageThreadRow
-          key={message.id}
-          message={message}
-          own={message.senderId === userId}
-          renderUser={renderUser}
-          {...(onReply === undefined ? {} : { onReply })}
-        />
-      ))}
-      <div ref={bottomRef} />
+    <section className={cx("chatpack-ui-message-thread-shell", className)}>
+      {showHeader && <header className="chatpack-ui-list-header">Messages</header>}
+      <div className="chatpack-ui-message-thread" aria-live="polite">
+        {messages.data?.nextCursor !== null && (
+          <button
+            type="button"
+            className="chatpack-ui-button chatpack-ui-button-ghost"
+            onClick={() => void messages.loadMore()}
+          >
+            Load older messages
+          </button>
+        )}
+        {[...page].reverse().map((message) => (
+          <MessageThreadRow
+            key={message.id}
+            message={message}
+            own={message.senderId === userId}
+            renderUser={renderUser}
+            {...(onReply === undefined ? {} : { onReply })}
+          />
+        ))}
+        <div ref={bottomRef} />
+      </div>
     </section>
   );
 }
@@ -192,10 +205,12 @@ export function MessageComposer({
   const { client } = useChatpackUI();
   const [body, setBody] = useState("");
   const [sending, setSending] = useState(false);
+  const [error, setError] = useState<{ code: string; message: string } | null>(null);
   async function send(event?: FormEvent): Promise<void> {
     event?.preventDefault();
     const text = body.trim();
     if (text === "" || sending) return;
+    setError(null);
     setSending(true);
     const result = await client.messages.send({
       conversationId,
@@ -203,7 +218,10 @@ export function MessageComposer({
       ...(replyTo === null ? {} : { replyToMessageId: replyTo.id }),
     });
     setSending(false);
-    if (result.error !== null) return;
+    if (result.error !== null) {
+      setError(result.error);
+      return;
+    }
     setBody("");
     onClearReply?.();
     onSent?.();
@@ -216,6 +234,11 @@ export function MessageComposer({
   }
   return (
     <form className="chatpack-ui-composer" onSubmit={(event) => void send(event)}>
+      {error !== null && (
+        <div className="chatpack-ui-composer-error">
+          <strong>{error.code}</strong>: {error.message}
+        </div>
+      )}
       {replyTo !== null && (
         <div>
           Replying to <strong>{replyTo.senderId}</strong>
@@ -245,6 +268,9 @@ export function MessageComposer({
       >
         {sending ? "…" : "↑"}
       </button>
+      <small className="chatpack-ui-composer-hint">
+        Enter to send · Shift+Enter for a new line
+      </small>
     </form>
   );
 }
@@ -285,7 +311,7 @@ export function ChatWindow({
         )}
       </header>
       <ConnectionStatus />
-      <MessageThread conversationId={conversationId} onReply={setReplyTo} />
+      <MessageThread conversationId={conversationId} onReply={setReplyTo} showHeader={false} />
       <MessageComposer
         conversationId={conversationId}
         replyTo={replyTo}

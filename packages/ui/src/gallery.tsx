@@ -340,6 +340,7 @@ export function NewGroupForm({
 /** Displays reactions from a message and lets the viewer toggle them. */
 export function MessageReactions({ message }: { message: ClientMessage }) {
   const { client, userId } = useChatpackUI();
+  const [pickerOpen, setPickerOpen] = useState(false);
   return (
     <div>
       {message.reactions.map((reaction) => (
@@ -354,7 +355,15 @@ export function MessageReactions({ message }: { message: ClientMessage }) {
           }
         />
       ))}
-      <QuickReactions messageId={message.id} />
+      <button
+        type="button"
+        className="chatpack-ui-add-reaction"
+        aria-label="Add reaction"
+        onClick={() => setPickerOpen((open) => !open)}
+      >
+        +
+      </button>
+      {pickerOpen && <QuickReactions messageId={message.id} />}
     </div>
   );
 }
@@ -731,8 +740,10 @@ export function UnavailableAttachment() {
 /** Displays a user avatar fallback and unread count. */
 export function UserAvatarUnreadBadge({ userId, unread = 0 }: { userId: string; unread?: number }) {
   return (
-    <span aria-label={userId}>
-      {userId.slice(0, 2).toUpperCase()}
+    <span className="chatpack-ui-avatar-with-badge" aria-label={userId}>
+      <span className="chatpack-ui-avatar" aria-hidden="true">
+        {userId.slice(0, 2).toUpperCase()}
+      </span>
       <UnreadBadge count={unread} />
     </span>
   );

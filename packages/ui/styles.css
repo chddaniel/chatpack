@@ -95,7 +95,8 @@
 }
 
 .chatpack-ui-window,
-.chatpack-ui-message-thread {
+.chatpack-ui-message-thread-shell,
+.chatpack-ui-conversation-list-shell {
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -112,7 +113,31 @@
   overflow-y: auto;
   padding: 1rem;
 }
-.chatpack-ui-root .chatpack-ui-window > .chatpack-ui-message-thread {
+.chatpack-ui-message-thread-shell {
+  height: 24rem;
+}
+.chatpack-ui-conversation-list-shell {
+  height: 20rem;
+  background: var(--chatpack-ui-panel);
+}
+.chatpack-ui-list-header {
+  min-height: 3rem;
+  box-sizing: border-box;
+  border-bottom: 1px solid var(--chatpack-ui-border);
+  padding: 0.75rem 1rem;
+  font-weight: 500;
+}
+.chatpack-ui-root .chatpack-ui-window > .chatpack-ui-message-thread-shell {
+  height: auto;
+  min-height: 0;
+  flex: 1 1 auto;
+  border: 0;
+  border-radius: 0;
+}
+.chatpack-ui-root
+  .chatpack-ui-window
+  > .chatpack-ui-message-thread-shell
+  > .chatpack-ui-message-thread {
   height: auto;
   min-height: 0;
   border: 0;
@@ -224,6 +249,23 @@
 .chatpack-ui-composer > button {
   min-height: 2.5rem;
   border-radius: var(--chatpack-ui-radius);
+}
+.chatpack-ui-composer {
+  flex-wrap: wrap;
+}
+.chatpack-ui-composer-error,
+.chatpack-ui-composer-hint {
+  width: 100%;
+}
+.chatpack-ui-composer-error {
+  color: #dc2626;
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+.chatpack-ui-composer-hint {
+  color: var(--chatpack-ui-muted);
+  font-size: 0.6875rem;
+  line-height: 1rem;
 }
 .chatpack-ui-presence-indicator,
 .chatpack-ui-presence-stack {
