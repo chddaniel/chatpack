@@ -34,23 +34,28 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   if (!url) return;
-  await pool.query("SET FOREIGN_KEY_CHECKS = 0");
-  for (const table of [
-    "chatpack_message_search_tokens",
-    "chatpack_message_mentions",
-    "chatpack_message_reactions",
-    "chatpack_messages",
-    "chatpack_join_requests",
-    "chatpack_conversation_invites",
-    "chatpack_conversation_participants",
-    "chatpack_conversation_mutes",
-    "chatpack_user_blocks",
-    "chatpack_moderation_reports",
-    "chatpack_user_bans",
-    "chatpack_conversations",
-  ])
-    await pool.query(`DELETE FROM ${table}`);
-  await pool.query("SET FOREIGN_KEY_CHECKS = 1");
+  const connection = await pool.getConnection();
+  try {
+    await connection.query("SET FOREIGN_KEY_CHECKS = 0");
+    for (const table of [
+      "chatpack_message_search_tokens",
+      "chatpack_message_mentions",
+      "chatpack_message_reactions",
+      "chatpack_messages",
+      "chatpack_join_requests",
+      "chatpack_conversation_invites",
+      "chatpack_conversation_participants",
+      "chatpack_conversation_mutes",
+      "chatpack_user_blocks",
+      "chatpack_moderation_reports",
+      "chatpack_user_bans",
+      "chatpack_conversations",
+    ])
+      await connection.query(`DELETE FROM ${table}`);
+    await connection.query("SET FOREIGN_KEY_CHECKS = 1");
+  } finally {
+    connection.release();
+  }
 });
 
 afterAll(async () => {
@@ -67,6 +72,12 @@ mysql("MySQL 8 migrations", () => {
       "SELECT TABLE_NAME FROM information_schema.tables WHERE table_schema = DATABASE() AND table_name LIKE 'chatpack_%'",
     );
     expect(rows).toHaveLength(12);
+    const reconnected = createPool(url!);
+    try {
+      for (const statement of migrationStatements) await reconnected.query(statement);
+    } finally {
+      await reconnected.end();
+    }
   });
 });
 
