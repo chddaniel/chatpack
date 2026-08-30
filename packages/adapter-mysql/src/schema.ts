@@ -1,5 +1,4 @@
 /** Chatpack MySQL 8 schema. User ids are opaque application-owned strings. */
-import { sql } from "drizzle-orm";
 import {
   boolean,
   datetime,

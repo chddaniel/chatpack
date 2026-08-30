@@ -55,7 +55,6 @@ import type {
 import { getSearchTerms } from "@chatpack/core";
 import {
   conversationInvites,
-  conversationMutes,
   conversationParticipants,
   conversations,
   joinRequests,
@@ -402,7 +401,7 @@ export function mysqlAdapter(db: DrizzleMysqlDatabase): StorageAdapter {
       async createJoinRequest(input: CreateJoinRequestInput): Promise<JoinRequest> {
         const now = new Date();
         const id = generateId("jreq");
-        await db.insert(joinRequests).values({ id, conversationId: input.conversationId, userId: input.userId, status: "pending", message: input.message, inviteCode: input.inviteCode, createdAt: now, resolvedAt: null, resolvedBy: null, metadata: input.metadata }).onDuplicateKeyUpdate({ set: { id: sql`${id}`, status: "pending", message: input.message, inviteCode: input.inviteCode, createdAt: now, resolvedAt: null, resolvedBy: null, metadata: input.metadata } });
+        await db.insert(joinRequests).values({ id, conversationId: input.conversationId, userId: input.userId, status: "pending", message: input.message, inviteCode: input.inviteCode, createdAt: now, resolvedAt: null, resolvedBy: null, metadata: input.metadata }).onDuplicateKeyUpdate({ set: { status: "pending", message: input.message, inviteCode: input.inviteCode, createdAt: now, resolvedAt: null, resolvedBy: null, metadata: input.metadata } });
         const [row] = await db.select().from(joinRequests).where(and(eq(joinRequests.conversationId, input.conversationId), eq(joinRequests.userId, input.userId))).limit(1);
         if (!row) throw new Error("mysqlAdapter: failed to create join request.");
         return toJoinRequest(row);

@@ -7,7 +7,6 @@ import type {
   Message,
   MessageMention,
   MessageRole,
-  Metadata,
   ModerationReport,
   Reaction,
   UserBan,
