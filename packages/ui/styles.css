@@ -401,6 +401,11 @@
   white-space: nowrap;
   padding: 0;
 }
+.chatpack-ui-root .chatpack-ui-button-primary {
+  background: var(--chatpack-ui-accent);
+  color: var(--chatpack-ui-accent-contrast);
+  padding: 0.5rem 0.75rem;
+}
 .chatpack-ui-attachment-composer,
 .chatpack-ui-attachment-dropzone {
   display: flex;
