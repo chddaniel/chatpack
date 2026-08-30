@@ -1,0 +1,60 @@
+---
+title: UI Blocks
+description: Reusable React blocks for Chatpack chat experiences.
+---
+
+`@chatpack/ui` provides reusable React components on top of the headless
+`@chatpack/client` package. It does not own authentication, profiles, routing,
+or a database.
+
+## Install
+
+```sh
+pnpm add @chatpack/ui @chatpack/client
+```
+
+Import the stylesheet once, then provide a React-enabled client and the viewer
+id. User ids are opaque to Chatpack, so applications can render their own
+profiles:
+
+```tsx
+import { createChatClient } from "@chatpack/client/react";
+import { ChatpackUIProvider, ChatWindow } from "@chatpack/ui";
+import "@chatpack/ui/styles.css";
+
+const client = createChatClient({ baseURL: "/", basePath: "/api/chat" });
+
+export function Chat({ conversationId, userId }: { conversationId: string; userId: string }) {
+  return (
+    <ChatpackUIProvider client={client} userId={userId} renderUser={(id) => <span>{id}</span>}>
+      <ChatWindow conversationId={conversationId} />
+    </ChatpackUIProvider>
+  );
+}
+```
+
+## Current Blocks
+
+- `ConversationList`
+- `MessageThread`
+- `MessageComposer`
+- `ChatWindow`
+- `ConnectionStatus`
+- `TypingIndicator`
+- `PresenceIndicator`
+- `PresenceAvatarStack`
+- `OnlineStatusChip`
+- `ReadReceipts`
+- `UnreadInbox`
+- `MessageActions`
+- `MessageSearch`
+- `QuickReactions`
+- `GroupList`
+- `MembersList`
+
+All data comes from the public client hooks and actions. Realtime blocks do not
+implement their own reconnect or polling logic, and reactions are never copied
+into component state.
+
+More blocks from the gallery will be added in focused releases, with tests and
+copyable examples for each public component.

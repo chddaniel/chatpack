@@ -1,0 +1,91 @@
+:root {
+  --chatpack-ui-surface: #ffffff;
+  --chatpack-ui-panel: #f8fafc;
+  --chatpack-ui-border: #e2e8f0;
+  --chatpack-ui-text: #0f172a;
+  --chatpack-ui-muted: #64748b;
+  --chatpack-ui-accent: #2563eb;
+  --chatpack-ui-accent-contrast: #ffffff;
+  --chatpack-ui-bubble-other: #f1f5f9;
+  --chatpack-ui-radius: 0.75rem;
+}
+
+.dark {
+  --chatpack-ui-surface: #020617;
+  --chatpack-ui-panel: #0f172a;
+  --chatpack-ui-border: #1e293b;
+  --chatpack-ui-text: #f8fafc;
+  --chatpack-ui-muted: #94a3b8;
+  --chatpack-ui-bubble-other: #1e293b;
+}
+
+.chatpack-ui-surface {
+  background: var(--chatpack-ui-surface);
+  color: var(--chatpack-ui-text);
+}
+.chatpack-ui-panel {
+  background: var(--chatpack-ui-panel);
+}
+.chatpack-ui-border {
+  border-color: var(--chatpack-ui-border);
+}
+.chatpack-ui-muted {
+  color: var(--chatpack-ui-muted);
+}
+.chatpack-ui-focus:focus-visible {
+  outline: 2px solid var(--chatpack-ui-accent);
+  outline-offset: 2px;
+}
+.chatpack-ui-scroll {
+  overflow: auto;
+}
+.chatpack-ui-button {
+  border: 0;
+  border-radius: var(--chatpack-ui-radius);
+  cursor: pointer;
+  font: inherit;
+}
+.chatpack-ui-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+.chatpack-ui-button-primary {
+  background: var(--chatpack-ui-accent);
+  color: var(--chatpack-ui-accent-contrast);
+  padding: 0.5rem 0.75rem;
+}
+.chatpack-ui-button-ghost {
+  background: transparent;
+  color: inherit;
+  padding: 0.5rem 0.75rem;
+}
+.chatpack-ui-button-ghost:hover {
+  background: var(--chatpack-ui-bubble-other);
+}
+.chatpack-ui-input {
+  border: 1px solid var(--chatpack-ui-border);
+  border-radius: var(--chatpack-ui-radius);
+  background: var(--chatpack-ui-surface);
+  color: inherit;
+  font: inherit;
+  padding: 0.625rem 0.75rem;
+}
+.chatpack-ui-bubble {
+  max-width: min(42rem, 80%);
+  overflow-wrap: anywhere;
+  padding: 0.625rem 0.875rem;
+  white-space: pre-wrap;
+}
+.chatpack-ui-bubble-own {
+  align-self: flex-end;
+  background: var(--chatpack-ui-accent);
+  border-radius: var(--chatpack-ui-radius) 0.25rem var(--chatpack-ui-radius)
+    var(--chatpack-ui-radius);
+  color: var(--chatpack-ui-accent-contrast);
+}
+.chatpack-ui-bubble-other {
+  align-self: flex-start;
+  background: var(--chatpack-ui-bubble-other);
+  border-radius: 0.25rem var(--chatpack-ui-radius) var(--chatpack-ui-radius)
+    var(--chatpack-ui-radius);
+}

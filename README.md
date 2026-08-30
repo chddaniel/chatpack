@@ -848,6 +848,7 @@ threads. See [docs/MVP.md](./docs/MVP.md) for the full scope and reasoning.
 | [`@chatpack/cli`](./packages/cli)                           | Project setup and full starter CLI               |
 | [`@chatpack/transport-redis`](./packages/transport-redis)   | Redis pub/sub transport (multi-node SSE)         |
 | [`@chatpack/file`](./packages/file)                         | Filepack-backed message attachments              |
+| [`@chatpack/ui`](./packages/ui)                             | Reusable React chat UI blocks                    |
 
 ## Examples
 
