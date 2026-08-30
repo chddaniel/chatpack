@@ -29,6 +29,11 @@ export function ConversationHeader({
   );
 }
 
+/** Displays a compact conversation list for narrow navigation rails. */
+export function CompactChatList(props: ComponentProps<typeof ConversationList>) {
+  return <ConversationList {...props} className="chatpack-ui-compact-list" />;
+}
+
 /** Displays one conversation row for a caller-owned conversation page. */
 export function ConversationRow({
   conversation,
@@ -201,6 +206,30 @@ export function MentionAutocomplete({
         </li>
       ))}
     </ul>
+  );
+}
+
+/** Forwards a readable message to a host-selected conversation. */
+export function ForwardDialog({
+  messageId,
+  toConversationId,
+  onForward,
+}: {
+  messageId: string;
+  toConversationId: string;
+  onForward?: () => void;
+}) {
+  const { client } = useChatpackUI();
+  return (
+    <button
+      type="button"
+      onClick={async () => {
+        const result = await client.messages.forward({ messageId, toConversationId });
+        if (result.error === null) onForward?.();
+      }}
+    >
+      Forward
+    </button>
   );
 }
 

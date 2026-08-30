@@ -35,26 +35,52 @@ export function Chat({ conversationId, userId }: { conversationId: string; userI
 
 ## Current Blocks
 
-- `ConversationList`
-- `MessageThread`
-- `MessageComposer`
-- `ChatWindow`
-- `ConnectionStatus`
-- `TypingIndicator`
-- `PresenceIndicator`
-- `PresenceAvatarStack`
-- `OnlineStatusChip`
-- `ReadReceipts`
-- `UnreadInbox`
-- `MessageActions`
-- `MessageSearch`
-- `QuickReactions`
-- `GroupList`
-- `MembersList`
+### Layout
+
+`ConversationList`, `CompactChatList`, `ConversationHeader`, `ConversationRow`,
+`MessageThread`, `FlatMessageThread`, `GroupedMessageThread`, `MessageRow`,
+`ChatWindow`, `InboxLayout`, `MobileChatSheet`, `FloatingChatWidget`,
+`AssistantThread`, `JumpToLatest`
+
+### Input
+
+`MessageComposer`, `ReplyComposer`, `MentionComposer`, `MentionAutocomplete`,
+`ChatComposerBar`, `MessageActions`, `ForwardDialog`, `MessageSearch`,
+`MessageSearchResults`, `ChatCommandPalette`, `StartDirectMessage`,
+`NewGroupForm`, `QuickReactions`, `MessageReactions`
+
+### Realtime
+
+`TypingIndicator`, `TypingDots`, `ConnectionStatus`, `PresenceBar`,
+`PresenceAvatarStack`, `PresenceIndicator`, `OnlineStatusChip`, `ReadReceipts`,
+`UnreadInbox`, `MarkReadButton`
+
+### Groups
+
+`MembersList`, `ParticipantManager`, `InviteManager`, `InviteAccept`,
+`JoinRequests`, `ChannelDirectory`, `ChannelSettings`, `LeaveGroup`
+
+### Moderation
+
+`BlockedUsers`, `MuteToggle`, `MutedList`, `ReportDialog`, `ModerationQueue`,
+`BanManager`
+
+### Media
+
+`AttachmentComposer`, `AttachmentDropzone`, `MessageAttachments`, `ImageBubble`,
+`FileBubble`, `UploadProgress`, `AttachmentGallery`, `UnavailableAttachment`
+
+### Primitives
+
+`UserAvatarUnreadBadge`, `ChatPrimitives`, `MessageBubble`, `Timestamp`,
+`PresenceDot`, `ReadReceiptTicks`, `ReactionPill`, `ReplyQuoteBar`,
+`ForwardedLabel`, `MentionChip`, `RoleTag`, `ErrorNotice`, `SystemMessage`,
+`SoftDeletedTombstone`, `EmptyInbox`, `EmojiPicker`
 
 All data comes from the public client hooks and actions. Realtime blocks do not
 implement their own reconnect or polling logic, and reactions are never copied
 into component state.
 
-More blocks from the gallery will be added in focused releases, with tests and
-copyable examples for each public component.
+Each block is exported from `@chatpack/ui` and has a corresponding catalog entry
+here. Blocks that depend on host policy accept callbacks instead of embedding
+authentication or user-database assumptions.

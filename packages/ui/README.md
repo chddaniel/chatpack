@@ -27,6 +27,7 @@ export function Chat() {
 }
 ```
 
-The initial release includes the provider, primitives, conversation list,
-message thread, composer, connection status, and chat window. More gallery
-blocks will be added without changing the client contract.
+The package exports the complete 76-block gallery: layouts, inputs, realtime
+indicators, groups, moderation, media, and presentational primitives. Blocks
+that require application policy expose callbacks; the package never assumes an
+auth provider, profile schema, or database.
