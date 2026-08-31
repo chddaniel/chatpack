@@ -1,0 +1,195 @@
+// Copy the datasource/generator and these models into your application schema.
+// Prisma ORM 7 requires a generated output path and a caller-owned client.
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/client"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model ChatpackConversation {
+  id             String   @id
+  type           String   @default("direct")
+  pairKey        String?  @unique(map: "chatpack_conversations_pair_key_unique_idx") @map("pair_key")
+  name           String?
+  visibility     String   @default("private")
+  joinPolicy     String   @default("approval") @map("join_policy")
+  createdAt      DateTime @map("created_at")
+  metadata       Json
+  lastSeq        Int      @default(0) @map("last_seq")
+  lastActivityAt DateTime @map("last_activity_at")
+
+  participants ConversationParticipant[]
+  messages     ChatpackMessage[]
+  invites      ChatpackConversationInvite[]
+  joinRequests ChatpackJoinRequest[]
+  mutes        ChatpackConversationMute[]
+
+  @@index([lastActivityAt, id], map: "chatpack_conversations_activity_idx")
+  @@index([lastActivityAt, id], map: "chatpack_conversations_public_idx")
+  @@map("chatpack_conversations")
+}
+
+model ConversationParticipant {
+  conversationId    String   @map("conversation_id")
+  userId            String   @map("user_id")
+  role              String   @default("member")
+  joinedAt          DateTime @map("joined_at")
+  lastReadMessageId String?  @map("last_read_message_id")
+
+  conversation ChatpackConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@id([conversationId, userId], map: "chatpack_participants_conv_user_idx")
+  @@index([userId], map: "chatpack_participants_user_idx")
+  @@map("chatpack_conversation_participants")
+}
+
+model ChatpackMessage {
+  id                          String    @id
+  conversationId              String    @map("conversation_id")
+  senderId                    String    @map("sender_id")
+  body                        String
+  role                        String    @default("user")
+  seq                         Int
+  createdAt                   DateTime  @map("created_at")
+  editedAt                    DateTime? @map("edited_at")
+  deletedAt                   DateTime? @map("deleted_at")
+  replyToMessageId            String?   @map("reply_to_message_id")
+  forwardedFromMessageId      String?   @map("forwarded_from_message_id")
+  forwardedFromConversationId String?   @map("forwarded_from_conversation_id")
+  forwardedFromSenderId       String?   @map("forwarded_from_sender_id")
+  metadata                    Json
+
+  conversation ChatpackConversation         @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  searchTokens ChatpackMessageSearchToken[]
+  reactions    ChatpackMessageReaction[]
+  mentions     ChatpackMessageMention[]
+
+  @@unique([conversationId, seq], map: "chatpack_messages_conv_seq_idx")
+  @@index([forwardedFromMessageId], map: "chatpack_messages_forwarded_from_idx")
+  @@map("chatpack_messages")
+}
+
+model ChatpackMessageSearchToken {
+  messageId   String          @map("message_id")
+  token       String
+  occurrences Int
+  message     ChatpackMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@id([messageId, token], map: "chatpack_message_search_tokens_pk")
+  @@index([token, messageId], map: "chatpack_message_search_tokens_token_idx")
+  @@map("chatpack_message_search_tokens")
+}
+
+model ChatpackMessageReaction {
+  messageId String          @map("message_id")
+  userId    String          @map("user_id")
+  emoji     String
+  createdAt DateTime        @map("created_at")
+  message   ChatpackMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@id([messageId, userId, emoji], map: "chatpack_reactions_msg_user_emoji_idx")
+  @@index([messageId, createdAt], map: "chatpack_reactions_message_idx")
+  @@map("chatpack_message_reactions")
+}
+
+model ChatpackMessageMention {
+  messageId String          @map("message_id")
+  userId    String          @map("user_id")
+  createdAt DateTime        @map("created_at")
+  message   ChatpackMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@id([messageId, userId], map: "chatpack_mentions_msg_user_idx")
+  @@index([messageId, createdAt], map: "chatpack_mentions_message_idx")
+  @@index([userId, createdAt], map: "chatpack_mentions_user_idx")
+  @@map("chatpack_message_mentions")
+}
+
+model ChatpackConversationInvite {
+  code             String               @id
+  conversationId   String               @map("conversation_id")
+  createdBy        String               @map("created_by")
+  createdAt        DateTime             @map("created_at")
+  expiresAt        DateTime?            @map("expires_at")
+  maxUses          Int?                 @map("max_uses")
+  uses             Int                  @default(0)
+  requiresApproval Boolean              @default(false) @map("requires_approval")
+  metadata         Json
+  conversation     ChatpackConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId, createdAt], map: "chatpack_invites_conversation_idx")
+  @@map("chatpack_conversation_invites")
+}
+
+model ChatpackJoinRequest {
+  id             String               @id
+  conversationId String               @map("conversation_id")
+  userId         String               @map("user_id")
+  status         String               @default("pending")
+  message        String?
+  inviteCode     String?              @map("invite_code")
+  createdAt      DateTime             @map("created_at")
+  resolvedAt     DateTime?            @map("resolved_at")
+  resolvedBy     String?              @map("resolved_by")
+  metadata       Json
+  conversation   ChatpackConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, userId], map: "chatpack_join_requests_conv_user_idx")
+  @@index([conversationId, status, createdAt], map: "chatpack_join_requests_status_idx")
+  @@map("chatpack_join_requests")
+}
+
+model ChatpackUserBlock {
+  blockerUserId String   @map("blocker_user_id")
+  blockedUserId String   @map("blocked_user_id")
+  createdAt     DateTime @map("created_at")
+
+  @@id([blockerUserId, blockedUserId], map: "chatpack_user_blocks_pk")
+  @@index([blockerUserId, createdAt], map: "chatpack_user_blocks_blocker_idx")
+  @@map("chatpack_user_blocks")
+}
+
+model ChatpackConversationMute {
+  userId         String               @map("user_id")
+  conversationId String               @map("conversation_id")
+  createdAt      DateTime             @map("created_at")
+  conversation   ChatpackConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@id([userId, conversationId], map: "chatpack_conversation_mutes_pk")
+  @@index([userId, createdAt], map: "chatpack_conversation_mutes_user_idx")
+  @@map("chatpack_conversation_mutes")
+}
+
+model ChatpackModerationReport {
+  id             String   @id
+  reporterUserId String   @map("reporter_user_id")
+  targetType     String   @map("target_type")
+  targetId       String   @map("target_id")
+  reason         String
+  status         String   @default("open")
+  moderatorNote  String?  @map("moderator_note")
+  evidence       Json
+  createdAt      DateTime @map("created_at")
+  updatedAt      DateTime @map("updated_at")
+
+  @@index([status, createdAt, id], map: "chatpack_moderation_reports_queue_idx")
+  @@index([reporterUserId, targetType, targetId, status], map: "chatpack_moderation_reports_target_idx")
+  @@map("chatpack_moderation_reports")
+}
+
+model ChatpackUserBan {
+  id              String    @id
+  userId          String    @map("user_id")
+  createdByUserId String    @map("created_by_user_id")
+  reason          String?
+  createdAt       DateTime  @map("created_at")
+  expiresAt       DateTime? @map("expires_at")
+  revokedAt       DateTime? @map("revoked_at")
+  revokedByUserId String?   @map("revoked_by_user_id")
+
+  @@index([userId, revokedAt, expiresAt], map: "chatpack_user_bans_active_idx")
+  @@index([createdAt, id], map: "chatpack_user_bans_created_idx")
+  @@map("chatpack_user_bans")
+}

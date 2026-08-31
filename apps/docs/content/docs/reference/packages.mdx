@@ -117,6 +117,23 @@ dependency on `drizzle-orm`.
 
 → [Drizzle / Postgres](/docs/storage/drizzle)
 
+## `@chatpack/adapter-prisma`
+
+Prisma ORM 7 PostgreSQL storage. Server-only. Pass a consumer-generated Prisma
+client; the package does not bundle one.
+
+| Export                                          | What it is                                             |
+| ----------------------------------------------- | ------------------------------------------------------ |
+| `prismaAdapter(client)`                         | Create the adapter from the caller-owned Prisma client |
+| `backfillMessageSearchTokens(client)`           | Rebuild search tokens after import                     |
+| `prisma/schema.prisma`                          | Prisma models to copy into the application schema      |
+| `prisma/migrations/0001_chatpack/migration.sql` | PostgreSQL migration asset                             |
+
+Verified: Prisma 7.10.0, `@prisma/adapter-pg` 7.10.0, PostgreSQL 16. Prisma 8
+and other providers/drivers are not claimed compatible.
+
+→ [Prisma / Postgres](/docs/storage/prisma)
+
 ## `@chatpack/adapter-sqlite`
 
 Drizzle ORM SQLite storage for durable local and single-node deployments.

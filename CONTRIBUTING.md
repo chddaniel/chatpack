@@ -19,6 +19,7 @@ chatpack/
 ├── packages/
 │   ├── core/              # @chatpack/core - the chat engine + HTTP handler
 │   ├── adapter-drizzle/   # @chatpack/adapter-drizzle - Drizzle/Postgres storage
+│   ├── adapter-prisma/    # @chatpack/adapter-prisma - Prisma 7/Postgres storage
 │   ├── adapter-memory/    # @chatpack/adapter-memory - in-memory storage
 │   ├── adapter-supabase/  # @chatpack/adapter-supabase - server-side Supabase storage
 │   ├── transport-redis/   # @chatpack/transport-redis - multi-node SSE fan-out
@@ -36,7 +37,7 @@ This is a **pnpm workspace** monorepo orchestrated with **Turborepo**.
 
 ## Prerequisites
 
-- Node.js >= 18
+- Node.js >= 18 (Prisma adapter work requires Node.js >= 20.19)
 - [pnpm](https://pnpm.io) >= 9
 
 ## Getting started
