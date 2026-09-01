@@ -137,7 +137,7 @@ export function MessageRow({
 }) {
   const { userId, renderUser } = useChatpackUI();
   return (
-    <div>
+    <div className="chatpack-ui-message-row-gallery">
       <ReplyQuoteBar replyTo={message.replyTo} />
       <MessageBubble message={message} own={message.senderId === userId} renderUser={renderUser} />
       {children}
@@ -1409,7 +1409,7 @@ export function AttachmentGallery({
   resolver: ChatpackAttachmentResolver;
 }) {
   return (
-    <div>
+    <div className="chatpack-ui-attachment-gallery">
       {attachments.map((attachment) => (
         <ImageBubble
           key={attachment.id}

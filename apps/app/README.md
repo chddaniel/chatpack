@@ -93,9 +93,10 @@ Use your deployed `BETTER_AUTH_URL` when configuring production callback URLs.
 ## Appearance
 
 Use the palette button in the conversation sidebar to choose system, light, or
-dark mode. The same menu includes Default, Ocean, Sunset, Forest, and Violet
-color schemes. The selected color scheme is stored in the browser and applies
-across sessions.
+dark mode. Alternate color schemes remain implemented but are currently gated
+off by `ENABLE_COLOR_SCHEMES` in `src/components/theme-provider.tsx`; while the
+flag is off, the app forces the Default scheme and removes any stale selection
+from browser storage.
 
 ## Optional features
 

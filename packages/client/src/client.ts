@@ -779,7 +779,13 @@ export function createChatClient<
         ...requestOptions(optionsForRequest),
       });
       const conversation = unwrapResult<ClientConversation>(result, "conversation");
-      if (conversation.error === null) cache.setConversation(conversation.data.id, conversation);
+      if (conversation.error === null) {
+        cache.setConversation(conversation.data.id, conversation);
+        // A direct conversation has no activity yet, so its creator does not
+        // receive a stream event that could add it to the loaded list. Echo the
+        // successful response locally, matching createGroup and invite joins.
+        cache.prependConversation(conversation.data);
+      }
       return conversation;
     },
     async createGroup(input = {}, optionsForRequest) {

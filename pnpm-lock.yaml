@@ -50,6 +50,9 @@ importers:
       '@chatpack/transport-redis':
         specifier: workspace:*
         version: link:../../packages/transport-redis
+      '@chatpack/ui':
+        specifier: workspace:*
+        version: link:../../packages/ui
       '@filepack/adapter-drizzle':
         specifier: 0.1.0
         version: 0.1.0(drizzle-orm@0.45.2(@electric-sql/pglite@0.5.4)(@libsql/client@0.15.15)(@neondatabase/serverless@1.1.0)(@types/better-sqlite3@7.6.13)(@types/pg@8.20.0)(kysely@0.29.5)(pg@8.22.0))

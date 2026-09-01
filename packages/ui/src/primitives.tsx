@@ -102,20 +102,22 @@ export function MessageBubble({
 }) {
   const deleted = message.deletedAt !== null;
   return (
-    <article
-      className={cx(
-        "chatpack-ui-bubble",
-        deleted && "chatpack-ui-bubble-deleted",
-        own ? "chatpack-ui-bubble-own" : "chatpack-ui-bubble-other",
-      )}
-    >
+    <div className={cx("chatpack-ui-bubble-wrap", own && "chatpack-ui-bubble-wrap-own")}>
       {!own && renderUser !== undefined && (
         <div className="chatpack-ui-message-author">{renderUser(message.senderId)}</div>
       )}
-      <div>{deleted ? <em>Message deleted</em> : (children ?? message.body)}</div>
-      {message.editedAt !== null && !deleted && <small>(edited)</small>}
-      {footer}
-    </article>
+      <article
+        className={cx(
+          "chatpack-ui-bubble",
+          deleted && "chatpack-ui-bubble-deleted",
+          own ? "chatpack-ui-bubble-own" : "chatpack-ui-bubble-other",
+        )}
+      >
+        <div>{deleted ? <em>Message deleted</em> : (children ?? message.body)}</div>
+        {message.editedAt !== null && !deleted && <small>(edited)</small>}
+      </article>
+      {footer !== undefined && <div className="chatpack-ui-bubble-footer">{footer}</div>}
+    </div>
   );
 }
 
@@ -155,15 +157,41 @@ export function LoadingState({ label = "Loading" }: { label?: string }) {
 export function ErrorNotice({
   error,
   onRetry,
+  title,
+  description,
 }: {
   error: { code: string; message: string };
   onRetry?: () => void;
+  title?: string;
+  description?: string;
 }) {
+  if (title !== undefined || description !== undefined) {
+    return (
+      <div className="chatpack-ui-state-content" role="alert">
+        <strong>{title ?? "Something went wrong"}</strong>
+        <span>{description ?? error.message}</span>
+        <code>{error.code}</code>
+        {onRetry !== undefined && (
+          <button
+            type="button"
+            className="chatpack-ui-button chatpack-ui-button-primary"
+            onClick={onRetry}
+          >
+            Try again
+          </button>
+        )}
+      </div>
+    );
+  }
   return (
     <div className="chatpack-ui-error" role="alert">
       <strong>{error.code}</strong>: {error.message}
       {onRetry !== undefined && (
-        <button type="button" onClick={onRetry}>
+        <button
+          type="button"
+          className="chatpack-ui-button chatpack-ui-button-ghost"
+          onClick={onRetry}
+        >
           Retry
         </button>
       )}
@@ -172,6 +200,35 @@ export function ErrorNotice({
 }
 
 /** Displays an empty state. */
-export function EmptyState({ children = "Nothing here yet" }: { children?: ReactNode }) {
-  return <p className="chatpack-ui-empty">{children}</p>;
+export function EmptyState({
+  children = "Nothing here yet",
+  title,
+  description,
+  actionLabel,
+  onAction,
+}: {
+  children?: ReactNode;
+  title?: string;
+  description?: string;
+  actionLabel?: string;
+  onAction?: (() => void) | undefined;
+}) {
+  if (title === undefined && description === undefined && actionLabel === undefined) {
+    return <p className="chatpack-ui-empty">{children}</p>;
+  }
+  return (
+    <div className="chatpack-ui-state-content">
+      <strong>{title ?? children}</strong>
+      {description !== undefined && <span>{description}</span>}
+      {actionLabel !== undefined && onAction !== undefined && (
+        <button
+          type="button"
+          className="chatpack-ui-button chatpack-ui-button-primary"
+          onClick={onAction}
+        >
+          {actionLabel}
+        </button>
+      )}
+    </div>
+  );
 }

@@ -152,7 +152,7 @@ export function ConversationHeader({
         <AvatarFallback>
           {kind === "direct" ? initialsOf(title) : <Hash className="size-4" />}
         </AvatarFallback>
-        {online && <AvatarBadge className="bg-emerald-500" aria-label="Online" />}
+        {online && <AvatarBadge className="bg-online" aria-label="Online" />}
       </Avatar>
 
       <div className="min-w-0 flex-1">

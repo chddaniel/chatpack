@@ -57,29 +57,59 @@ export function MessageActions({
             aria-label="Edit message"
             rows={2}
           />
-          <button type="button" disabled={pending} onClick={() => void edit()}>
+          <button
+            type="button"
+            className="chatpack-ui-button chatpack-ui-button-primary"
+            disabled={pending}
+            onClick={() => void edit()}
+          >
             Save
           </button>
-          <button type="button" disabled={pending} onClick={() => setEditing(false)}>
+          <button
+            type="button"
+            className="chatpack-ui-button chatpack-ui-button-ghost"
+            disabled={pending}
+            onClick={() => setEditing(false)}
+          >
             Cancel
           </button>
         </>
       )}
       {!editing && (
         <>
-          <button type="button" disabled={pending} onClick={() => onReply?.(message)}>
+          <button
+            type="button"
+            className="chatpack-ui-button chatpack-ui-button-ghost"
+            disabled={pending}
+            onClick={() => onReply?.(message)}
+          >
             Reply
           </button>
-          <button type="button" disabled={pending} onClick={() => onForward?.(message)}>
+          <button
+            type="button"
+            className="chatpack-ui-button chatpack-ui-button-ghost"
+            disabled={pending}
+            onClick={() => onForward?.(message)}
+          >
             Forward
           </button>
           {message.deletedAt === null && canEdit && message.senderId === userId && (
-            <button type="button" disabled={pending} onClick={() => setEditing(true)}>
+            <button
+              type="button"
+              className="chatpack-ui-button chatpack-ui-button-ghost"
+              disabled={pending}
+              onClick={() => setEditing(true)}
+            >
               Edit
             </button>
           )}
           {message.deletedAt === null && message.senderId === userId && (
-            <button type="button" disabled={pending} onClick={() => void remove()}>
+            <button
+              type="button"
+              className="chatpack-ui-button chatpack-ui-button-destructive"
+              disabled={pending}
+              onClick={() => void remove()}
+            >
               Delete
             </button>
           )}
@@ -114,6 +144,7 @@ export function QuickReactions({
           <button
             type="button"
             key={emoji}
+            className="chatpack-ui-button chatpack-ui-button-ghost"
             aria-pressed={mine}
             onClick={() =>
               void (mine
@@ -157,7 +188,12 @@ export function MessageSearch({ onSelect }: { onSelect?: (messageId: string) => 
       )}
       <div>
         {results.data?.messages.map((message) => (
-          <button type="button" key={message.id} onClick={() => onSelect?.(message.id)}>
+          <button
+            type="button"
+            className="chatpack-ui-search-result"
+            key={message.id}
+            onClick={() => onSelect?.(message.id)}
+          >
             <MessageBubble message={message} own={false} renderUser={renderUser} />
             <Timestamp date={message.createdAt} />
           </button>

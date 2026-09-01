@@ -1,5 +1,7 @@
 import {
+  Fragment,
   useEffect,
+  useMemo,
   useRef,
   useState,
   type FormEvent,
@@ -98,6 +100,8 @@ export interface MessageThreadProps {
   className?: string;
   /** Whether to render the standalone block header. */
   showHeader?: boolean;
+  /** Called by the empty-state action, when provided. */
+  onEmptyAction?: () => void;
   /** Optional profile renderer override. */
   renderUser?: (userId: string) => ReactNode;
 }
@@ -106,6 +110,7 @@ export interface MessageThreadProps {
 export function MessageThread({
   conversationId,
   onReply,
+  onEmptyAction,
   className,
   showHeader = true,
   renderUser: renderUserOverride,
@@ -116,21 +121,57 @@ export function MessageThread({
   const bottomRef = useRef<HTMLDivElement | null>(null);
   const page = messages.data?.messages ?? [];
   const newest = page[0];
+  const displayMessages = useMemo(() => [...page].reverse(), [page]);
   useEffect(() => {
     if (newest !== undefined)
       void client.conversations.markRead({ conversationId, messageId: newest.id });
     bottomRef.current?.scrollIntoView({ block: "end" });
   }, [client, conversationId, newest]);
   if (messages.error !== null)
-    return <ErrorNotice error={messages.error} onRetry={() => void messages.refetch()} />;
-  if (messages.isPending && messages.data === null)
-    return <LoadingState label="Loading messages" />;
-  if (page.length === 0) return <EmptyState>No messages yet</EmptyState>;
+    return (
+      <div className="chatpack-ui-message-thread-state">
+        <ErrorNotice
+          title="Couldn't load messages"
+          description="The conversation is fine — we just could not reach it. Nothing has been lost."
+          error={messages.error}
+          onRetry={() => void messages.refetch()}
+        />
+      </div>
+    );
+  if (messages.isPending && page.length === 0)
+    return (
+      <div className="chatpack-ui-message-thread-state" role="status" aria-label="Loading messages">
+        <div className="chatpack-ui-message-thread-loading">
+          {[240, 180, 260, 210, 200].map((width, index) => (
+            <div
+              key={index}
+              className={`chatpack-ui-message-thread-loading-row ${index === 2 || index === 4 ? "chatpack-ui-message-thread-loading-own" : ""}`}
+            >
+              <div
+                className="chatpack-ui-message-thread-loading-bar"
+                style={{ width, height: index % 2 === 0 ? 34 : 20 }}
+              />
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  if (page.length === 0)
+    return (
+      <div className="chatpack-ui-message-thread-state">
+        <EmptyState
+          title="No messages yet"
+          description="Send the first message and it appears here instantly — for everyone in the conversation, with no refresh."
+          actionLabel="Say hello"
+          onAction={onEmptyAction}
+        />
+      </div>
+    );
   return (
     <section className={cx("chatpack-ui-message-thread-shell", className)}>
       {showHeader && <header className="chatpack-ui-list-header">Messages</header>}
       <div className="chatpack-ui-message-thread" aria-live="polite">
-        {messages.data?.nextCursor !== null && (
+        {(messages.data?.nextCursor ?? null) !== null && (
           <button
             type="button"
             className="chatpack-ui-button chatpack-ui-button-ghost"
@@ -139,19 +180,44 @@ export function MessageThread({
             Load older messages
           </button>
         )}
-        {[...page].reverse().map((message) => (
-          <MessageThreadRow
-            key={message.id}
-            message={message}
-            own={message.senderId === userId}
-            renderUser={renderUser}
-            {...(onReply === undefined ? {} : { onReply })}
-          />
-        ))}
+        {displayMessages.map((message, index) => {
+          const previous = displayMessages[index - 1];
+          const showDay =
+            previous === undefined ||
+            messageDayKey(previous.createdAt) !== messageDayKey(message.createdAt);
+          return (
+            <Fragment key={message.id}>
+              {showDay && (
+                <div className="chatpack-ui-day-separator">
+                  {messageDayLabel(message.createdAt)}
+                </div>
+              )}
+              <MessageThreadRow
+                message={message}
+                own={message.senderId === userId}
+                renderUser={renderUser}
+                {...(onReply === undefined ? {} : { onReply })}
+              />
+            </Fragment>
+          );
+        })}
         <div ref={bottomRef} />
       </div>
     </section>
   );
+}
+
+function messageDayKey(value: string | Date): string {
+  const date = new Date(value);
+  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+}
+
+function messageDayLabel(value: string | Date): string {
+  const date = new Date(value);
+  const now = new Date();
+  return messageDayKey(value) === messageDayKey(now)
+    ? "TODAY"
+    : date.toLocaleDateString(undefined, { month: "short", day: "numeric" }).toUpperCase();
 }
 
 function MessageThreadRow({
@@ -167,7 +233,11 @@ function MessageThreadRow({
 }) {
   return (
     <div className="chatpack-ui-message-row">
-      <ReplyQuoteBar replyTo={message.replyTo} />
+      {message.forwardedFrom !== null && own && (
+        <small className="chatpack-ui-forwarded">
+          Forwarded from {renderUser(message.forwardedFrom.senderId)}
+        </small>
+      )}
       <MessageBubble
         message={message}
         own={own}
@@ -188,12 +258,15 @@ function MessageThreadRow({
             </div>
           ) : undefined
         }
-      />
-      {message.forwardedFrom !== null && (
-        <small className="chatpack-ui-forwarded">
-          Forwarded from {renderUser(message.forwardedFrom.senderId)}
-        </small>
-      )}
+      >
+        {message.forwardedFrom !== null && !own && (
+          <small className="chatpack-ui-forwarded">
+            Forwarded from {renderUser(message.forwardedFrom.senderId)}
+          </small>
+        )}
+        <ReplyQuoteBar replyTo={message.replyTo} />
+        {message.body}
+      </MessageBubble>
       {message.reactions.length > 0 && <MessageRowReactions message={message} />}
     </div>
   );
@@ -298,7 +371,7 @@ export function MessageComposer({
         </div>
       )}
       {replyTo !== null && (
-        <div>
+        <div className="chatpack-ui-composer-reply">
           Replying to <strong>{replyTo.senderId}</strong>
           <button
             type="button"

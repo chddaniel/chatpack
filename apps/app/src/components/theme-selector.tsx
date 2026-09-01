@@ -5,6 +5,13 @@ import { useTheme } from "next-themes";
 import { Monitor, Moon, Palette, Sun } from "lucide-react";
 
 import {
+  ENABLE_COLOR_SCHEMES,
+  applyColorScheme,
+  isColorScheme,
+  storedColorScheme,
+  type ColorScheme,
+} from "@/components/theme-provider";
+import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuLabel,
@@ -15,32 +22,13 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 
-const COLOR_SCHEME_STORAGE_KEY = "chatpack-color-scheme";
-
 const COLOR_SCHEMES = [
-  { value: "default", label: "Default", swatch: "bg-neutral-500" },
+  { value: "default", label: "Default", swatch: "bg-brand" },
   { value: "ocean", label: "Ocean", swatch: "bg-sky-500" },
   { value: "sunset", label: "Sunset", swatch: "bg-orange-500" },
   { value: "forest", label: "Forest", swatch: "bg-emerald-600" },
   { value: "violet", label: "Violet", swatch: "bg-violet-500" },
 ] as const;
-
-type ColorScheme = (typeof COLOR_SCHEMES)[number]["value"];
-
-function isColorScheme(value: string | null): value is ColorScheme {
-  return COLOR_SCHEMES.some((scheme) => scheme.value === value);
-}
-
-function applyColorScheme(colorScheme: ColorScheme): void {
-  document.documentElement.dataset.colorScheme = colorScheme;
-  window.localStorage.setItem(COLOR_SCHEME_STORAGE_KEY, colorScheme);
-}
-
-function storedColorScheme(): ColorScheme {
-  if (typeof window === "undefined") return "default";
-  const stored = window.localStorage.getItem(COLOR_SCHEME_STORAGE_KEY);
-  return isColorScheme(stored) ? stored : "default";
-}
 
 export function ThemeSelector() {
   const { setTheme, theme } = useTheme();
@@ -79,16 +67,20 @@ export function ThemeSelector() {
             Dark
           </DropdownMenuRadioItem>
         </DropdownMenuRadioGroup>
-        <DropdownMenuSeparator />
-        <DropdownMenuLabel>Color scheme</DropdownMenuLabel>
-        <DropdownMenuRadioGroup value={colorScheme} onValueChange={handleColorSchemeChange}>
-          {COLOR_SCHEMES.map((scheme) => (
-            <DropdownMenuRadioItem key={scheme.value} value={scheme.value}>
-              <span className={`size-3 rounded-full ${scheme.swatch}`} aria-hidden="true" />
-              {scheme.label}
-            </DropdownMenuRadioItem>
-          ))}
-        </DropdownMenuRadioGroup>
+        {ENABLE_COLOR_SCHEMES && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel>Color scheme</DropdownMenuLabel>
+            <DropdownMenuRadioGroup value={colorScheme} onValueChange={handleColorSchemeChange}>
+              {COLOR_SCHEMES.map((scheme) => (
+                <DropdownMenuRadioItem key={scheme.value} value={scheme.value}>
+                  <span className={`size-3 rounded-full ${scheme.swatch}`} aria-hidden="true" />
+                  {scheme.label}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

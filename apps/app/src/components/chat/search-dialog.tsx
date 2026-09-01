@@ -26,11 +26,21 @@ import { Skeleton } from "@/components/ui/skeleton";
  * someone else's messages. Tombstones are excluded - a deleted message is not
  * findable.
  */
-export function SearchDialog() {
+export function SearchDialog({
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
+  hideTrigger = false,
+}: {
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  hideTrigger?: boolean;
+}) {
   const { client, select } = useChat();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [submitted, setSubmitted] = useState("");
+  const isOpen = controlledOpen ?? open;
+  const setIsOpen = controlledOnOpenChange ?? setOpen;
 
   useEffect(() => {
     const timer = window.setTimeout(() => setSubmitted(query.trim()), 300);
@@ -42,12 +52,14 @@ export function SearchDialog() {
   const results = submitted.length === 0 ? [] : (search.data?.messages ?? []);
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button size="icon" variant="outline" aria-label="Search messages">
-          <Search />
-        </Button>
-      </DialogTrigger>
+    <Dialog open={isOpen} onOpenChange={setIsOpen}>
+      {!hideTrigger && (
+        <DialogTrigger asChild>
+          <Button size="icon" variant="outline" aria-label="Search messages">
+            <Search />
+          </Button>
+        </DialogTrigger>
+      )}
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Search messages</DialogTitle>

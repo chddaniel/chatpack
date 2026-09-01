@@ -80,6 +80,39 @@ describe("client and handler integration", () => {
     });
   });
 
+  it("adds a newly created direct conversation to a loaded list", async () => {
+    const chat = chatpack({
+      storage: memoryAdapter(),
+      auth: (request) => {
+        const userId = request.headers.get("x-user-id");
+        return userId === null ? null : { id: userId };
+      },
+    });
+    const handler = chat.handler({ heartbeatIntervalMs: 0 });
+    const client = createChatClient({
+      fetch: async (input, init) => {
+        const requestURL = new URL(input instanceof Request ? input.url : input);
+        const headers = new Headers(init?.headers);
+        headers.set("x-user-id", "alice");
+        return handler.fetch(
+          new Request("http://chatpack.invalid" + requestURL.pathname + requestURL.search, {
+            ...init,
+            headers,
+          }),
+        );
+      },
+    });
+
+    const listed = await client.conversations.list();
+    expect(listed.error).toBeNull();
+    const created = await client.conversations.create({ otherUserId: "bob" });
+    expect(created.error).toBeNull();
+    if (created.error !== null) return;
+    expect(client.$store.getSnapshot().conversations.data?.conversations[0]?.id).toBe(
+      created.data.id,
+    );
+  });
+
   it("live-updates the conversations list when a message arrives elsewhere", async () => {
     const chat = chatpack({
       storage: memoryAdapter(),

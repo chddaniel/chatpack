@@ -37,5 +37,8 @@ from the client. They do not accept caller-provided records that can drift from
 Chatpack state. Media blocks accept Filepack references and an authorized
 resolver from `@chatpack/file`; attachment metadata never contains a URL.
 
-Import `@chatpack/ui/styles.css` once. Use `ChatpackUIThemeProvider` for token
-overrides. Use `renderUser` wherever a block displays an opaque user id.
+Import `@chatpack/ui/styles.css` once. Its light and dark defaults use the
+Chatpack brand theme. Use `ChatpackUIThemeProvider` for token overrides,
+including separate `input`, `bubbleOwn`, `bubbleOwnMuted`, `bubbleOwnContrast`,
+`destructive`, `online`, and `mentionRing` values. Use `renderUser` wherever a block displays
+an opaque user id.

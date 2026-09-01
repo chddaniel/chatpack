@@ -1,10 +1,36 @@
 import { createContext, useContext, type ReactNode } from "react";
-import type { ReactChatClient } from "@chatpack/client/react";
-import type { ChatClientPlugin } from "@chatpack/client";
-import type { TypingActions } from "@chatpack/client/plugins";
+import type {
+  ChatClient,
+  ChatRealtimeSnapshot,
+  ClientConversation,
+  ClientConversationPage,
+  ConversationListInput,
+  MessageListInput,
+  MessageSearchInput,
+} from "@chatpack/client";
+import type {
+  ChatClientHookResult,
+  MessageSearchHookResult,
+  MessagesHookResult,
+} from "@chatpack/client/react";
+import type {
+  PresenceSnapshot,
+  ReceiptSnapshot,
+  ReceiptState,
+  TypingActions,
+  TypingIndicator,
+} from "@chatpack/client/plugins";
 import { defaultRenderUser, type RenderUser } from "./utils";
 
-type UIClient = ReactChatClient<readonly ChatClientPlugin[]> & {
+type UIClient = ChatClient & {
+  useConversations: (input?: ConversationListInput) => ChatClientHookResult<ClientConversationPage>;
+  useConversation: (input: { conversationId: string }) => ChatClientHookResult<ClientConversation>;
+  useMessages: (input: MessageListInput) => MessagesHookResult;
+  useMessageSearch: (input: MessageSearchInput) => MessageSearchHookResult;
+  useRealtimeStatus: () => ChatRealtimeSnapshot;
+  useTyping: (input: { conversationId: string }) => TypingIndicator | null;
+  usePresence: (input?: { userIds?: readonly string[] }) => PresenceSnapshot;
+  useReceipts: (input?: { conversationId?: string }) => ReceiptSnapshot | ReceiptState | null;
   /** Present when host configured the first-party typing plugin. */
   typing?: TypingActions;
 };

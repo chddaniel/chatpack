@@ -4,12 +4,23 @@ import type { CSSProperties, ReactNode } from "react";
 export interface ChatpackUITheme {
   surface?: string;
   panel?: string;
+  sidebar?: string;
   border?: string;
+  input?: string;
   text?: string;
   muted?: string;
+  mutedSurface?: string;
   accent?: string;
   accentContrast?: string;
+  secondary?: string;
+  secondaryContrast?: string;
+  bubbleOwn?: string;
+  bubbleOwnMuted?: string;
+  bubbleOwnContrast?: string;
   bubbleOther?: string;
+  destructive?: string;
+  online?: string;
+  mentionRing?: string;
   radius?: string;
 }
 

@@ -41,9 +41,11 @@ import type { PublicProfile } from "@/lib/profiles";
 export function ChatShell({
   user,
   initialConversationId,
+  isModerator,
 }: {
   user: PublicProfile;
   initialConversationId: string | null;
+  isModerator: boolean;
 }) {
   const client = useMemo(() => createApplicationChatClient(user.id), [user.id]);
   const files = useMemo(() => createApplicationFileClient(), []);
@@ -58,7 +60,11 @@ export function ChatShell({
   const [blockedUserIds, setBlockedUserIds] = useState<ReadonlySet<string>>(() => new Set());
 
   const rows = conversations.data?.conversations ?? [];
-  const selected = rows.find((conversation) => conversation.id === selectedId) ?? null;
+  const selected =
+    rows.find((conversation) => conversation.id === selectedId) ??
+    (selectedId === null
+      ? null
+      : (client.$store.getSnapshot().conversationsById[selectedId]?.data ?? null));
 
   /**
    * Every user id the sidebar can name, as a stable string.
@@ -196,15 +202,25 @@ export function ChatShell({
     ],
   );
 
-  const sidebar = <ConversationSidebar conversations={conversations} selectedId={selectedId} />;
+  const sidebar = (
+    <ConversationSidebar
+      conversations={conversations}
+      selectedId={selectedId}
+      isModerator={isModerator}
+    />
+  );
 
   return (
     <ChatProvider value={context}>
-      <main className="grid h-dvh bg-background md:grid-cols-[320px_1fr]">
+      <main className="grid h-dvh bg-background md:grid-cols-[360px_1fr]">
         <aside className="hidden md:block">{sidebar}</aside>
 
         <Sheet open={conversationsOpen} onOpenChange={setConversationsOpen}>
-          <SheetContent side="left" className="w-80 p-0" showCloseButton={false}>
+          <SheetContent
+            side="left"
+            className="!w-[min(360px,100vw)] !max-w-none p-0"
+            showCloseButton={false}
+          >
             <SheetTitle className="sr-only">Conversations</SheetTitle>
             <SheetClose asChild>
               <Button
@@ -283,6 +299,11 @@ export function ChatShell({
                 conversationId={selected.id}
                 conversation={selected}
                 onReply={setReplyTo}
+                onSayHello={() => {
+                  document
+                    .querySelector<HTMLTextAreaElement>('textarea[aria-label="Message"]')
+                    ?.focus();
+                }}
               />
               <MessageComposer
                 conversationId={selected.id}

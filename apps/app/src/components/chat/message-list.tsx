@@ -1,15 +1,17 @@
 "use client";
 
-import { useEffect, useMemo, useRef } from "react";
+import { Fragment, useEffect, useMemo, useRef } from "react";
 import type { ClientConversation, ClientMessage } from "@chatpack/client";
 import type { ReceiptState } from "@chatpack/client/plugins";
+import Image, { type ImageProps } from "next/image";
 
 import { useChat } from "@/components/chat/chat-context";
 import { MessageRow } from "@/components/chat/message-row";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
+import error3d from "../../../designs/conversation-sidebar/error-3d.png";
+import empty3d from "../../../designs/message-list/image 3.png";
 
 const EMPTY_MESSAGES: ClientMessage[] = [];
 
@@ -17,10 +19,12 @@ export function MessageList({
   conversationId,
   conversation,
   onReply,
+  onSayHello,
 }: {
   conversationId: string;
   conversation: ClientConversation | null;
   onReply: (message: ClientMessage) => void;
+  onSayHello?: () => void;
 }) {
   const { client, viewer, directory } = useChat();
   const messages = client.useMessages({ conversationId, limit: 50 });
@@ -32,6 +36,7 @@ export function MessageList({
 
   const page = messages.data?.messages ?? EMPTY_MESSAGES;
   const newest = page[0];
+  const displayMessages = useMemo(() => page.toReversed(), [page]);
 
   // Every id the page can name: senders, whoever they replied to, whoever they
   // mentioned, and the original sender of a forward.
@@ -83,12 +88,49 @@ export function MessageList({
 
   if (messages.error) {
     return (
-      <div className="p-6">
-        <Alert variant="destructive">
-          <AlertTitle>Could not load messages</AlertTitle>
-          <AlertDescription>{messages.error.message}</AlertDescription>
-        </Alert>
-      </div>
+      <MessageListState
+        image={error3d}
+        title="Couldn't load messages"
+        description="The conversation is fine — we just could not reach it. Nothing has been lost."
+        detail={messages.error.code}
+        actionLabel="Try again"
+        onAction={() => void messages.refetch()}
+      />
+    );
+  }
+
+  if (messages.isPending && page.length === 0) {
+    return (
+      <ScrollArea className="flex-1">
+        <div className="app-message-list flex flex-col gap-[14px] p-4" role="status">
+          {[240, 180, 260, 210, 200].map((width, index) => (
+            <div
+              key={index}
+              className={`flex w-full ${
+                index === 2 || index === 4 ? "justify-end" : "justify-start"
+              }`}
+            >
+              <Skeleton
+                className="rounded-2xl bg-sidebar-accent"
+                style={{ width, height: index % 2 === 0 ? 34 : 20 }}
+              />
+            </div>
+          ))}
+        </div>
+      </ScrollArea>
+    );
+  }
+
+  if (page.length === 0) {
+    return (
+      <MessageListState
+        image={empty3d}
+        imageSize={46}
+        title="No messages yet"
+        description="Send the first message and it appears here instantly — for everyone in the conversation, with no refresh."
+        actionLabel="Say hello"
+        onAction={onSayHello ?? (() => undefined)}
+      />
     );
   }
 
@@ -97,26 +139,36 @@ export function MessageList({
 
   return (
     <ScrollArea className="flex-1">
-      <div className="mx-auto flex max-w-3xl flex-col gap-3 p-4">
+      <div className="app-message-list mx-auto flex max-w-[560px] flex-col gap-[14px] p-4">
         {(messages.data?.nextCursor ?? null) !== null && (
           <Button variant="ghost" onClick={() => void messages.loadMore()}>
             Load earlier messages
           </Button>
         )}
-        {messages.isPending &&
-          [1, 2, 3].map((item) => <Skeleton key={item} className="h-16 w-3/4" />)}
         {/* The API returns newest first so a page can be fetched without knowing
             the end; the UI reads oldest first. */}
-        {page.toReversed().map((message) => (
-          <MessageRow
-            key={message.id}
-            message={message}
-            conversation={conversation}
-            onReply={onReply}
-            readByOthers={message.seq <= readSeq}
-            delivered={message.seq <= deliveredSeq}
-          />
-        ))}
+        {displayMessages.map((message, index) => {
+          const previous = displayMessages[index - 1];
+          const showDay =
+            previous === undefined ||
+            messageDayKey(previous.createdAt) !== messageDayKey(message.createdAt);
+          return (
+            <Fragment key={message.id}>
+              {showDay && (
+                <div className="app-message-list-day-separator">
+                  {messageDayLabel(message.createdAt)}
+                </div>
+              )}
+              <MessageRow
+                message={message}
+                conversation={conversation}
+                onReply={onReply}
+                readByOthers={message.seq <= readSeq}
+                delivered={message.seq <= deliveredSeq}
+              />
+            </Fragment>
+          );
+        })}
         {typingName !== null && (
           <p className="text-xs text-muted-foreground" aria-live="polite">
             {typingName} is typing…
@@ -126,4 +178,58 @@ export function MessageList({
       </div>
     </ScrollArea>
   );
+}
+
+function MessageListState({
+  image,
+  imageSize = 46,
+  title,
+  description,
+  detail,
+  actionLabel,
+  onAction,
+}: {
+  image: ImageProps["src"];
+  imageSize?: number;
+  title: string;
+  description: string;
+  detail?: string;
+  actionLabel: string;
+  onAction: () => void;
+}) {
+  return (
+    <div className="app-message-list flex flex-1 flex-col items-center justify-center gap-[18px] p-4 text-center">
+      <div className="flex w-full max-w-[300px] flex-col items-center gap-3">
+        <Image src={image} alt="" width={imageSize} height={imageSize} />
+        <div className="flex w-full flex-col items-center gap-2">
+          <p className="text-base font-semibold leading-[19px]">{title}</p>
+          <p className="max-w-[300px] text-[13px] leading-4 text-muted-foreground">{description}</p>
+          {detail && (
+            <p className="font-mono text-[11px] leading-[14px] text-muted-foreground">{detail}</p>
+          )}
+        </div>
+      </div>
+      <Button
+        type="button"
+        size="sm"
+        onClick={onAction}
+        className="h-[34px] rounded-[10px] px-3.5 text-[13px] shadow-[inset_0_-2px_1px_rgba(0,0,0,0.25)]"
+      >
+        {actionLabel}
+      </Button>
+    </div>
+  );
+}
+
+function messageDayKey(value: string | Date): string {
+  const date = new Date(value);
+  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+}
+
+function messageDayLabel(value: string | Date): string {
+  const date = new Date(value);
+  const now = new Date();
+  return messageDayKey(value) === messageDayKey(now)
+    ? "TODAY"
+    : date.toLocaleDateString(undefined, { month: "short", day: "numeric" }).toUpperCase();
 }

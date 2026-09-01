@@ -30,15 +30,23 @@ import { initialsOf, searchProfiles, type PublicProfile } from "@/lib/profiles";
  */
 export function ProfileSearch({
   onSelect,
+  open: controlledOpen,
+  onOpenChange: controlledOnOpenChange,
+  hideTrigger = false,
 }: {
   onSelect: (profile: PublicProfile) => Promise<void>;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
+  hideTrigger?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [profiles, setProfiles] = useState<PublicProfile[]>([]);
+  const isOpen = controlledOpen ?? open;
+  const setIsOpen = controlledOnOpenChange ?? setOpen;
 
   useEffect(() => {
-    if (!open || query.trim().length < 2) return;
+    if (!isOpen || query.trim().length < 2) return;
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
       void searchProfiles(query, controller.signal)
@@ -55,15 +63,17 @@ export function ProfileSearch({
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [open, query]);
+  }, [isOpen, query]);
 
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
-      <DialogTrigger asChild>
-        <Button size="icon" variant="outline" aria-label="New direct message">
-          <MessageSquarePlus />
-        </Button>
-      </DialogTrigger>
+    <Dialog open={isOpen} onOpenChange={setIsOpen}>
+      {!hideTrigger && (
+        <DialogTrigger asChild>
+          <Button size="icon" variant="outline" aria-label="New direct message">
+            <MessageSquarePlus />
+          </Button>
+        </DialogTrigger>
+      )}
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Start a conversation</DialogTitle>
@@ -85,7 +95,7 @@ export function ProfileSearch({
                   value={profile.id}
                   onSelect={async () => {
                     await onSelect(profile);
-                    setOpen(false);
+                    setIsOpen(false);
                     setQuery("");
                     setProfiles([]);
                   }}
