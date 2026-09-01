@@ -11,20 +11,19 @@ import {
   Ban,
   Bell,
   BellOff,
-  Hash,
   LogOut,
   Menu,
   MoreVertical,
   Pencil,
   TriangleAlert,
-  Users,
 } from "lucide-react";
 import { toast } from "sonner";
 
 import { useChat } from "@/components/chat/chat-context";
 import { MembersPanel } from "@/components/chat/members-panel";
 import { ReportDialog } from "@/components/chat/report-dialog";
-import { Avatar, AvatarBadge, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { SearchDialog } from "@/components/chat/search-dialog";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -82,6 +81,7 @@ export function ConversationHeader({
   } = useChat();
   const presence = client.usePresence();
   const [membersOpen, setMembersOpen] = useState(false);
+  const [messageSearchOpen, setMessageSearchOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
 
@@ -134,128 +134,141 @@ export function ConversationHeader({
         }`;
 
   return (
-    <div className="flex items-center gap-3 border-b p-3">
+    <header className="chatpack-ui-conversation-header app-conversation-header">
       <Button
         size="icon"
         variant="ghost"
-        className="md:hidden"
+        className="app-conversation-header-menu md:hidden"
         onClick={onOpenConversations}
         aria-label="Show conversations"
       >
         <Menu />
       </Button>
 
-      <Avatar>
+      <Avatar className="app-conversation-header-avatar">
         <AvatarImage
           src={otherId === null ? undefined : (directory.profiles[otherId]?.image ?? undefined)}
         />
-        <AvatarFallback>
-          {kind === "direct" ? initialsOf(title) : <Hash className="size-4" />}
+        <AvatarFallback className="app-conversation-header-avatar-fallback">
+          {initialsOf(title)}
         </AvatarFallback>
-        {online && <AvatarBadge className="bg-online" aria-label="Online" />}
       </Avatar>
 
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <p className="truncate font-semibold">{title}</p>
-          {kind !== "direct" && <Badge variant="muted">{kind}</Badge>}
+      <div className="app-conversation-header-titles">
+        <div className="app-conversation-header-title-row">
+          <p className="app-conversation-header-title">{title}</p>
           {blocked && <Badge variant="destructive">blocked</Badge>}
         </div>
-        <p className="truncate text-xs text-muted-foreground">{subtitle}</p>
+        <p className="app-conversation-header-subtitle">{subtitle}</p>
       </div>
 
-      {kind !== "direct" && (
+      <div className="app-conversation-header-actions">
         <Button
-          size="icon"
-          variant="outline"
-          onClick={() => setMembersOpen(true)}
-          aria-label="People, invites and join requests"
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="app-conversation-header-action"
+          onClick={() => setMessageSearchOpen(true)}
         >
-          <Users />
+          Search
         </Button>
-      )}
-
-      {/* Muting is viewer-relative and stored: it suppresses this conversation's
-          notifications for you, and changes nothing for anyone else
-          (`docs/decisions/0021`). */}
-      <Button
-        size="icon"
-        variant="outline"
-        onClick={() => void toggleMute(conversation.id)}
-        aria-label={muted ? "Unmute conversation" : "Mute conversation"}
-      >
-        {muted ? <BellOff /> : <Bell />}
-      </Button>
-
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button size="icon" variant="ghost" aria-label="Conversation options">
-            <MoreVertical />
+        {kind !== "direct" && (
+          <Button
+            type="button"
+            size="sm"
+            variant="ghost"
+            className="app-conversation-header-action"
+            onClick={() => setMembersOpen(true)}
+          >
+            Members
           </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-56">
-          {kind !== "direct" && isAdmin && (
-            <>
-              <DropdownMenuItem onSelect={() => setRenameOpen(true)}>
-                <Pencil />
-                Rename
-              </DropdownMenuItem>
-              <DropdownMenuSub>
-                <DropdownMenuSubTrigger>Visibility</DropdownMenuSubTrigger>
-                <DropdownMenuSubContent>
-                  <DropdownMenuRadioGroup
-                    value={conversation.visibility}
-                    onValueChange={(value) =>
-                      void update({ visibility: value as ChannelVisibility })
-                    }
-                  >
-                    <DropdownMenuRadioItem value="private">Private group</DropdownMenuRadioItem>
-                    {/* A channel is not a third conversation type - it is this
-                        group with `visibility: "public"` (`docs/decisions/0020`). */}
-                    <DropdownMenuRadioItem value="public">Public channel</DropdownMenuRadioItem>
-                  </DropdownMenuRadioGroup>
-                </DropdownMenuSubContent>
-              </DropdownMenuSub>
-              {conversation.visibility === "public" && (
+        )}
+
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              size="icon"
+              variant="ghost"
+              className="app-conversation-header-overflow"
+              aria-label="Conversation options"
+            >
+              <MoreVertical />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" className="w-56">
+            {kind !== "direct" && isAdmin && (
+              <>
+                <DropdownMenuItem onSelect={() => setRenameOpen(true)}>
+                  <Pencil />
+                  Rename
+                </DropdownMenuItem>
                 <DropdownMenuSub>
-                  <DropdownMenuSubTrigger>Joining</DropdownMenuSubTrigger>
+                  <DropdownMenuSubTrigger>Visibility</DropdownMenuSubTrigger>
                   <DropdownMenuSubContent>
                     <DropdownMenuRadioGroup
-                      value={conversation.joinPolicy}
+                      value={conversation.visibility}
                       onValueChange={(value) =>
-                        void update({ joinPolicy: value as ChannelJoinPolicy })
+                        void update({ visibility: value as ChannelVisibility })
                       }
                     >
-                      <DropdownMenuRadioItem value="approval">Needs approval</DropdownMenuRadioItem>
-                      <DropdownMenuRadioItem value="open">Anyone can join</DropdownMenuRadioItem>
+                      <DropdownMenuRadioItem value="private">Private group</DropdownMenuRadioItem>
+                      {/* A channel is not a third conversation type - it is this
+                        group with `visibility: "public"` (`docs/decisions/0020`). */}
+                      <DropdownMenuRadioItem value="public">Public channel</DropdownMenuRadioItem>
                     </DropdownMenuRadioGroup>
                   </DropdownMenuSubContent>
                 </DropdownMenuSub>
-              )}
-              <DropdownMenuSeparator />
-            </>
-          )}
+                {conversation.visibility === "public" && (
+                  <DropdownMenuSub>
+                    <DropdownMenuSubTrigger>Joining</DropdownMenuSubTrigger>
+                    <DropdownMenuSubContent>
+                      <DropdownMenuRadioGroup
+                        value={conversation.joinPolicy}
+                        onValueChange={(value) =>
+                          void update({ joinPolicy: value as ChannelJoinPolicy })
+                        }
+                      >
+                        <DropdownMenuRadioItem value="approval">
+                          Needs approval
+                        </DropdownMenuRadioItem>
+                        <DropdownMenuRadioItem value="open">Anyone can join</DropdownMenuRadioItem>
+                      </DropdownMenuRadioGroup>
+                    </DropdownMenuSubContent>
+                  </DropdownMenuSub>
+                )}
+                <DropdownMenuSeparator />
+              </>
+            )}
 
-          <DropdownMenuItem onSelect={() => setReportOpen(true)}>
-            <TriangleAlert />
-            Report conversation
-          </DropdownMenuItem>
-
-          {otherId !== null && (
-            <DropdownMenuItem onSelect={() => void toggleBlock(otherId)}>
-              <Ban />
-              {blocked ? "Unblock" : "Block"} this person
+            {/* Muting is viewer-relative and stored: it suppresses this conversation's
+                notifications for you, and changes nothing for anyone else
+                (`docs/decisions/0021`). */}
+            <DropdownMenuItem onSelect={() => void toggleMute(conversation.id)}>
+              {muted ? <BellOff /> : <Bell />}
+              {muted ? "Unmute conversation" : "Mute conversation"}
             </DropdownMenuItem>
-          )}
 
-          {kind !== "direct" && (
-            <DropdownMenuItem variant="destructive" onSelect={() => void leave()}>
-              <LogOut />
-              Leave
+            <DropdownMenuItem onSelect={() => setReportOpen(true)}>
+              <TriangleAlert />
+              Report conversation
             </DropdownMenuItem>
-          )}
-        </DropdownMenuContent>
-      </DropdownMenu>
+
+            {otherId !== null && (
+              <DropdownMenuItem onSelect={() => void toggleBlock(otherId)}>
+                <Ban />
+                {blocked ? "Unblock" : "Block"} this person
+              </DropdownMenuItem>
+            )}
+
+            {kind !== "direct" && (
+              <DropdownMenuItem variant="destructive" onSelect={() => void leave()}>
+                <LogOut />
+                Leave
+              </DropdownMenuItem>
+            )}
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </div>
 
       {membersOpen && (
         <MembersPanel conversation={conversation} onClose={() => setMembersOpen(false)} />
@@ -276,7 +289,8 @@ export function ConversationHeader({
         targetId={conversation.id}
         description="Reports go to your moderators, who see the conversation id and your reason."
       />
-    </div>
+      <SearchDialog open={messageSearchOpen} onOpenChange={setMessageSearchOpen} hideTrigger />
+    </header>
   );
 }
 

@@ -507,6 +507,110 @@
   color: var(--foreground);
 }
 
+.app-conversation-header {
+  box-sizing: border-box;
+  height: 72px;
+  min-height: 72px;
+  gap: 12px;
+  border-bottom-color: var(--border);
+  background: var(--card);
+  padding: 14px 16px;
+}
+
+.app-conversation-header-menu {
+  height: 28px;
+  width: 28px;
+}
+
+.app-conversation-header-avatar {
+  height: 36px;
+  width: 36px;
+  border-radius: 10px;
+  background: var(--secondary);
+  color: var(--muted-foreground);
+}
+
+.app-conversation-header-avatar::after {
+  display: none;
+}
+
+.app-conversation-header-avatar [data-slot="avatar-image"] {
+  border-radius: 10px;
+}
+
+.app-conversation-header-avatar-fallback {
+  border-radius: 10px;
+  background: var(--secondary);
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 14px;
+}
+
+.app-conversation-header-titles {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.app-conversation-header-title-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+
+.app-conversation-header-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--foreground);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.app-conversation-header-subtitle {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 14px;
+}
+
+.app-conversation-header-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.app-conversation-header-action {
+  height: 28px;
+  min-height: 28px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--secondary) !important;
+  color: var(--muted-foreground) !important;
+  padding: 7px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 14px;
+}
+
+.app-conversation-header-action:hover {
+  background: var(--muted) !important;
+  color: var(--foreground) !important;
+}
+
+.app-conversation-header-overflow {
+  height: 28px;
+  width: 28px;
+}
+
 .app-message-composer-inner {
   display: flex;
   width: 100%;
@@ -710,5 +814,9 @@
 @media (max-width: 767px) {
   .app-message-composer::before {
     left: 0;
+  }
+
+  .app-conversation-header-action {
+    display: none;
   }
 }

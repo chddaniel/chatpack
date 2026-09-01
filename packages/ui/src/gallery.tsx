@@ -43,9 +43,15 @@ type ReportTargetType = "user" | "message" | "conversation";
 export function ConversationHeader({
   conversationId,
   renderUser = (id) => id,
+  renderAvatar,
+  onSearch,
+  onMembers,
 }: {
   conversationId: string;
   renderUser?: (userId: string) => ReactNode;
+  renderAvatar?: (userId: string) => ReactNode;
+  onSearch?: () => void;
+  onMembers?: () => void;
 }) {
   const { client, userId } = useChatpackUI();
   const conversation = client.useConversation({ conversationId });
@@ -59,13 +65,72 @@ export function ConversationHeader({
             data.participants.find((participant) => participant.userId !== userId)?.userId ??
               data.id,
           );
+  const otherUserId =
+    data?.type === "direct"
+      ? (data.participants.find((participant) => participant.userId !== userId)?.userId ?? null)
+      : null;
+  const avatar =
+    otherUserId === null
+      ? data?.type === "group"
+        ? (data.name ?? data.id).slice(0, 2).toUpperCase()
+        : "DM"
+      : (renderAvatar?.(otherUserId) ?? "DM");
+
+  if (conversation.error !== null && data === null) {
+    return (
+      <header className="chatpack-ui-conversation-header" role="alert">
+        <div className="chatpack-ui-conversation-avatar" aria-hidden="true" />
+        <div className="chatpack-ui-conversation-titles">
+          <h2>Conversation unavailable</h2>
+          <small>{conversation.error.code}</small>
+        </div>
+        <button
+          type="button"
+          className="chatpack-ui-conversation-retry chatpack-ui-button"
+          onClick={() => void conversation.refetch()}
+        >
+          Retry
+        </button>
+      </header>
+    );
+  }
+
+  if (data === null) {
+    return (
+      <header className="chatpack-ui-conversation-header" aria-busy="true">
+        <div className="chatpack-ui-conversation-avatar chatpack-ui-conversation-avatar-loading" />
+        <div className="chatpack-ui-conversation-titles">
+          <span className="chatpack-ui-conversation-skeleton chatpack-ui-conversation-skeleton-title" />
+          <span className="chatpack-ui-conversation-skeleton chatpack-ui-conversation-skeleton-subtitle" />
+        </div>
+      </header>
+    );
+  }
+
   return (
     <header className="chatpack-ui-conversation-header">
-      <h2>{title}</h2>
-      {data !== null && (
+      <div className="chatpack-ui-conversation-avatar" aria-hidden="true">
+        {avatar}
+      </div>
+      <div className="chatpack-ui-conversation-titles">
+        <h2>{title}</h2>
         <small>
           {data.type === "group" ? String(data.participants.length) + " members" : "Direct message"}
         </small>
+      </div>
+      {(onSearch !== undefined || (data.type === "group" && onMembers !== undefined)) && (
+        <div className="chatpack-ui-conversation-actions">
+          {onSearch !== undefined && (
+            <button type="button" className="chatpack-ui-conversation-action" onClick={onSearch}>
+              Search
+            </button>
+          )}
+          {data.type === "group" && onMembers !== undefined && (
+            <button type="button" className="chatpack-ui-conversation-action" onClick={onMembers}>
+              Members
+            </button>
+          )}
+        </div>
       )}
     </header>
   );
