@@ -514,6 +514,20 @@
   gap: 8px;
 }
 
+.app-message-composer {
+  position: relative;
+  border-top: 0;
+}
+
+.app-message-composer::before {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: -360px;
+  border-top: 1px solid var(--border);
+  content: "";
+}
+
 .app-message-composer-field-shell {
   position: relative;
   width: 100%;
@@ -586,6 +600,11 @@
 
 .app-message-composer-hint-row {
   min-height: 14px;
+}
+
+.app-sidebar-footer {
+  box-sizing: border-box;
+  flex-shrink: 0;
 }
 
 .app-message-composer-reply {
@@ -685,5 +704,11 @@
   }
   html {
     @apply font-sans;
+  }
+}
+
+@media (max-width: 767px) {
+  .app-message-composer::before {
+    left: 0;
   }
 }

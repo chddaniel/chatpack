@@ -227,7 +227,7 @@ export function ConversationSidebar({
         </ChatpackUIProvider>
       </div>
 
-      <div className="flex flex-col gap-2 border-t p-3">
+      <div className="app-sidebar-footer flex flex-col gap-2 p-3">
         <div className={isModerator ? "grid grid-cols-2 gap-2" : "grid gap-2"}>
           <Button asChild variant="outline" size="sm">
             <Link href="/channels">

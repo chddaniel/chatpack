@@ -137,7 +137,7 @@ export function MessageList({
 
   return (
     <ScrollArea className="flex-1">
-      <div className="app-message-list mx-auto flex max-w-[560px] flex-col gap-[14px] p-4">
+      <div className="app-message-list flex w-full flex-col gap-[14px] p-4">
         {(messages.data?.nextCursor ?? null) !== null && (
           <Button variant="ghost" onClick={() => void messages.loadMore()}>
             Load earlier messages
