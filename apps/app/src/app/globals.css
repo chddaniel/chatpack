@@ -611,6 +611,19 @@
   width: 28px;
 }
 
+.app-search-dialog {
+  display: flex;
+  width: min(480px, calc(100vw - 32px));
+  height: 440px;
+  max-width: calc(100vw - 32px);
+  flex-direction: column;
+  gap: 12px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--card);
+  padding: 16px;
+}
+
 .app-message-composer-inner {
   display: flex;
   width: 100%;
