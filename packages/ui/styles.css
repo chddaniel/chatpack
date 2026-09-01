@@ -389,8 +389,7 @@
 .chatpack-ui-composer {
   box-sizing: border-box;
   display: flex;
-  width: min(100%, 35rem);
-  margin-inline: auto;
+  width: 100%;
   min-height: 8.25rem;
   flex-direction: column;
   align-items: stretch;
