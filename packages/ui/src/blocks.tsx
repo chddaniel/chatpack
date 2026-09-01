@@ -24,6 +24,8 @@ import {
 import { cx } from "./utils";
 import { TypingIndicator } from "./realtime";
 
+const MAX_MESSAGE_LENGTH = 2000;
+
 /** Props for {@link ConversationList}. */
 export interface ConversationListProps {
   /** Currently selected conversation. */
@@ -365,50 +367,69 @@ export function MessageComposer({
   }
   return (
     <form className="chatpack-ui-composer" onSubmit={(event) => void send(event)}>
-      {error !== null && (
-        <div className="chatpack-ui-composer-error">
-          <strong>{error.code}</strong>: {error.message}
-        </div>
-      )}
       {replyTo !== null && (
         <div className="chatpack-ui-composer-reply">
-          Replying to <strong>{replyTo.senderId}</strong>
+          <span className="chatpack-ui-composer-reply-label">
+            Replying to <strong>{replyTo.senderId}</strong> · {replyTo.body}
+          </span>
           <button
             type="button"
             className="chatpack-ui-button chatpack-ui-button-ghost"
             onClick={onClearReply}
+            aria-label="Cancel reply"
           >
-            Cancel
+            ×
           </button>
         </div>
       )}
-      <textarea
-        className="chatpack-ui-input chatpack-ui-focus"
-        value={body}
-        onChange={(event) => {
-          setBody(event.target.value);
-          signalTyping();
-        }}
-        onKeyDown={onKeyDown}
-        onBlur={stopTyping}
-        placeholder={placeholder}
-        aria-label="Message"
-        disabled={disabled || sending || conversationId === ""}
-      />
-      <small className="chatpack-ui-composer-count" aria-live="polite">
-        {body.length} characters
-      </small>
-      <button
-        type="submit"
-        className="chatpack-ui-button chatpack-ui-button-primary chatpack-ui-send"
-        disabled={disabled || sending || body.trim() === "" || conversationId === ""}
-        aria-label={sending ? "Sending" : "Send message"}
+      <div
+        className="chatpack-ui-composer-field"
+        data-error={error !== null ? "true" : undefined}
+        data-sending={sending ? "true" : undefined}
       >
-        {sending ? "…" : "↑"}
-      </button>
-      <small className="chatpack-ui-composer-hint">
-        Enter to send · Shift+Enter for a new line
-      </small>
+        <textarea
+          className="chatpack-ui-composer-textarea"
+          value={body}
+          onChange={(event) => {
+            setBody(event.target.value);
+            setError(null);
+            signalTyping();
+          }}
+          onKeyDown={onKeyDown}
+          onBlur={stopTyping}
+          placeholder={placeholder}
+          aria-label="Message"
+          aria-invalid={error !== null}
+          maxLength={MAX_MESSAGE_LENGTH}
+          disabled={disabled || sending || conversationId === ""}
+        />
+        <button
+          type="submit"
+          className="chatpack-ui-composer-send"
+          disabled={disabled || sending || body.trim() === "" || conversationId === ""}
+          aria-label={sending ? "Sending" : "Send message"}
+        >
+          {sending ? "Sending…" : "Send"}
+        </button>
+      </div>
+      <div className="chatpack-ui-composer-hint-row">
+        <small
+          className={error !== null ? "chatpack-ui-composer-error" : "chatpack-ui-composer-hint"}
+        >
+          {error !== null
+            ? "Message didn't send. Tap Send to try again."
+            : sending
+              ? "Sending…"
+              : "Enter to send · Shift+Enter for a new line"}
+        </small>
+        {error !== null ? (
+          <code className="chatpack-ui-composer-error-code">{error.code}</code>
+        ) : (
+          <small className="chatpack-ui-composer-count" aria-live="polite">
+            {body.length}/{MAX_MESSAGE_LENGTH}
+          </small>
+        )}
+      </div>
     </form>
   );
 }

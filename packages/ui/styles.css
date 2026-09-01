@@ -387,38 +387,119 @@
   opacity: 1;
 }
 .chatpack-ui-composer {
+  box-sizing: border-box;
   display: flex;
-  align-items: flex-end;
+  width: min(100%, 35rem);
+  margin-inline: auto;
+  min-height: 8.25rem;
+  flex-direction: column;
+  align-items: stretch;
   gap: 0.5rem;
   border-top: 1px solid var(--chatpack-ui-border);
-  background: var(--chatpack-ui-surface);
-  padding: 1rem;
+  background: var(--chatpack-ui-panel);
+  padding: 0.75rem 1rem;
 }
-.chatpack-ui-composer textarea {
-  min-height: 2.5rem;
+.chatpack-ui-composer-field {
+  box-sizing: border-box;
+  display: flex;
+  min-height: 2.75rem;
+  width: 100%;
+  align-items: center;
+  gap: 0.5rem;
+  border: 1px solid var(--chatpack-ui-input);
+  border-radius: 0.75rem;
+  background: var(--chatpack-ui-surface);
+  padding: 0.5rem 0.5rem 0.5rem 0.75rem;
+}
+.chatpack-ui-composer-field:focus-within {
+  outline: 2px solid var(--chatpack-ui-focus);
+  outline-offset: 1px;
+}
+.chatpack-ui-composer-field[data-error="true"] {
+  border: 2px solid var(--chatpack-ui-destructive);
+  padding-left: 0.6875rem;
+}
+.chatpack-ui-composer-field[data-sending="true"] {
+  background: var(--chatpack-ui-muted-surface);
+}
+.chatpack-ui-composer-textarea {
+  box-sizing: border-box;
+  min-height: 1.0625rem;
+  max-height: 8rem;
+  min-width: 0;
   flex: 1 1 auto;
   resize: none;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--chatpack-ui-text);
+  padding: 0;
+  font: inherit;
+  font-size: 0.875rem;
+  line-height: 1.0625rem;
+}
+.chatpack-ui-composer-textarea::placeholder {
+  color: var(--chatpack-ui-muted);
+}
+.chatpack-ui-composer-send {
+  box-sizing: border-box;
+  min-width: 3.3125rem;
+  height: 1.75rem;
+  flex: 0 0 auto;
+  border: 0;
+  border-radius: 0.5625rem;
+  background: var(--chatpack-ui-accent);
+  box-shadow: inset 0 -2px 1px rgb(0 0 0 / 0.25);
+  color: var(--chatpack-ui-accent-contrast);
+  cursor: pointer;
+  padding: 0.4375rem 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 0.875rem;
+}
+.chatpack-ui-composer-send:disabled {
+  cursor: not-allowed;
+  opacity: 1;
+}
+.chatpack-ui-composer-field[data-sending="true"] .chatpack-ui-composer-send {
+  background: var(--chatpack-ui-muted-surface);
+  box-shadow: none;
+  color: var(--chatpack-ui-muted);
+  opacity: 0.7;
+}
+.chatpack-ui-composer-hint-row {
+  display: flex;
+  width: 100%;
+  min-height: 0.875rem;
+  align-items: center;
+  gap: 0.5rem;
+}
+.chatpack-ui-composer-count,
+.chatpack-ui-composer-error-code {
+  flex: 0 0 auto;
+  color: var(--chatpack-ui-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.6875rem;
+  line-height: 0.875rem;
+}
+.chatpack-ui-composer textarea {
+  min-height: 1.0625rem;
 }
 .chatpack-ui-composer > button {
   min-height: 2.5rem;
   border-radius: var(--chatpack-ui-radius);
 }
-.chatpack-ui-composer {
-  flex-wrap: wrap;
-}
-.chatpack-ui-composer-error,
-.chatpack-ui-composer-hint {
-  width: 100%;
-}
 .chatpack-ui-composer-error {
   color: var(--chatpack-ui-destructive);
-  font-size: 0.75rem;
-  line-height: 1rem;
+  flex: 1 1 auto;
+  font-size: 0.6875rem;
+  line-height: 0.8125rem;
 }
 .chatpack-ui-composer-hint {
+  flex: 1 1 auto;
   color: var(--chatpack-ui-muted);
   font-size: 0.6875rem;
-  line-height: 1rem;
+  line-height: 0.8125rem;
 }
 .chatpack-ui-presence-indicator,
 .chatpack-ui-presence-stack {
@@ -450,12 +531,34 @@
   display: flex;
   width: 100%;
   align-items: center;
+  box-sizing: border-box;
+  min-height: 1.6875rem;
   gap: 0.5rem;
+  border-left: 3px solid var(--chatpack-ui-accent);
+  border-radius: 0.625rem;
+  background: var(--chatpack-ui-muted-surface);
   color: var(--chatpack-ui-muted);
-  font-size: 0.75rem;
+  padding: 0.4375rem 0.625rem;
+  font-size: 0.6875rem;
+  line-height: 0.8125rem;
+}
+.chatpack-ui-composer-reply-label {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .chatpack-ui-composer-reply strong {
   color: var(--chatpack-ui-text);
+}
+.chatpack-ui-composer-reply .chatpack-ui-button {
+  min-height: 1rem;
+  min-width: 1rem;
+  padding: 0;
+  color: var(--chatpack-ui-muted);
+  font-size: 1rem;
+  line-height: 1rem;
 }
 .chatpack-ui-search-result {
   display: block;

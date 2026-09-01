@@ -9,9 +9,6 @@ import Link from "next/link";
 import Image, { type ImageProps } from "next/image";
 import { toast } from "sonner";
 
-import error3d from "../../../designs/conversation-sidebar/error-3d.png";
-import msg3d from "../../../designs/conversation-sidebar/msg-3d.png";
-
 import { useChat } from "@/components/chat/chat-context";
 import { NewGroupDialog } from "@/components/chat/new-group-dialog";
 import { SearchDialog } from "@/components/chat/search-dialog";
@@ -132,7 +129,7 @@ export function ConversationSidebar({
 
       {conversations.error !== null ? (
         <SidebarState
-          image={error3d}
+          image="/chatpack/error-3d.png"
           title="Couldn't load conversations"
           description="Something went wrong on our side. Your messages are safe."
           detail={conversations.error.code}
@@ -153,7 +150,7 @@ export function ConversationSidebar({
         </ScrollArea>
       ) : empty ? (
         <SidebarState
-          image={msg3d}
+          image="/chatpack/msg-3d.png"
           title="No conversations yet"
           description="Start one and it will appear here. Conversations sync across every device in real time."
           actionLabel="New conversation"

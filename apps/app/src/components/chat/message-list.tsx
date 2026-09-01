@@ -10,8 +10,6 @@ import { MessageRow } from "@/components/chat/message-row";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
-import error3d from "../../../designs/conversation-sidebar/error-3d.png";
-import empty3d from "../../../designs/message-list/image 3.png";
 
 const EMPTY_MESSAGES: ClientMessage[] = [];
 
@@ -89,7 +87,7 @@ export function MessageList({
   if (messages.error) {
     return (
       <MessageListState
-        image={error3d}
+        image="/chatpack/error-3d.png"
         title="Couldn't load messages"
         description="The conversation is fine — we just could not reach it. Nothing has been lost."
         detail={messages.error.code}
@@ -124,7 +122,7 @@ export function MessageList({
   if (page.length === 0) {
     return (
       <MessageListState
-        image={empty3d}
+        image="/chatpack/message-empty.png"
         imageSize={46}
         title="No messages yet"
         description="Send the first message and it appears here instantly — for everyone in the conversation, with no refresh."

@@ -507,6 +507,106 @@
   color: var(--foreground);
 }
 
+.app-message-composer-inner {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.app-message-composer-field-shell {
+  position: relative;
+  width: 100%;
+}
+
+.app-message-composer-field {
+  box-sizing: border-box;
+  height: 44px;
+  min-height: 44px;
+  border-color: var(--input);
+  border-radius: 12px;
+  background: var(--background) !important;
+  padding: 8px 8px 8px 12px;
+}
+
+.app-message-composer-field:focus-within {
+  border-color: var(--ring);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ring) 30%, transparent);
+}
+
+.app-message-composer-field-error {
+  border: 2px solid var(--destructive);
+  padding-left: 11px;
+}
+
+.app-message-composer-field-sending {
+  background: var(--muted) !important;
+}
+
+.app-message-composer-field [data-slot="input-group-control"] {
+  min-height: 17px;
+  padding: 0;
+  font-size: 14px;
+  line-height: 17px;
+}
+
+.app-message-composer-field [data-slot="input-group-addon"] {
+  gap: 8px;
+  padding-right: 0;
+}
+
+.app-message-composer-send {
+  width: 53px;
+  height: 28px;
+  min-height: 28px;
+  border-radius: 9px;
+  background: var(--primary) !important;
+  box-shadow: inset 0 -2px 1px rgb(0 0 0 / 0.25);
+  color: var(--primary-foreground) !important;
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 14px;
+}
+
+.app-message-composer-field-sending .app-message-composer-send {
+  background: var(--muted) !important;
+  box-shadow: none;
+  color: var(--muted-foreground) !important;
+  opacity: 0.7;
+}
+
+.app-message-composer-send:disabled {
+  opacity: 1;
+}
+
+.app-message-composer-field-sending .app-message-composer-send:disabled {
+  opacity: 0.7;
+}
+
+.app-message-composer-hint-row {
+  min-height: 14px;
+}
+
+.app-message-composer-reply {
+  height: 27px;
+  min-height: 27px;
+  padding: 7px 10px;
+}
+
+.app-message-composer-reply > button {
+  width: 16px;
+  height: 16px;
+  min-width: 16px;
+  min-height: 16px;
+  padding: 0;
+}
+
+.app-message-composer-reply > button svg {
+  width: 12px;
+  height: 12px;
+}
+
 .app-message-list-day-separator {
   display: flex;
   justify-content: center;
