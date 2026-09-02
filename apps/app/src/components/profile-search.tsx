@@ -33,11 +33,16 @@ export function ProfileSearch({
   open: controlledOpen,
   onOpenChange: controlledOnOpenChange,
   hideTrigger = false,
+  triggerLabel,
+  triggerClassName,
 }: {
   onSelect: (profile: PublicProfile) => Promise<void>;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   hideTrigger?: boolean;
+  /** Renders a labeled primary trigger instead of the compact icon trigger. */
+  triggerLabel?: string;
+  triggerClassName?: string;
 }) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -81,8 +86,14 @@ export function ProfileSearch({
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       {!hideTrigger && (
         <DialogTrigger asChild>
-          <Button size="icon" variant="outline" aria-label="New direct message">
+          <Button
+            size={triggerLabel === undefined ? "icon" : "sm"}
+            variant={triggerLabel === undefined ? "outline" : "default"}
+            className={triggerClassName}
+            aria-label={triggerLabel ?? "New direct message"}
+          >
             <MessageSquarePlus />
+            {triggerLabel}
           </Button>
         </DialogTrigger>
       )}

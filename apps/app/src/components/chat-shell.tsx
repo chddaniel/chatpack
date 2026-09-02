@@ -2,7 +2,8 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ClientMessage } from "@chatpack/client";
-import { MessagesSquare, X } from "lucide-react";
+import { X } from "lucide-react";
+import Image from "next/image";
 import Link from "next/link";
 import { toast } from "sonner";
 
@@ -15,13 +16,6 @@ import { MessageList } from "@/components/chat/message-list";
 import { ProfileSearch } from "@/components/profile-search";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty";
 import { Sheet, SheetClose, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { useProfileDirectory } from "@/hooks/use-profiles";
 import { createApplicationChatClient } from "@/lib/chatpack.client";
@@ -257,26 +251,27 @@ export function ChatShell({
           )}
 
           {selected === null ? (
-            <Empty className="flex-1">
-              <EmptyHeader>
-                <EmptyMedia variant="icon">
-                  <MessagesSquare />
-                </EmptyMedia>
-                <EmptyTitle>
-                  {conversations.isPending
-                    ? "Loading your conversations"
-                    : rows.length === 0
-                      ? "No conversations yet"
-                      : "Pick a chat"}
-                </EmptyTitle>
-                <EmptyDescription>
-                  {rows.length === 0
-                    ? "Search for someone to start a direct message, make a group, or join a public channel."
-                    : "Choose a conversation on the left to start reading."}
-                </EmptyDescription>
-              </EmptyHeader>
-              <div className="flex items-center gap-2">
+            <div className="app-chat-shell-empty">
+              <div className="app-chat-shell-empty-copy">
+                <Image src="/chatpack/msg-3d.png" alt="" width={46} height={46} />
+                <div className="app-chat-shell-empty-text">
+                  <p className="app-chat-shell-empty-title">
+                    {conversations.isPending
+                      ? "Loading your conversations"
+                      : rows.length === 0
+                        ? "No conversations yet"
+                        : "Pick a chat"}
+                  </p>
+                  <p className="app-chat-shell-empty-description">
+                    {rows.length === 0
+                      ? "Search for someone to start a direct message, make a group, or join a public channel."
+                      : "Choose a conversation on the left to start reading."}
+                  </p>
+                </div>
+              </div>
+              <div className="app-chat-shell-empty-actions">
                 <ProfileSearch
+                  triggerLabel="New direct message"
                   onSelect={async (profile) => {
                     directory.put(profile);
                     const result = await client.conversations.create({ otherUserId: profile.id });
@@ -298,7 +293,7 @@ export function ChatShell({
                   Conversations
                 </Button>
               </div>
-            </Empty>
+            </div>
           ) : (
             <>
               <ConversationHeader
