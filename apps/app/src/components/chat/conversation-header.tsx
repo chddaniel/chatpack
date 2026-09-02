@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import type { ClientConversation } from "@chatpack/client";
+import type { ChatpackClientError, ClientConversation } from "@chatpack/client";
 import {
   MAX_CONVERSATION_NAME_LENGTH,
   type ChannelJoinPolicy,
@@ -65,9 +65,15 @@ import { initialsOf } from "@/lib/profiles";
 export function ConversationHeader({
   conversation,
   onOpenConversations,
+  loading = false,
+  error = null,
+  onRetry,
 }: {
-  conversation: ClientConversation;
+  conversation: ClientConversation | null;
   onOpenConversations: () => void;
+  loading?: boolean;
+  error?: ChatpackClientError | null;
+  onRetry?: () => void;
 }) {
   const {
     client,
@@ -85,6 +91,13 @@ export function ConversationHeader({
   const [renameOpen, setRenameOpen] = useState(false);
   const [reportOpen, setReportOpen] = useState(false);
 
+  if (loading) return <ConversationHeaderLoading />;
+  if (error !== undefined && error !== null) {
+    return <ConversationHeaderError error={error} onRetry={onRetry} />;
+  }
+  if (conversation === null) return <ConversationHeaderError onRetry={onRetry} />;
+  const activeConversation = conversation;
+
   const kind = conversationKind(conversation);
   const title = conversationTitle(conversation, viewer.id, directory.nameOf);
   const otherId = otherParticipantId(conversation, viewer.id);
@@ -99,7 +112,7 @@ export function ConversationHeader({
     joinPolicy?: ChannelJoinPolicy;
   }): Promise<void> {
     const result = await client.conversations.update({
-      conversationId: conversation.id,
+      conversationId: activeConversation.id,
       ...input,
     });
     if (result.error) toast.error(result.error.message);
@@ -110,7 +123,7 @@ export function ConversationHeader({
     // route for it, and an admin leaving must hand the role over first
     // (`docs/decisions/0017`).
     const result = await client.conversations.removeParticipant({
-      conversationId: conversation.id,
+      conversationId: activeConversation.id,
       userId: viewer.id,
     });
     if (result.error) {
@@ -290,6 +303,44 @@ export function ConversationHeader({
         description="Reports go to your moderators, who see the conversation id and your reason."
       />
       <SearchDialog open={messageSearchOpen} onOpenChange={setMessageSearchOpen} hideTrigger />
+    </header>
+  );
+}
+
+function ConversationHeaderLoading() {
+  return (
+    <header
+      className="chatpack-ui-conversation-header app-conversation-header app-conversation-header-loading"
+      aria-busy="true"
+    >
+      <span className="app-conversation-header-loading-avatar" />
+      <span className="app-conversation-header-loading-titles">
+        <span />
+        <span />
+      </span>
+    </header>
+  );
+}
+
+function ConversationHeaderError({
+  error,
+  onRetry,
+}: {
+  error?: ChatpackClientError;
+  onRetry?: () => void;
+}) {
+  return (
+    <header className="chatpack-ui-conversation-header app-conversation-header app-conversation-header-error">
+      <span className="app-conversation-header-error-avatar" aria-hidden="true" />
+      <span className="app-conversation-header-error-copy">
+        <strong>Conversation unavailable</strong>
+        {error !== undefined && <code>{error.code}</code>}
+      </span>
+      {onRetry !== undefined && (
+        <Button className="app-conversation-header-retry" onClick={onRetry}>
+          Retry
+        </Button>
+      )}
     </header>
   );
 }

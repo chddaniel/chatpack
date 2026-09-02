@@ -1506,6 +1506,76 @@
   width: 28px;
 }
 
+.app-conversation-header-loading-avatar,
+.app-conversation-header-error-avatar {
+  display: block;
+  height: 36px;
+  width: 36px;
+  flex: 0 0 auto;
+  border-radius: 18px;
+  background: var(--chatpack-ui-secondary);
+}
+
+.app-conversation-header-loading-titles {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.app-conversation-header-loading-titles span {
+  display: block;
+  height: 10px;
+  border-radius: 5px;
+  background: var(--chatpack-ui-secondary);
+  animation: app-channel-directory-pulse 1.5s ease-in-out infinite;
+}
+
+.app-conversation-header-loading-titles span:first-child {
+  width: 120px;
+}
+
+.app-conversation-header-loading-titles span:last-child {
+  width: 80px;
+}
+
+.app-conversation-header-error-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.app-conversation-header-error-copy strong {
+  color: var(--chatpack-ui-text);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.app-conversation-header-error-copy code {
+  overflow: hidden;
+  color: var(--chatpack-ui-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-conversation-header-retry {
+  height: 28px;
+  min-height: 28px;
+  border-radius: 8px;
+  background: var(--chatpack-ui-accent) !important;
+  box-shadow: var(--chatpack-ui-control-shadow);
+  color: var(--chatpack-ui-accent-contrast) !important;
+  padding: 7px 12px;
+  font-size: 12px;
+  line-height: 14px;
+}
+
 .app-search-dialog {
   display: flex;
   width: min(480px, calc(100vw - 32px));
