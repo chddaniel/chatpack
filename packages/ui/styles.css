@@ -968,7 +968,7 @@
   align-items: center;
   justify-content: center;
   border-radius: 0.625rem;
-  background: var(--chatpack-ui-secondary);
+  background: var(--chatpack-ui-muted-surface);
   color: var(--chatpack-ui-muted);
   font-size: 0.75rem;
   line-height: 0.875rem;
@@ -998,7 +998,7 @@
   height: 1.75rem;
   border: 0;
   border-radius: 0.5rem;
-  background: var(--chatpack-ui-secondary);
+  background: var(--chatpack-ui-muted-surface);
   color: var(--chatpack-ui-muted);
   padding: 0.4375rem 0.625rem;
   font: inherit;
@@ -1007,7 +1007,7 @@
   line-height: 0.875rem;
 }
 .chatpack-ui-conversation-action:hover {
-  background: var(--chatpack-ui-muted-surface);
+  background: var(--chatpack-ui-secondary);
   color: var(--chatpack-ui-text);
 }
 .chatpack-ui-conversation-retry {

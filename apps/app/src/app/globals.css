@@ -485,7 +485,7 @@
   height: 36px;
   width: 36px;
   border-radius: 10px;
-  background: var(--secondary);
+  background: var(--muted);
   color: var(--muted-foreground);
 }
 
@@ -499,7 +499,7 @@
 
 .app-conversation-header-avatar-fallback {
   border-radius: 10px;
-  background: var(--secondary);
+  background: var(--muted);
   color: var(--muted-foreground);
   font-size: 12px;
   line-height: 14px;
@@ -552,7 +552,7 @@
   min-height: 28px;
   border: 0;
   border-radius: 8px;
-  background: var(--secondary) !important;
+  background: var(--muted) !important;
   color: var(--muted-foreground) !important;
   padding: 7px 10px;
   font-size: 12px;
@@ -561,7 +561,7 @@
 }
 
 .app-conversation-header-action:hover {
-  background: var(--muted) !important;
+  background: var(--secondary) !important;
   color: var(--foreground) !important;
 }
 
