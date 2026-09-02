@@ -330,6 +330,7 @@ export function MessageComposer({
                 variant="ghost"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={busy || pending.length >= MAX_ATTACHMENTS_PER_MESSAGE}
+                className="app-message-composer-attach"
                 aria-label="Attach files"
               >
                 <Paperclip />
