@@ -27,7 +27,6 @@ import { ChatWindow, ConversationList, MessageComposer, MessageThread } from "./
 import {
   EmptyState,
   MessageBubble,
-  LoadingState,
   ReactionPill,
   ReplyQuoteBar,
   Timestamp,
@@ -1415,9 +1414,9 @@ export function ImageBubble({
       cancelled = true;
     };
   }, [attachment.id, conversationId, resolver]);
-  if (resolved === null) return <LoadingState label={attachment.name} />;
+  if (resolved === null) return <AttachmentLoading label={attachment.name} />;
   if (resolved.status === "unavailable") return <UnavailableAttachment name={attachment.name} />;
-  return <img src={resolved.url} alt={attachment.name} />;
+  return <img className="chatpack-ui-attachment-image" src={resolved.url} alt={attachment.name} />;
 }
 
 /** Resolves and displays an authorized downloadable file attachment. */
@@ -1445,12 +1444,21 @@ export function FileBubble({
       cancelled = true;
     };
   }, [attachment.id, conversationId, resolver]);
-  if (resolved === null) return <LoadingState label={attachment.name} />;
+  if (resolved === null) return <AttachmentLoading label={attachment.name} />;
   if (resolved.status === "unavailable") return <UnavailableAttachment name={attachment.name} />;
   return (
-    <a href={resolved.url} download={attachment.name}>
+    <a className="chatpack-ui-attachment-file" href={resolved.url} download={attachment.name}>
       {attachment.name}
     </a>
+  );
+}
+
+function AttachmentLoading({ label }: { label: string }) {
+  return (
+    <div className="chatpack-ui-attachment-loading" role="status" aria-label={`Loading ${label}`}>
+      <span />
+      <span />
+    </div>
   );
 }
 
@@ -1489,7 +1497,16 @@ export function AttachmentGallery({
 
 /** Displays an attachment whose URL is unavailable. */
 export function UnavailableAttachment({ name = "Attachment" }: { name?: string }) {
-  return <span role="status">{name} unavailable</span>;
+  return (
+    <div className="chatpack-ui-attachment-unavailable" role="status">
+      <span className="chatpack-ui-attachment-error-icon" aria-hidden="true">
+        !
+      </span>
+      <strong>Attachment unavailable</strong>
+      <span>The file could not be loaded.</span>
+      <span className="sr-only">{name}</span>
+    </div>
+  );
 }
 
 /** Displays a user avatar fallback and unread count. */
