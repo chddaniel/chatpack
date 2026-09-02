@@ -42,6 +42,8 @@ export function ProfileSearch({
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [profiles, setProfiles] = useState<PublicProfile[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(false);
   const isOpen = controlledOpen ?? open;
   const setIsOpen = controlledOnOpenChange ?? setOpen;
 
@@ -49,15 +51,25 @@ export function ProfileSearch({
     if (!isOpen || query.trim().length < 2) return;
     const controller = new AbortController();
     const timer = window.setTimeout(() => {
+      setLoading(true);
+      setError(false);
       void searchProfiles(query, controller.signal)
         // A response for a query the user has already changed must not overwrite
         // the current list, even if it arrived just before the abort landed.
         .then((found) => {
-          if (!controller.signal.aborted) setProfiles(found);
+          if (!controller.signal.aborted) {
+            setProfiles(found);
+            setLoading(false);
+          }
         })
         // Aborting is how this effect cancels an in-flight search, so the
         // rejection it causes is the intended outcome, not an error to report.
-        .catch(() => undefined);
+        .catch(() => {
+          if (!controller.signal.aborted) {
+            setLoading(false);
+            setError(true);
+          }
+        });
     }, 250);
     return () => {
       controller.abort();
@@ -74,40 +86,61 @@ export function ProfileSearch({
           </Button>
         </DialogTrigger>
       )}
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>Start a conversation</DialogTitle>
+      <DialogContent className="app-profile-search-dialog">
+        <DialogHeader className="app-profile-search-header">
+          <DialogTitle>New conversation</DialogTitle>
+          <p className="app-profile-search-description">Pick someone to message.</p>
         </DialogHeader>
-        <Command shouldFilter={false}>
+        <Command shouldFilter={false} className="app-profile-search-command">
           <CommandInput
             placeholder="Search name or exact email"
             value={query}
-            onValueChange={setQuery}
+            onValueChange={(value) => {
+              setQuery(value);
+              if (value.trim().length < 2) {
+                setLoading(false);
+                setError(false);
+              }
+            }}
           />
           <CommandList>
-            <CommandEmpty>
-              {query.length < 2 ? "Enter at least two characters." : "No people found."}
-            </CommandEmpty>
-            <CommandGroup>
-              {(query.trim().length < 2 ? [] : profiles).map((profile) => (
-                <CommandItem
-                  key={profile.id}
-                  value={profile.id}
-                  onSelect={async () => {
-                    await onSelect(profile);
-                    setIsOpen(false);
-                    setQuery("");
-                    setProfiles([]);
-                  }}
-                >
-                  <Avatar>
-                    <AvatarImage src={profile.image ?? undefined} />
-                    <AvatarFallback>{initialsOf(profile.name)}</AvatarFallback>
-                  </Avatar>
-                  <span>{profile.name}</span>
-                </CommandItem>
-              ))}
-            </CommandGroup>
+            {loading ? (
+              <div className="app-profile-search-loading" aria-busy="true">
+                {[0, 1, 2, 3].map((index) => (
+                  <span key={index} />
+                ))}
+              </div>
+            ) : (
+              <>
+                <CommandEmpty>
+                  {error
+                    ? "Couldn’t load people. Try again."
+                    : query.length < 2
+                      ? "Enter at least two characters."
+                      : "No people found."}
+                </CommandEmpty>
+                <CommandGroup>
+                  {(query.trim().length < 2 ? [] : profiles).map((profile) => (
+                    <CommandItem
+                      key={profile.id}
+                      value={profile.id}
+                      onSelect={async () => {
+                        await onSelect(profile);
+                        setIsOpen(false);
+                        setQuery("");
+                        setProfiles([]);
+                      }}
+                    >
+                      <Avatar>
+                        <AvatarImage src={profile.image ?? undefined} />
+                        <AvatarFallback>{initialsOf(profile.name)}</AvatarFallback>
+                      </Avatar>
+                      <span>{profile.name}</span>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </>
+            )}
           </CommandList>
         </Command>
       </DialogContent>

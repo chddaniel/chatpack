@@ -1038,6 +1038,188 @@
   animation: app-channel-directory-pulse 1.5s ease-in-out infinite;
 }
 
+.app-profile-search-dialog {
+  display: flex !important;
+  width: min(440px, calc(100vw - 32px));
+  height: min(440px, calc(100vh - 32px));
+  max-width: none !important;
+  flex-direction: column;
+  gap: 12px;
+  overflow: hidden;
+  border: 1px solid var(--chatpack-ui-border);
+  border-radius: 16px;
+  background: var(--chatpack-ui-panel);
+  color: var(--chatpack-ui-text);
+  padding: 16px 14px;
+}
+
+.app-profile-search-header {
+  gap: 3px;
+  flex: 0 0 auto;
+}
+
+.app-profile-search-header [data-slot="dialog-title"] {
+  color: var(--chatpack-ui-text);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 17px;
+}
+
+.app-profile-search-description {
+  color: var(--chatpack-ui-muted);
+  font-size: 11px;
+  line-height: 13px;
+}
+
+.app-profile-search-command {
+  min-height: 0;
+  flex: 1 1 auto;
+  gap: 0;
+  overflow: hidden;
+  border-radius: 0 !important;
+  background: transparent !important;
+  padding: 0 !important;
+}
+
+.app-profile-search-command [data-slot="command-input-wrapper"] {
+  padding: 0 0 8px;
+}
+
+.app-profile-search-command [data-slot="input-group"] {
+  height: 37px;
+  border: 1px solid var(--chatpack-ui-input);
+  border-radius: 10px;
+  background: var(--chatpack-ui-surface);
+}
+
+.app-profile-search-command [data-slot="command-input"] {
+  color: var(--chatpack-ui-text);
+  font-size: 14px;
+}
+
+.app-profile-search-command [data-slot="command-list"] {
+  max-height: none;
+  min-height: 0;
+  flex: 1 1 auto;
+  padding: 0;
+}
+
+.app-profile-search-command [data-slot="command-group"] {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0;
+}
+
+.app-profile-search-command [data-slot="command-item"] {
+  min-height: 48px;
+  gap: 9px;
+  border-radius: 10px !important;
+  padding: 7px 8px;
+  color: var(--chatpack-ui-text);
+  font-size: 13px;
+  line-height: 16px;
+}
+
+.app-profile-search-command [data-slot="command-item"] [data-slot="avatar"] {
+  height: 34px;
+  width: 34px;
+  flex: 0 0 auto;
+}
+
+.app-profile-search-command [data-slot="command-item"] [data-slot="avatar-fallback"] {
+  font-size: 12px;
+}
+
+.app-profile-search-command [data-slot="command-empty"] {
+  display: flex;
+  height: 100%;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  color: var(--chatpack-ui-muted);
+  font-size: 12px;
+  line-height: 14px;
+  text-align: center;
+}
+
+.app-profile-search-loading {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.app-profile-search-loading span {
+  display: block;
+  height: 48px;
+  border-radius: 10px;
+  background: var(--chatpack-ui-secondary);
+  animation: app-channel-directory-pulse 1.5s ease-in-out infinite;
+}
+
+.app-profile-picker {
+  min-width: 0;
+}
+
+.app-profile-picker-input {
+  height: 37px;
+  min-height: 37px;
+  border-color: var(--chatpack-ui-input) !important;
+  border-radius: 10px !important;
+  background: var(--chatpack-ui-surface) !important;
+  color: var(--chatpack-ui-text);
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 16px;
+}
+
+.app-profile-picker-results {
+  max-height: 160px;
+  overflow-y: auto;
+  border: 1px solid var(--chatpack-ui-border);
+  border-radius: 10px;
+  background: var(--chatpack-ui-panel);
+  padding: 4px;
+}
+
+.app-profile-picker-result {
+  display: flex;
+  width: 100%;
+  min-height: 44px;
+  align-items: center;
+  gap: 9px;
+  border-radius: 8px;
+  color: var(--chatpack-ui-text);
+  padding: 6px 8px;
+  text-align: left;
+  font-size: 13px;
+  line-height: 16px;
+}
+
+.app-profile-picker-result:hover {
+  background: var(--chatpack-ui-secondary);
+}
+
+.app-profile-picker-result [data-slot="avatar"] {
+  height: 34px;
+  width: 34px;
+  flex: 0 0 auto;
+}
+
+.app-profile-picker-state {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  background: var(--chatpack-ui-secondary);
+  color: var(--chatpack-ui-muted);
+  padding: 8px 12px;
+  text-align: center;
+  font-size: 12px;
+  line-height: 14px;
+}
+
 .app-conversation-header {
   box-sizing: border-box;
   height: 72px;
