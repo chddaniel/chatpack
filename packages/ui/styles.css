@@ -538,7 +538,6 @@
   box-sizing: border-box;
   display: flex;
   width: min(100%, 23.75rem);
-  min-height: 13.75rem;
   flex-direction: column;
   align-items: stretch;
   justify-content: center;
@@ -607,11 +606,11 @@
 }
 .chatpack-ui-attachment-unavailable {
   display: flex;
-  min-height: 11.75rem;
   align-items: center;
   justify-content: center;
   flex-direction: column;
   gap: 0.5rem;
+  padding: 1rem 0;
   color: var(--chatpack-ui-muted);
   text-align: center;
 }

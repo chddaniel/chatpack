@@ -1366,6 +1366,7 @@ export function MessageAttachments({
   attachments: readonly ChatAttachment[];
   resolver: ChatpackAttachmentResolver;
 }) {
+  if (attachments.length === 0) return null;
   return (
     <ul className="chatpack-ui-attachments">
       {attachments.map((attachment) => (
