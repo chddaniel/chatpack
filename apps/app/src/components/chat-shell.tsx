@@ -4,9 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ClientMessage } from "@chatpack/client";
 import { X } from "lucide-react";
 import Image from "next/image";
-import Link from "next/link";
 import { toast } from "sonner";
 
+import { ChannelDirectory } from "@/components/channel-directory";
 import { ChatProvider, type ChatContextValue } from "@/components/chat/chat-context";
 import { ConversationHeader } from "@/components/chat/conversation-header";
 import { ConversationSidebar } from "@/components/chat/conversation-sidebar";
@@ -52,6 +52,7 @@ export function ChatShell({
   const [replyTo, setReplyTo] = useState<ClientMessage | null>(null);
   const [newGroupOpen, setNewGroupOpen] = useState(initialNewGroupOpen);
   const [conversationsOpen, setConversationsOpen] = useState(false);
+  const [channelsOpen, setChannelsOpen] = useState(false);
   const [mutedConversationIds, setMutedConversationIds] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
@@ -210,12 +211,16 @@ export function ChatShell({
       selectedId={selectedId}
       isModerator={isModerator}
       onNewGroup={() => setNewGroupOpen(true)}
+      onBrowseChannels={() => setChannelsOpen(true)}
     />
   );
 
   return (
     <ChatProvider value={context}>
       {newGroupOpen && <NewGroupDialog onClose={() => setNewGroupOpen(false)} />}
+      {channelsOpen && (
+        <ChannelDirectory user={user} client={client} onClose={() => setChannelsOpen(false)} />
+      )}
       <main className="grid h-dvh bg-background md:grid-cols-[360px_1fr]">
         <aside className="hidden md:block">{sidebar}</aside>
 
@@ -282,8 +287,8 @@ export function ChatShell({
                     select(result.data.id);
                   }}
                 />
-                <Button asChild variant="outline">
-                  <Link href="/channels">Browse channels</Link>
+                <Button type="button" variant="outline" onClick={() => setChannelsOpen(true)}>
+                  Browse channels
                 </Button>
                 <Button
                   className="md:hidden"

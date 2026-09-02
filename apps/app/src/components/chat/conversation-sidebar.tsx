@@ -34,11 +34,13 @@ export function ConversationSidebar({
   selectedId,
   isModerator,
   onNewGroup,
+  onBrowseChannels,
 }: {
   conversations: ChatClientHookResult<ClientConversationPage>;
   selectedId: string | null;
   isModerator: boolean;
   onNewGroup: () => void;
+  onBrowseChannels: () => void;
 }) {
   const { client, viewer, directory, mutedConversationIds, select } = useChat();
   const presence = client.usePresence();
@@ -92,11 +94,9 @@ export function ConversationSidebar({
               Search messages
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem asChild>
-              <Link href="/channels">
-                <Compass />
-                Browse channels
-              </Link>
+            <DropdownMenuItem onSelect={onBrowseChannels}>
+              <Compass />
+              Browse channels
             </DropdownMenuItem>
             {isModerator && (
               <DropdownMenuItem asChild>
@@ -226,11 +226,9 @@ export function ConversationSidebar({
 
       <div className="app-sidebar-footer flex flex-col gap-2 p-3">
         <div className={isModerator ? "grid grid-cols-2 gap-2" : "grid gap-2"}>
-          <Button asChild variant="outline" size="sm">
-            <Link href="/channels">
-              <Compass />
-              Channels
-            </Link>
+          <Button type="button" variant="outline" size="sm" onClick={onBrowseChannels}>
+            <Compass />
+            Channels
           </Button>
           {isModerator && (
             <Button asChild variant="outline" size="sm">

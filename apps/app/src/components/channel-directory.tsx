@@ -2,14 +2,21 @@
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
 import type { ChatpackClientError, ClientChannelPreview } from "@chatpack/client";
-import { LifeBuoy, Megaphone, UsersRound } from "lucide-react";
+import { ArrowLeft, LifeBuoy, Megaphone, UsersRound } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { createApplicationChatClient } from "@/lib/chatpack.client";
+import { createApplicationChatClient, type ApplicationChatClient } from "@/lib/chatpack.client";
 import type { PublicProfile } from "@/lib/profiles";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 
 /**
  * The public channel directory (`docs/decisions/0020`).
@@ -19,8 +26,17 @@ import type { PublicProfile } from "@/lib/profiles";
  * membership of every public channel to everybody. A count answers "is this the
  * right room?" without naming anyone.
  */
-export function ChannelDirectory({ user }: { user: PublicProfile }) {
-  const client = useMemo(() => createApplicationChatClient(user.id), [user.id]);
+export function ChannelDirectory({
+  user,
+  client: providedClient,
+  onClose,
+}: {
+  user: PublicProfile;
+  client?: ApplicationChatClient;
+  onClose?: () => void;
+}) {
+  const ownedClient = useMemo(() => createApplicationChatClient(user.id), [user.id]);
+  const client = providedClient ?? ownedClient;
   const router = useRouter();
   const [channels, setChannels] = useState<ClientChannelPreview[] | null>(null);
   const [error, setError] = useState<ChatpackClientError | null>(null);
@@ -95,13 +111,30 @@ export function ChannelDirectory({ user }: { user: PublicProfile }) {
     await load(null);
   }
 
+  const close = onClose ?? (() => router.push("/"));
+
   return (
-    <main className="app-channel-directory">
-      <section className="app-channel-directory-card">
-        <div className="app-channel-directory-header">
-          <h1>Channels</h1>
-          <p>Public groups anyone can join.</p>
-        </div>
+    <Dialog open onOpenChange={(open) => !open && close()}>
+      <DialogContent
+        className="app-channel-directory-dialog app-channel-directory-card"
+        showCloseButton={false}
+      >
+        <DialogHeader className="app-channel-directory-header">
+          <Button
+            type="button"
+            size="icon-sm"
+            variant="ghost"
+            className="app-channel-directory-back"
+            onClick={close}
+            aria-label="Back to chat"
+          >
+            <ArrowLeft />
+          </Button>
+          <div className="app-channel-directory-header-copy">
+            <DialogTitle>Channels</DialogTitle>
+            <DialogDescription>Public groups anyone can join.</DialogDescription>
+          </div>
+        </DialogHeader>
 
         {error !== null ? (
           <ChannelDirectoryState
@@ -169,8 +202,8 @@ export function ChannelDirectory({ user }: { user: PublicProfile }) {
             )}
           </div>
         )}
-      </section>
-    </main>
+      </DialogContent>
+    </Dialog>
   );
 }
 

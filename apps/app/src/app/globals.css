@@ -563,20 +563,41 @@
   padding: 16px;
 }
 
+.app-channel-directory-dialog {
+  height: min(480px, calc(100dvh - 32px));
+  max-width: none !important;
+  overflow: hidden;
+}
+
 .app-channel-directory-header {
   display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  min-height: 35px;
+}
+
+.app-channel-directory-back {
+  height: 28px;
+  width: 28px;
+  flex: 0 0 auto;
+}
+
+.app-channel-directory-header-copy {
+  display: flex;
+  min-width: 0;
   flex-direction: column;
   gap: 3px;
 }
 
-.app-channel-directory-header h1,
+.app-channel-directory-header [data-slot="dialog-title"],
 .app-channel-directory-state-copy strong {
   font-size: 15px;
   font-weight: 600;
   line-height: 18px;
 }
 
-.app-channel-directory-header p,
+.app-channel-directory-header [data-slot="dialog-description"],
 .app-channel-directory-state-copy p,
 .app-channel-directory-state-copy code {
   color: var(--chatpack-ui-muted);
