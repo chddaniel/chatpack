@@ -47,15 +47,25 @@ export function SocialSignInButtons({ providers }: { providers: readonly SocialP
   }
 
   return (
-    <div className="grid gap-2 sm:grid-cols-2">
+    <div className="grid w-full gap-2">
       {providers.includes("google") && (
-        <Button type="button" variant="outline" onClick={() => void signIn("google")}>
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full"
+          onClick={() => void signIn("google")}
+        >
           <GoogleIcon />
           Continue with Google
         </Button>
       )}
       {providers.includes("github") && (
-        <Button type="button" variant="outline" onClick={() => void signIn("github")}>
+        <Button
+          type="button"
+          variant="outline"
+          className="w-full"
+          onClick={() => void signIn("github")}
+        >
           <GitHubIcon />
           Continue with GitHub
         </Button>
