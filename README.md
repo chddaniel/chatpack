@@ -174,6 +174,12 @@ For Turso/libSQL, install `@chatpack/adapter-turso`, `@libsql/client`, and
 `drizzle-orm`, then run its exported migration statements before creating the
 Chatpack instance. See the [Turso adapter guide](./apps/docs/content/docs/storage/turso.mdx).
 
+For MySQL 8, install `@chatpack/adapter-mysql`, `mysql2`, and `drizzle-orm`,
+create a server-side transaction-capable pool, and run its exported migration
+statements before creating the Chatpack instance. See the [MySQL adapter
+guide](./apps/docs/content/docs/storage/mysql.mdx). This package does not claim
+MariaDB, PlanetScale, Aurora, serverless/HTTP drivers, or edge-runtime support.
+
 > Using a coding agent (Claude Code, Cursor, Codex)? Install the
 > [Chatpack agent skill](./skills) into your app's repo so the agent follows
 > the correct workflow automatically:
@@ -839,6 +845,7 @@ threads. See [docs/MVP.md](./docs/MVP.md) for the full scope and reasoning.
 | ----------------------------------------------------------- | ------------------------------------------------ |
 | [`@chatpack/core`](./packages/core)                         | The chat engine: domain logic, permissions, API  |
 | [`@chatpack/adapter-drizzle`](./packages/adapter-drizzle)   | Drizzle/Postgres storage (production)            |
+| [`@chatpack/adapter-mysql`](./packages/adapter-mysql)       | MySQL 8 storage via Drizzle/mysql2 (server-side) |
 | [`@chatpack/adapter-turso`](./packages/adapter-turso)       | Turso/libSQL storage via Drizzle                 |
 | [`@chatpack/adapter-sqlite`](./packages/adapter-sqlite)     | Drizzle/SQLite storage (local, single node)      |
 | [`@chatpack/adapter-memory`](./packages/adapter-memory)     | In-memory storage (demos, tests)                 |

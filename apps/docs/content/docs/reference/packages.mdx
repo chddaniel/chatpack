@@ -131,6 +131,20 @@ Requires `drizzle-orm`, `better-sqlite3`, and Node.js 22 or newer.
 
 → [SQLite](/docs/storage/sqlite)
 
+## `@chatpack/adapter-mysql`
+
+Server-side MySQL 8 storage through Drizzle's `mysql2` driver. Requires a
+transaction-capable `mysql2` connection or pool.
+
+| Export                                 | What it is                                       |
+| -------------------------------------- | ------------------------------------------------ |
+| `mysqlAdapter(db)`                     | Create the adapter from a Drizzle MySQL instance |
+| `chatpackSchema` and table exports     | Drizzle schema objects                           |
+| `migrationSql` / `migrationStatements` | MySQL 8 DDL                                      |
+| `backfillMessageSearchTokens(db)`      | Rebuild search tokens after importing messages   |
+
+→ [MySQL](/docs/storage/mysql)
+
 ## `@chatpack/adapter-turso`
 
 Drizzle ORM storage backed by Turso/libSQL. It provides the full persistent
