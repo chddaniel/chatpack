@@ -39,6 +39,7 @@ resolver from `@chatpack/file`; attachment metadata never contains a URL.
 
 Import `@chatpack/ui/styles.css` once. Its light and dark defaults use the
 Chatpack brand theme. Use `ChatpackUIThemeProvider` for token overrides,
-including separate `input`, `bubbleOwn`, `bubbleOwnMuted`, `bubbleOwnContrast`,
-`destructive`, `online`, and `mentionRing` values. Use `renderUser` wherever a block displays
+including separate `input`, `muted`, `mutedSurface`, `highlight`, `bubbleOwn`,
+`bubbleOwnMuted`, `bubbleOwnContrast`, `destructive`, `online`, and `mentionRing` values.
+Use `renderUser` wherever a block displays
 an opaque user id.

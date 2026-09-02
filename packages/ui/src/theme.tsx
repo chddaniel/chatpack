@@ -12,6 +12,8 @@ export interface ChatpackUITheme {
   mutedSurface?: string;
   accent?: string;
   accentContrast?: string;
+  highlight?: string;
+  highlightContrast?: string;
   secondary?: string;
   secondaryContrast?: string;
   bubbleOwn?: string;

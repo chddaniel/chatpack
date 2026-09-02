@@ -5,45 +5,46 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
+  /* Tailwind aliases the shared @chatpack/ui semantic tokens. */
   --font-heading: var(--font-nunito);
   --font-sans: var(--font-nunito);
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
+  --color-sidebar-ring: var(--chatpack-ui-focus);
+  --color-sidebar-border: var(--chatpack-ui-border);
+  --color-sidebar-accent-foreground: var(--chatpack-ui-secondary-contrast);
+  --color-sidebar-accent: var(--chatpack-ui-secondary);
+  --color-sidebar-primary-foreground: var(--chatpack-ui-accent-contrast);
+  --color-sidebar-primary: var(--chatpack-ui-accent);
+  --color-sidebar-foreground: var(--chatpack-ui-text);
+  --color-sidebar: var(--chatpack-ui-sidebar);
   --color-chart-5: var(--chart-5);
   --color-chart-4: var(--chart-4);
   --color-chart-3: var(--chart-3);
   --color-chart-2: var(--chart-2);
   --color-chart-1: var(--chart-1);
-  --color-ring: var(--ring);
-  --color-input: var(--input);
-  --color-border: var(--border);
-  --color-destructive: var(--destructive);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
-  --color-card: var(--card);
-  --color-foreground: var(--foreground);
-  --color-background: var(--background);
-  --color-brand: var(--brand);
-  --color-message-own: var(--message-own);
-  --color-message-own-muted: var(--message-own-muted);
-  --color-message-own-foreground: var(--message-own-foreground);
-  --color-online: var(--online);
-  --color-mention-ring: var(--mention-ring);
+  --color-ring: var(--chatpack-ui-focus);
+  --color-input: var(--chatpack-ui-input);
+  --color-border: var(--chatpack-ui-border);
+  --color-destructive: var(--chatpack-ui-destructive);
+  --color-accent-foreground: var(--chatpack-ui-highlight-contrast);
+  --color-accent: var(--chatpack-ui-highlight);
+  --color-muted-foreground: var(--chatpack-ui-muted);
+  --color-muted: var(--chatpack-ui-muted-surface);
+  --color-secondary-foreground: var(--chatpack-ui-secondary-contrast);
+  --color-secondary: var(--chatpack-ui-secondary);
+  --color-primary-foreground: var(--chatpack-ui-accent-contrast);
+  --color-primary: var(--chatpack-ui-accent);
+  --color-popover-foreground: var(--chatpack-ui-text);
+  --color-popover: var(--chatpack-ui-panel);
+  --color-card-foreground: var(--chatpack-ui-text);
+  --color-card: var(--chatpack-ui-panel);
+  --color-foreground: var(--chatpack-ui-text);
+  --color-background: var(--chatpack-ui-surface);
+  --color-brand: var(--chatpack-ui-accent);
+  --color-message-own: var(--chatpack-ui-bubble-own);
+  --color-message-own-muted: var(--chatpack-ui-bubble-own-muted);
+  --color-message-own-foreground: var(--chatpack-ui-bubble-own-contrast);
+  --color-online: var(--chatpack-ui-online);
+  --color-mention-ring: var(--chatpack-ui-mention-ring);
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
@@ -462,8 +463,8 @@
 }
 
 .app-message-list {
-  background: var(--background);
-  color: var(--foreground);
+  background: var(--chatpack-ui-surface);
+  color: var(--chatpack-ui-text);
 }
 
 .app-conversation-header {
@@ -471,8 +472,8 @@
   height: 72px;
   min-height: 72px;
   gap: 12px;
-  border-bottom-color: var(--border);
-  background: var(--card);
+  border-bottom-color: var(--chatpack-ui-border);
+  background: var(--chatpack-ui-panel);
   padding: 14px 16px;
 }
 
@@ -485,8 +486,8 @@
   height: 36px;
   width: 36px;
   border-radius: 10px;
-  background: var(--muted);
-  color: var(--muted-foreground);
+  background: var(--chatpack-ui-muted-surface);
+  color: var(--chatpack-ui-muted);
 }
 
 .app-conversation-header-avatar::after {
@@ -499,8 +500,8 @@
 
 .app-conversation-header-avatar-fallback {
   border-radius: 10px;
-  background: var(--muted);
-  color: var(--muted-foreground);
+  background: var(--chatpack-ui-muted-surface);
+  color: var(--chatpack-ui-muted);
   font-size: 12px;
   line-height: 14px;
 }
@@ -525,7 +526,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--foreground);
+  color: var(--chatpack-ui-text);
   font-size: 15px;
   font-weight: 600;
   line-height: 18px;
@@ -535,7 +536,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--muted-foreground);
+  color: var(--chatpack-ui-muted);
   font-size: 12px;
   line-height: 14px;
 }
@@ -552,8 +553,8 @@
   min-height: 28px;
   border: 0;
   border-radius: 8px;
-  background: var(--muted) !important;
-  color: var(--muted-foreground) !important;
+  background: var(--chatpack-ui-muted-surface) !important;
+  color: var(--chatpack-ui-muted) !important;
   padding: 7px 10px;
   font-size: 12px;
   font-weight: 500;
@@ -561,8 +562,8 @@
 }
 
 .app-conversation-header-action:hover {
-  background: var(--secondary) !important;
-  color: var(--foreground) !important;
+  background: var(--chatpack-ui-secondary) !important;
+  color: var(--chatpack-ui-text) !important;
 }
 
 .app-conversation-header-overflow {
@@ -577,9 +578,9 @@
   max-width: calc(100vw - 32px);
   flex-direction: column;
   gap: 12px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--chatpack-ui-border);
   border-radius: 16px;
-  background: var(--card);
+  background: var(--chatpack-ui-panel);
   padding: 16px;
 }
 
@@ -590,9 +591,9 @@
   max-width: calc(100vw - 32px);
   flex-direction: column;
   gap: 12px;
-  border: 1px solid var(--border);
+  border: 1px solid var(--chatpack-ui-border);
   border-radius: 16px;
-  background: var(--card);
+  background: var(--chatpack-ui-panel);
   padding: 16px;
 }
 
@@ -613,7 +614,7 @@
   top: 0;
   right: 0;
   left: -360px;
-  border-top: 1px solid var(--border);
+  border-top: 1px solid var(--chatpack-ui-border);
   content: "";
 }
 
@@ -626,24 +627,24 @@
   box-sizing: border-box;
   height: 44px;
   min-height: 44px;
-  border-color: var(--input);
+  border-color: var(--chatpack-ui-input);
   border-radius: 12px;
-  background: var(--background) !important;
+  background: var(--chatpack-ui-surface) !important;
   padding: 8px 8px 8px 12px;
 }
 
 .app-message-composer-field:focus-within {
-  border-color: var(--ring);
-  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ring) 30%, transparent);
+  border-color: var(--chatpack-ui-focus);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--chatpack-ui-focus) 30%, transparent);
 }
 
 .app-message-composer-field-error {
-  border: 2px solid var(--destructive);
+  border: 2px solid var(--chatpack-ui-destructive);
   padding-left: 11px;
 }
 
 .app-message-composer-field-sending {
-  background: var(--muted) !important;
+  background: var(--chatpack-ui-muted-surface) !important;
 }
 
 .app-message-composer-field [data-slot="input-group-control"] {
@@ -663,9 +664,9 @@
   height: 28px;
   min-height: 28px;
   border-radius: 9px;
-  background: var(--primary) !important;
+  background: var(--chatpack-ui-accent) !important;
   box-shadow: var(--chatpack-ui-control-shadow);
-  color: var(--primary-foreground) !important;
+  color: var(--chatpack-ui-accent-contrast) !important;
   padding: 7px 12px;
   font-size: 12px;
   font-weight: 500;
@@ -677,9 +678,9 @@
 }
 
 .app-message-composer-field-sending .app-message-composer-send {
-  background: var(--muted) !important;
+  background: var(--chatpack-ui-muted-surface) !important;
   box-shadow: none;
-  color: var(--muted-foreground) !important;
+  color: var(--chatpack-ui-muted) !important;
   opacity: 0.7;
 }
 
@@ -722,7 +723,7 @@
 .app-message-list-day-separator {
   display: flex;
   justify-content: center;
-  color: var(--muted-foreground);
+  color: var(--chatpack-ui-muted);
   font-size: 10px;
   line-height: 12px;
 }
@@ -768,7 +769,7 @@
   align-items: center;
   gap: 2px;
   align-self: flex-end;
-  color: var(--muted-foreground);
+  color: var(--chatpack-ui-muted);
   font-size: 10px;
   line-height: 12px;
 }
@@ -776,15 +777,15 @@
 .app-message-reactions button {
   min-height: 19px;
   border-radius: 9999px;
-  background: var(--muted);
-  color: var(--foreground);
+  background: var(--chatpack-ui-muted-surface);
+  color: var(--chatpack-ui-text);
   padding: 3px 7px;
   font-size: 11px;
   line-height: 13px;
 }
 
 .app-message-reactions button.border-current {
-  border-color: var(--primary);
+  border-color: var(--chatpack-ui-accent);
 }
 
 @layer base {

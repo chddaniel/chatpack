@@ -11,6 +11,8 @@
   --chatpack-ui-accent: var(--primary, #103225);
   --chatpack-ui-focus: var(--ring, #103225);
   --chatpack-ui-accent-contrast: var(--primary-foreground, #f6f6f1);
+  --chatpack-ui-highlight: var(--accent, #d2f338);
+  --chatpack-ui-highlight-contrast: var(--accent-foreground, #103225);
   --chatpack-ui-secondary: var(--secondary, #e4eac8);
   --chatpack-ui-secondary-contrast: var(--secondary-foreground, #103225);
   --chatpack-ui-bubble-own: var(--message-own, var(--primary, #103225));
@@ -39,6 +41,8 @@
   --chatpack-ui-accent: var(--primary, #d2f338);
   --chatpack-ui-focus: var(--ring, #d2f338);
   --chatpack-ui-accent-contrast: var(--primary-foreground, #031919);
+  --chatpack-ui-highlight: var(--accent, #103225);
+  --chatpack-ui-highlight-contrast: var(--accent-foreground, #d2f338);
   --chatpack-ui-secondary: var(--secondary, #103225);
   --chatpack-ui-secondary-contrast: var(--secondary-foreground, #f6f6f1);
   --chatpack-ui-bubble-own: var(--message-own, var(--primary, #d2f338));
