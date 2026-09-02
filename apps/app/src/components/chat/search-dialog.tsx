@@ -93,7 +93,7 @@ export function SearchDialog({
         <ScrollArea className="chatpack-ui-search-dialog-body">
           {search.error !== null ? (
             <div className="chatpack-ui-search-dialog-state">
-              <Image src="/chatpack/search-error.png" alt="" width={46} height={46} />
+              <Image src="/chatpack/error-3d.png" alt="" width={46} height={46} />
               <div className="chatpack-ui-search-dialog-state-copy">
                 <strong>Search is unavailable</strong>
                 <span>We could not reach search just now. Your messages are unaffected.</span>

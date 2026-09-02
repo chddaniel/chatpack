@@ -87,7 +87,7 @@ export function ForwardDialog({
 
         {errorCode !== null ? (
           <div className="chatpack-ui-forward-dialog-state">
-            <Image src="/chatpack/forward-error.png" alt="" width={46} height={46} />
+            <Image src="/chatpack/error-3d.png" alt="" width={46} height={46} />
             <div className="chatpack-ui-forward-dialog-state-copy">
               <strong>Couldn&apos;t forward</strong>
               <span>The message was not forwarded. Nothing was sent to anyone.</span>

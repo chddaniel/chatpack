@@ -77,10 +77,7 @@ export function ConversationSidebar({
         <p className="min-w-0 flex-1 text-base font-semibold leading-[19px]">Messages</p>
         <DropdownMenu open={newMenuOpen} onOpenChange={setNewMenuOpen}>
           <DropdownMenuTrigger asChild>
-            <Button
-              size="sm"
-              className="h-[26px] rounded-lg px-2.5 text-xs shadow-[inset_0_-2px_1px_rgba(0,0,0,0.25)]"
-            >
+            <Button size="sm" className="app-control-shadow h-[26px] rounded-lg px-2.5 text-xs">
               New
             </Button>
           </DropdownMenuTrigger>
@@ -297,7 +294,7 @@ function SidebarState({
         type="button"
         size="sm"
         onClick={onAction}
-        className="h-[34px] rounded-[10px] px-3.5 text-[13px] shadow-[inset_0_-2px_1px_rgba(0,0,0,0.25)]"
+        className="app-control-shadow h-[34px] rounded-[10px] px-3.5 text-[13px]"
       >
         {actionLabel}
       </Button>

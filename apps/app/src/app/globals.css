@@ -54,6 +54,7 @@
 }
 
 :root {
+  /* App palette. @chatpack/ui maps its tokens to these semantic variables. */
   --background: #f6f6f1;
   --foreground: #353849;
   --card: #ffffff;
@@ -92,27 +93,6 @@
   --message-own-foreground: var(--primary-foreground);
   --online: #d2f338;
   --mention-ring: #e7b01a;
-  --chatpack-ui-surface: var(--background);
-  --chatpack-ui-panel: var(--card);
-  --chatpack-ui-sidebar: var(--sidebar);
-  --chatpack-ui-border: var(--border);
-  --chatpack-ui-input: var(--input);
-  --chatpack-ui-text: var(--foreground);
-  --chatpack-ui-muted: var(--muted-foreground);
-  --chatpack-ui-muted-surface: var(--muted);
-  --chatpack-ui-accent: var(--primary);
-  --chatpack-ui-focus: var(--ring);
-  --chatpack-ui-accent-contrast: var(--primary-foreground);
-  --chatpack-ui-secondary: var(--secondary);
-  --chatpack-ui-secondary-contrast: var(--secondary-foreground);
-  --chatpack-ui-bubble-own: var(--message-own);
-  --chatpack-ui-bubble-own-muted: var(--message-own-muted);
-  --chatpack-ui-bubble-own-contrast: var(--message-own-foreground);
-  --chatpack-ui-bubble-other: var(--muted);
-  --chatpack-ui-destructive: var(--destructive);
-  --chatpack-ui-online: var(--online);
-  --chatpack-ui-mention-ring: var(--mention-ring);
-  --chatpack-ui-radius: var(--radius);
 }
 
 .dark {
@@ -151,27 +131,6 @@
   --message-own: #d2f338;
   --message-own-muted: #3f602a;
   --message-own-foreground: #031919;
-  --chatpack-ui-surface: var(--background);
-  --chatpack-ui-panel: var(--card);
-  --chatpack-ui-sidebar: var(--sidebar);
-  --chatpack-ui-border: var(--border);
-  --chatpack-ui-input: var(--input);
-  --chatpack-ui-text: var(--foreground);
-  --chatpack-ui-muted: var(--muted-foreground);
-  --chatpack-ui-muted-surface: var(--muted);
-  --chatpack-ui-accent: var(--primary);
-  --chatpack-ui-focus: var(--ring);
-  --chatpack-ui-accent-contrast: var(--primary-foreground);
-  --chatpack-ui-secondary: var(--secondary);
-  --chatpack-ui-secondary-contrast: var(--secondary-foreground);
-  --chatpack-ui-bubble-own: var(--message-own);
-  --chatpack-ui-bubble-own-muted: var(--message-own-muted);
-  --chatpack-ui-bubble-own-contrast: var(--message-own-foreground);
-  --chatpack-ui-bubble-other: var(--muted);
-  --chatpack-ui-destructive: var(--destructive);
-  --chatpack-ui-online: var(--online);
-  --chatpack-ui-mention-ring: var(--mention-ring);
-  --chatpack-ui-radius: var(--radius);
 }
 
 :root[data-color-scheme="ocean"] {
@@ -705,12 +664,16 @@
   min-height: 28px;
   border-radius: 9px;
   background: var(--primary) !important;
-  box-shadow: inset 0 -2px 1px rgb(0 0 0 / 0.25);
+  box-shadow: var(--chatpack-ui-control-shadow);
   color: var(--primary-foreground) !important;
   padding: 7px 12px;
   font-size: 12px;
   font-weight: 500;
   line-height: 14px;
+}
+
+.app-control-shadow {
+  box-shadow: var(--chatpack-ui-control-shadow);
 }
 
 .app-message-composer-field-sending .app-message-composer-send {

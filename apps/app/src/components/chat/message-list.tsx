@@ -211,7 +211,7 @@ function MessageListState({
         type="button"
         size="sm"
         onClick={onAction}
-        className="h-[34px] rounded-[10px] px-3.5 text-[13px] shadow-[inset_0_-2px_1px_rgba(0,0,0,0.25)]"
+        className="app-control-shadow h-[34px] rounded-[10px] px-3.5 text-[13px]"
       >
         {actionLabel}
       </Button>

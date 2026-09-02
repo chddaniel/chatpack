@@ -21,6 +21,10 @@ export interface ChatpackUITheme {
   destructive?: string;
   online?: string;
   mentionRing?: string;
+  controlShadow?: string;
+  panelShadow?: string;
+  dialogShadow?: string;
+  subtleShadow?: string;
   radius?: string;
 }
 

@@ -1,46 +1,58 @@
 :root {
-  --chatpack-ui-surface: #f6f6f1;
-  --chatpack-ui-panel: #ffffff;
-  --chatpack-ui-sidebar: #f0efe9;
-  --chatpack-ui-border: #e8e5e3;
-  --chatpack-ui-input: #8d877f;
-  --chatpack-ui-text: #353849;
-  --chatpack-ui-muted: #5a5f6b;
-  --chatpack-ui-muted-surface: #e8e5e3;
-  --chatpack-ui-accent: #103225;
-  --chatpack-ui-focus: #103225;
-  --chatpack-ui-accent-contrast: #f6f6f1;
-  --chatpack-ui-secondary: #e4eac8;
-  --chatpack-ui-secondary-contrast: #103225;
-  --chatpack-ui-bubble-own: #103225;
-  --chatpack-ui-bubble-own-muted: #103225;
-  --chatpack-ui-bubble-own-contrast: #f6f6f1;
-  --chatpack-ui-bubble-other: #e8e5e3;
-  --chatpack-ui-destructive: #9e2f22;
-  --chatpack-ui-online: #d2f338;
-  --chatpack-ui-mention-ring: #e7b01a;
-  --chatpack-ui-radius: 0.75rem;
+  /* Host semantic tokens take precedence. Fallbacks keep the package standalone. */
+  --chatpack-ui-surface: var(--background, #f6f6f1);
+  --chatpack-ui-panel: var(--card, #ffffff);
+  --chatpack-ui-sidebar: var(--sidebar, #f0efe9);
+  --chatpack-ui-border: var(--border, #e8e5e3);
+  --chatpack-ui-input: var(--input, #8d877f);
+  --chatpack-ui-text: var(--foreground, #353849);
+  --chatpack-ui-muted: var(--muted-foreground, #5a5f6b);
+  --chatpack-ui-muted-surface: var(--muted, #e8e5e3);
+  --chatpack-ui-accent: var(--primary, #103225);
+  --chatpack-ui-focus: var(--ring, #103225);
+  --chatpack-ui-accent-contrast: var(--primary-foreground, #f6f6f1);
+  --chatpack-ui-secondary: var(--secondary, #e4eac8);
+  --chatpack-ui-secondary-contrast: var(--secondary-foreground, #103225);
+  --chatpack-ui-bubble-own: var(--message-own, var(--primary, #103225));
+  --chatpack-ui-bubble-own-muted: var(--message-own-muted, #103225);
+  --chatpack-ui-bubble-own-contrast: var(--message-own-foreground, #f6f6f1);
+  --chatpack-ui-bubble-other: var(--muted, #e8e5e3);
+  --chatpack-ui-destructive: var(--destructive, #9e2f22);
+  --chatpack-ui-online: var(--online, #d2f338);
+  --chatpack-ui-mention-ring: var(--mention-ring, #e7b01a);
+  --chatpack-ui-control-shadow: var(--control-shadow, inset 0 -2px 1px rgb(0 0 0 / 0.25));
+  --chatpack-ui-panel-shadow: var(--panel-shadow, 0 20px 40px rgb(0 0 0 / 0.18));
+  --chatpack-ui-dialog-shadow: var(--dialog-shadow, 0 0.75rem 2rem rgb(0 0 0 / 0.12));
+  --chatpack-ui-subtle-shadow: var(--subtle-shadow, 0 1px 2px rgb(3 25 25 / 0.06));
+  --chatpack-ui-radius: var(--radius, 0.75rem);
 }
 
 .dark {
-  --chatpack-ui-surface: #031919;
-  --chatpack-ui-panel: #0b2219;
-  --chatpack-ui-sidebar: #0b2219;
-  --chatpack-ui-border: #1c3a2e;
-  --chatpack-ui-input: #3f7a61;
-  --chatpack-ui-text: #f6f6f1;
-  --chatpack-ui-muted: #9aa89f;
-  --chatpack-ui-muted-surface: #103225;
-  --chatpack-ui-accent: #d2f338;
-  --chatpack-ui-focus: #d2f338;
-  --chatpack-ui-accent-contrast: #031919;
-  --chatpack-ui-secondary: #103225;
-  --chatpack-ui-secondary-contrast: #f6f6f1;
-  --chatpack-ui-bubble-own: #d2f338;
-  --chatpack-ui-bubble-own-muted: #3f602a;
-  --chatpack-ui-bubble-own-contrast: #031919;
-  --chatpack-ui-bubble-other: #103225;
-  --chatpack-ui-destructive: #f2796b;
+  --chatpack-ui-surface: var(--background, #031919);
+  --chatpack-ui-panel: var(--card, #0b2219);
+  --chatpack-ui-sidebar: var(--sidebar, #0b2219);
+  --chatpack-ui-border: var(--border, #1c3a2e);
+  --chatpack-ui-input: var(--input, #3f7a61);
+  --chatpack-ui-text: var(--foreground, #f6f6f1);
+  --chatpack-ui-muted: var(--muted-foreground, #9aa89f);
+  --chatpack-ui-muted-surface: var(--muted, #103225);
+  --chatpack-ui-accent: var(--primary, #d2f338);
+  --chatpack-ui-focus: var(--ring, #d2f338);
+  --chatpack-ui-accent-contrast: var(--primary-foreground, #031919);
+  --chatpack-ui-secondary: var(--secondary, #103225);
+  --chatpack-ui-secondary-contrast: var(--secondary-foreground, #f6f6f1);
+  --chatpack-ui-bubble-own: var(--message-own, var(--primary, #d2f338));
+  --chatpack-ui-bubble-own-muted: var(--message-own-muted, #3f602a);
+  --chatpack-ui-bubble-own-contrast: var(--message-own-foreground, #031919);
+  --chatpack-ui-bubble-other: var(--muted, #103225);
+  --chatpack-ui-destructive: var(--destructive, #f2796b);
+  --chatpack-ui-online: var(--online, #d2f338);
+  --chatpack-ui-mention-ring: var(--mention-ring, #e7b01a);
+  --chatpack-ui-control-shadow: var(--control-shadow, inset 0 -2px 1px rgb(0 0 0 / 0.25));
+  --chatpack-ui-panel-shadow: var(--panel-shadow, 0 20px 40px rgb(0 0 0 / 0.18));
+  --chatpack-ui-dialog-shadow: var(--dialog-shadow, 0 0.75rem 2rem rgb(0 0 0 / 0.12));
+  --chatpack-ui-subtle-shadow: var(--subtle-shadow, 0 1px 2px rgb(3 25 25 / 0.06));
+  --chatpack-ui-radius: var(--radius, 0.75rem);
 }
 
 .chatpack-ui-surface {
@@ -447,7 +459,7 @@
   border: 0;
   border-radius: 0.5625rem;
   background: var(--chatpack-ui-accent);
-  box-shadow: inset 0 -2px 1px rgb(0 0 0 / 0.25);
+  box-shadow: var(--chatpack-ui-control-shadow);
   color: var(--chatpack-ui-accent-contrast);
   cursor: pointer;
   padding: 0.4375rem 0.75rem;
@@ -585,7 +597,7 @@
 }
 .chatpack-ui-floating-widget > main {
   width: min(28rem, calc(100vw - 2rem));
-  box-shadow: 0 20px 40px rgb(0 0 0 / 0.18);
+  box-shadow: var(--chatpack-ui-panel-shadow);
 }
 .chatpack-ui-loading-skeleton {
   height: 3rem;
@@ -1001,7 +1013,7 @@
 .chatpack-ui-conversation-retry {
   height: 1.75rem;
   background: var(--chatpack-ui-accent);
-  box-shadow: inset 0 -2px 1px rgb(0 0 0 / 0.25);
+  box-shadow: var(--chatpack-ui-control-shadow);
   color: var(--chatpack-ui-accent-contrast);
   padding: 0.4375rem 0.75rem;
   font-size: 0.75rem;
@@ -1032,7 +1044,7 @@
   border: 1px solid var(--chatpack-ui-border);
   border-radius: 1rem;
   background: var(--chatpack-ui-panel);
-  box-shadow: 0 0.75rem 2rem rgb(0 0 0 / 0.12);
+  box-shadow: var(--chatpack-ui-dialog-shadow);
   padding: 1rem;
 }
 .chatpack-ui-search-dialog-header {
@@ -1199,7 +1211,7 @@
   min-height: 2.125rem;
   border-radius: 0.625rem;
   background: var(--chatpack-ui-accent);
-  box-shadow: inset 0 -2px 1px rgb(0 0 0 / 0.25);
+  box-shadow: var(--chatpack-ui-control-shadow);
   color: var(--chatpack-ui-accent-contrast);
   padding: 0.5625rem 0.875rem;
   font-size: 0.8125rem;
@@ -1218,7 +1230,7 @@
   border: 1px solid var(--chatpack-ui-border);
   border-radius: 1rem;
   background: var(--chatpack-ui-panel);
-  box-shadow: 0 0.75rem 2rem rgb(0 0 0 / 0.12);
+  box-shadow: var(--chatpack-ui-dialog-shadow);
   padding: 1rem;
 }
 .chatpack-ui-forward-dialog-header {
@@ -1351,7 +1363,7 @@
 .chatpack-ui-forward-dialog-new,
 .chatpack-ui-forward-dialog-retry {
   background: var(--chatpack-ui-accent);
-  box-shadow: inset 0 -2px 1px rgb(0 0 0 / 0.25);
+  box-shadow: var(--chatpack-ui-control-shadow);
   color: var(--chatpack-ui-accent-contrast);
 }
 .chatpack-ui-forward-dialog-state {
@@ -1415,7 +1427,7 @@
   border: 1px solid var(--chatpack-ui-border);
   border-radius: var(--chatpack-ui-radius);
   background: var(--chatpack-ui-panel);
-  box-shadow: 0 20px 40px rgb(0 0 0 / 0.18);
+  box-shadow: var(--chatpack-ui-panel-shadow);
 }
 .chatpack-ui-floating-panel > .chatpack-ui-compact-list {
   border: 0;
@@ -1438,7 +1450,7 @@
   min-width: 0;
 }
 .chatpack-ui-management-card {
-  box-shadow: 0 1px 2px rgb(3 25 25 / 0.06);
+  box-shadow: var(--chatpack-ui-subtle-shadow);
 }
 .chatpack-ui-attachment-gallery {
   display: grid;
