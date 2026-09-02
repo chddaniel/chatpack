@@ -819,6 +819,225 @@
   line-height: 14px;
 }
 
+.app-new-group-dialog {
+  display: flex !important;
+  width: min(480px, calc(100vw - 32px));
+  height: min(440px, calc(100vh - 32px));
+  max-width: none !important;
+  flex-direction: column;
+  gap: 12px;
+  overflow: hidden;
+  border: 1px solid var(--chatpack-ui-border);
+  border-radius: 16px;
+  background: var(--chatpack-ui-panel);
+  color: var(--chatpack-ui-text);
+  box-shadow: var(--chatpack-ui-dialog-shadow);
+  padding: 16px;
+}
+
+.app-new-group-dialog-header {
+  gap: 3px;
+  flex: 0 0 auto;
+}
+
+.app-new-group-dialog-header [data-slot="dialog-title"] {
+  color: var(--chatpack-ui-text);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.app-new-group-dialog-header [data-slot="dialog-description"] {
+  color: var(--chatpack-ui-muted);
+  font-size: 12px;
+  line-height: 14px;
+}
+
+.app-new-group-dialog-body {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+}
+
+.app-new-group-dialog-name,
+.app-new-group-dialog-members,
+.app-new-group-dialog-options > div {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.app-new-group-dialog-name [data-slot="label"],
+.app-new-group-dialog-members [data-slot="label"],
+.app-new-group-dialog-options [data-slot="label"] {
+  color: var(--chatpack-ui-muted);
+  font-size: 12px;
+  line-height: 14px;
+}
+
+.app-new-group-dialog-name [data-slot="input"] {
+  height: 37px;
+  min-height: 37px;
+  border-color: var(--chatpack-ui-input);
+  border-radius: 10px;
+  background: var(--chatpack-ui-surface);
+  color: var(--chatpack-ui-text);
+  padding: 10px 12px;
+  font-size: 14px;
+  line-height: 17px;
+}
+
+.app-new-group-dialog-choice-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.app-new-group-dialog-choice-row [data-slot="button"] {
+  height: 28px;
+  min-height: 28px;
+  border-radius: 9px;
+  padding: 7px 10px;
+  font-size: 12px;
+  line-height: 14px;
+}
+
+.app-new-group-dialog-options p {
+  margin: 0;
+  color: var(--chatpack-ui-muted);
+  font-size: 11px;
+  line-height: 14px;
+}
+
+.app-new-group-dialog-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.app-new-group-dialog-chip {
+  display: inline-flex;
+  max-width: 100%;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+  border: 1px solid var(--chatpack-ui-border);
+  border-radius: 9999px;
+  background: var(--chatpack-ui-secondary);
+  color: var(--chatpack-ui-text);
+  padding: 4px 8px 4px 4px;
+  font-size: 11px;
+  line-height: 14px;
+}
+
+.app-new-group-dialog-chip > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--chatpack-ui-muted);
+}
+
+.app-new-group-dialog-footer {
+  display: flex;
+  flex: 0 0 auto;
+  justify-content: flex-end;
+  gap: 8px;
+  margin: 0;
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+
+.app-new-group-dialog-footer [data-slot="button"],
+.app-new-group-dialog-retry {
+  height: 34px;
+  min-height: 34px;
+  border-radius: 10px;
+  padding: 9px 14px;
+  font-size: 13px;
+  line-height: 16px;
+}
+
+.app-new-group-dialog-footer [data-variant="ghost"] {
+  background: var(--chatpack-ui-secondary);
+  color: var(--chatpack-ui-muted);
+}
+
+.app-new-group-dialog-footer [data-variant="default"],
+.app-new-group-dialog-retry {
+  background: var(--chatpack-ui-accent) !important;
+  box-shadow: var(--chatpack-ui-control-shadow);
+  color: var(--chatpack-ui-accent-contrast) !important;
+}
+
+.app-new-group-dialog-state {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 40px;
+  text-align: center;
+}
+
+.app-new-group-dialog-state strong {
+  color: var(--chatpack-ui-text);
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 18px;
+}
+
+.app-new-group-dialog-state p {
+  max-width: 300px;
+  margin: 0;
+  color: var(--chatpack-ui-muted);
+  font-size: 13px;
+  line-height: 16px;
+}
+
+.app-new-group-dialog-state code {
+  color: var(--chatpack-ui-muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 11px;
+  line-height: 14px;
+}
+
+.app-new-group-dialog-error-icon {
+  display: inline-flex;
+  height: 46px;
+  width: 46px;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid color-mix(in srgb, var(--chatpack-ui-text) 45%, transparent);
+  border-radius: 9999px;
+  background: color-mix(in srgb, var(--chatpack-ui-panel) 60%, var(--chatpack-ui-muted-surface));
+  color: var(--chatpack-ui-destructive);
+  font-size: 26px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.app-new-group-dialog-loading {
+  align-items: stretch;
+  justify-content: flex-start;
+  gap: 6px;
+  padding: 0;
+}
+
+.app-new-group-dialog-loading span {
+  display: block;
+  height: 46px;
+  flex: 0 0 auto;
+  border-radius: 10px;
+  background: var(--chatpack-ui-secondary);
+  animation: app-channel-directory-pulse 1.5s ease-in-out infinite;
+}
+
 .app-conversation-header {
   box-sizing: border-box;
   height: 72px;
