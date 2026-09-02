@@ -2,25 +2,20 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ClientMessage } from "@chatpack/client";
-import { MessagesSquare, X } from "lucide-react";
-import Link from "next/link";
+import { X } from "lucide-react";
+import Image from "next/image";
 import { toast } from "sonner";
 
+import { ChannelDirectory } from "@/components/channel-directory";
 import { ChatProvider, type ChatContextValue } from "@/components/chat/chat-context";
 import { ConversationHeader } from "@/components/chat/conversation-header";
 import { ConversationSidebar } from "@/components/chat/conversation-sidebar";
+import { NewGroupDialog } from "@/components/chat/new-group-dialog";
 import { MessageComposer } from "@/components/chat/message-composer";
 import { MessageList } from "@/components/chat/message-list";
 import { ProfileSearch } from "@/components/profile-search";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
-import {
-  Empty,
-  EmptyDescription,
-  EmptyHeader,
-  EmptyMedia,
-  EmptyTitle,
-} from "@/components/ui/empty";
 import { Sheet, SheetClose, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { useProfileDirectory } from "@/hooks/use-profiles";
 import { createApplicationChatClient } from "@/lib/chatpack.client";
@@ -41,9 +36,13 @@ import type { PublicProfile } from "@/lib/profiles";
 export function ChatShell({
   user,
   initialConversationId,
+  initialNewGroupOpen,
+  isModerator,
 }: {
   user: PublicProfile;
   initialConversationId: string | null;
+  initialNewGroupOpen: boolean;
+  isModerator: boolean;
 }) {
   const client = useMemo(() => createApplicationChatClient(user.id), [user.id]);
   const files = useMemo(() => createApplicationFileClient(), []);
@@ -51,14 +50,24 @@ export function ChatShell({
   const conversations = client.useConversations({ limit: 50 });
   const [selectedId, setSelectedId] = useState<string | null>(initialConversationId);
   const [replyTo, setReplyTo] = useState<ClientMessage | null>(null);
+  const [newGroupOpen, setNewGroupOpen] = useState(initialNewGroupOpen);
   const [conversationsOpen, setConversationsOpen] = useState(false);
+  const [channelsOpen, setChannelsOpen] = useState(false);
   const [mutedConversationIds, setMutedConversationIds] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
   const [blockedUserIds, setBlockedUserIds] = useState<ReadonlySet<string>>(() => new Set());
 
+  useEffect(() => {
+    if (initialNewGroupOpen) window.history.replaceState(null, "", window.location.pathname);
+  }, [initialNewGroupOpen]);
+
   const rows = conversations.data?.conversations ?? [];
-  const selected = rows.find((conversation) => conversation.id === selectedId) ?? null;
+  const selected =
+    rows.find((conversation) => conversation.id === selectedId) ??
+    (selectedId === null
+      ? null
+      : (client.$store.getSnapshot().conversationsById[selectedId]?.data ?? null));
 
   /**
    * Every user id the sidebar can name, as a stable string.
@@ -196,15 +205,31 @@ export function ChatShell({
     ],
   );
 
-  const sidebar = <ConversationSidebar conversations={conversations} selectedId={selectedId} />;
+  const sidebar = (
+    <ConversationSidebar
+      conversations={conversations}
+      selectedId={selectedId}
+      isModerator={isModerator}
+      onNewGroup={() => setNewGroupOpen(true)}
+      onBrowseChannels={() => setChannelsOpen(true)}
+    />
+  );
 
   return (
     <ChatProvider value={context}>
-      <main className="grid h-dvh bg-background md:grid-cols-[320px_1fr]">
+      {newGroupOpen && <NewGroupDialog onClose={() => setNewGroupOpen(false)} />}
+      {channelsOpen && (
+        <ChannelDirectory user={user} client={client} onClose={() => setChannelsOpen(false)} />
+      )}
+      <main className="grid h-dvh bg-background md:grid-cols-[360px_1fr]">
         <aside className="hidden md:block">{sidebar}</aside>
 
         <Sheet open={conversationsOpen} onOpenChange={setConversationsOpen}>
-          <SheetContent side="left" className="w-80 p-0" showCloseButton={false}>
+          <SheetContent
+            side="left"
+            className="!w-[min(360px,100vw)] !max-w-none p-0"
+            showCloseButton={false}
+          >
             <SheetTitle className="sr-only">Conversations</SheetTitle>
             <SheetClose asChild>
               <Button
@@ -231,26 +256,27 @@ export function ChatShell({
           )}
 
           {selected === null ? (
-            <Empty className="flex-1">
-              <EmptyHeader>
-                <EmptyMedia variant="icon">
-                  <MessagesSquare />
-                </EmptyMedia>
-                <EmptyTitle>
-                  {conversations.isPending
-                    ? "Loading your conversations"
-                    : rows.length === 0
-                      ? "No conversations yet"
-                      : "Pick a chat"}
-                </EmptyTitle>
-                <EmptyDescription>
-                  {rows.length === 0
-                    ? "Search for someone to start a direct message, make a group, or join a public channel."
-                    : "Choose a conversation on the left to start reading."}
-                </EmptyDescription>
-              </EmptyHeader>
-              <div className="flex items-center gap-2">
+            <div className="app-chat-shell-empty">
+              <div className="app-chat-shell-empty-copy">
+                <Image src="/chatpack/msg-3d.png" alt="" width={46} height={46} />
+                <div className="app-chat-shell-empty-text">
+                  <p className="app-chat-shell-empty-title">
+                    {conversations.isPending
+                      ? "Loading your conversations"
+                      : rows.length === 0
+                        ? "No conversations yet"
+                        : "Pick a chat"}
+                  </p>
+                  <p className="app-chat-shell-empty-description">
+                    {rows.length === 0
+                      ? "Search for someone to start a direct message, make a group, or join a public channel."
+                      : "Choose a conversation on the left to start reading."}
+                  </p>
+                </div>
+              </div>
+              <div className="app-chat-shell-empty-actions">
                 <ProfileSearch
+                  triggerLabel="New direct message"
                   onSelect={async (profile) => {
                     directory.put(profile);
                     const result = await client.conversations.create({ otherUserId: profile.id });
@@ -261,8 +287,8 @@ export function ChatShell({
                     select(result.data.id);
                   }}
                 />
-                <Button asChild variant="outline">
-                  <Link href="/channels">Browse channels</Link>
+                <Button type="button" variant="outline" onClick={() => setChannelsOpen(true)}>
+                  Browse channels
                 </Button>
                 <Button
                   className="md:hidden"
@@ -272,7 +298,7 @@ export function ChatShell({
                   Conversations
                 </Button>
               </div>
-            </Empty>
+            </div>
           ) : (
             <>
               <ConversationHeader
@@ -283,6 +309,11 @@ export function ChatShell({
                 conversationId={selected.id}
                 conversation={selected}
                 onReply={setReplyTo}
+                onSayHello={() => {
+                  document
+                    .querySelector<HTMLTextAreaElement>('textarea[aria-label="Message"]')
+                    ?.focus();
+                }}
               />
               <MessageComposer
                 conversationId={selected.id}

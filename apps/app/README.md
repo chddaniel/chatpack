@@ -93,9 +93,10 @@ Use your deployed `BETTER_AUTH_URL` when configuring production callback URLs.
 ## Appearance
 
 Use the palette button in the conversation sidebar to choose system, light, or
-dark mode. The same menu includes Default, Ocean, Sunset, Forest, and Violet
-color schemes. The selected color scheme is stored in the browser and applies
-across sessions.
+dark mode. Alternate color schemes remain implemented but are currently gated
+off by `ENABLE_COLOR_SCHEMES` in `src/components/theme-provider.tsx`; while the
+flag is off, the app forces the Default scheme and removes any stale selection
+from browser storage.
 
 ## Optional features
 
@@ -105,10 +106,14 @@ listed, commented out, in `.env.example`):
 - **Moderation queue** - `MODERATOR_EMAILS` or `MODERATOR_USER_IDS`. With both
   empty nobody is a moderator, so `/moderation` answers with a refusal.
   Reporting and blocking need no configuration; reviewing reports and banning do.
-- **File attachments** - uploads go to `.chatpack-files` on local disk. Set
-  `S3_BUCKET` and the other `S3_*` values to store them in any S3-compatible
-  bucket (AWS, R2, B2, MinIO) instead. Do that before you deploy: a serverless
-  filesystem is not shared between invocations and does not outlive one.
+- **File attachments** - uploads go to `.chatpack-files` on local disk. For the
+  configured Cloudflare R2 bucket, set `S3_BUCKET=filepack`, `S3_REGION=auto`,
+  `S3_ENDPOINT=https://08f2c15dc62f9e37886809321bbaa5bc.r2.cloudflarestorage.com`,
+  `S3_ACCESS_KEY_ID`, and `S3_SECRET_ACCESS_KEY`. The last two values come from
+  an R2 API token scoped to `filepack` and must stay server-only. The same
+  `S3_*` settings also support AWS, B2, and MinIO. Do this before deploying: a
+  serverless filesystem is not shared between invocations and does not outlive
+  one.
 - **Multi-node realtime** - `REDIS_URL`. A single process fans events out in
   memory. Two or more need Redis, or a message sent on server A never reaches a
   listener on server B. Presence needs one more step: this starter uses the

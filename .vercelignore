@@ -1,0 +1,11 @@
+# Local dependencies and build output are recreated by Vercel.
+**/node_modules
+**/.next
+**/.turbo
+**/.vercel
+**/.chatpack-files
+
+# Never upload local credentials or design source files.
+**/.env
+**/.env.*
+apps/app/designs

@@ -21,7 +21,7 @@ import { toast } from "sonner";
 import { useChat } from "@/components/chat/chat-context";
 import { ProfilePicker } from "@/components/chat/profile-picker";
 import { ReportDialog } from "@/components/chat/report-dialog";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarBadge, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -33,7 +33,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sheet";
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { viewerIsAdmin } from "@/lib/conversation";
 import { initialsOf } from "@/lib/profiles";
@@ -59,6 +65,7 @@ export function MembersPanel({
   onClose: () => void;
 }) {
   const { client, viewer, directory, blockedUserIds, toggleBlock } = useChat();
+  const presence = client.usePresence();
   const isAdmin = viewerIsAdmin(conversation, viewer.id);
   const [invites, setInvites] = useState<ClientConversationInvite[]>([]);
   const [requests, setRequests] = useState<ClientJoinRequest[]>([]);
@@ -66,6 +73,11 @@ export function MembersPanel({
   const [maxUses, setMaxUses] = useState("");
   const [requiresApproval, setRequiresApproval] = useState(false);
   const [reportedUserId, setReportedUserId] = useState<string | null>(null);
+  const [addOpen, setAddOpen] = useState(false);
+
+  const onlineCount = conversation.participants.filter(
+    (participant) => presence[participant.userId]?.online === true,
+  ).length;
 
   const refreshInvites = useCallback(async () => {
     const result = await client.invites.list({ conversationId: conversation.id });
@@ -176,12 +188,15 @@ export function MembersPanel({
 
   return (
     <Sheet open onOpenChange={(open) => !open && onClose()}>
-      <SheetContent side="right" className="w-full gap-0 p-0 sm:max-w-md">
-        <SheetHeader className="border-b">
-          <SheetTitle>People</SheetTitle>
+      <SheetContent side="right" className="app-members-panel">
+        <SheetHeader className="app-members-panel-header">
+          <SheetTitle>Members</SheetTitle>
+          <SheetDescription>
+            {conversation.participants.length} people · {onlineCount} online
+          </SheetDescription>
         </SheetHeader>
         <Tabs defaultValue="members" className="min-h-0 flex-1 gap-0">
-          <TabsList className="m-4">
+          <TabsList className={isAdmin ? "app-members-panel-tabs" : "hidden"}>
             <TabsTrigger value="members">Members</TabsTrigger>
             {isAdmin && <TabsTrigger value="invites">Invites</TabsTrigger>}
             {isAdmin && (
@@ -196,94 +211,121 @@ export function MembersPanel({
             )}
           </TabsList>
 
-          <TabsContent value="members" className="min-h-0">
-            <ScrollArea className="h-full">
-              <div className="flex flex-col gap-1 px-4 pb-4">
-                {conversation.participants.map((participant) => {
-                  const name =
-                    participant.userId === viewer.id
-                      ? `${viewer.name} (you)`
-                      : directory.nameOf(participant.userId);
-                  return (
-                    <div
-                      key={participant.userId}
-                      className="flex items-center gap-3 rounded-lg px-2 py-2"
-                    >
-                      <Avatar size="sm">
-                        <AvatarImage
-                          src={directory.profiles[participant.userId]?.image ?? undefined}
-                        />
-                        <AvatarFallback>{initialsOf(name)}</AvatarFallback>
-                      </Avatar>
-                      <span className="min-w-0 flex-1 truncate text-sm">{name}</span>
-                      {participant.role === "admin" && <Badge variant="outline">admin</Badge>}
-                      {participant.userId !== viewer.id && (
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button size="icon-sm" variant="ghost" aria-label={`Manage ${name}`}>
-                              <MoreHorizontal />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            {isAdmin &&
-                              (participant.role === "admin" ? (
-                                <DropdownMenuItem
-                                  onSelect={() => void setRole(participant.userId, "member")}
+          <TabsContent value="members" className="app-members-panel-content min-h-0">
+            <div className="app-members-panel-member-area">
+              {conversation.participants.length <= 1 ? (
+                <div className="app-members-panel-empty">
+                  <strong>Just you so far</strong>
+                  <p>Add people and they will appear here with their role.</p>
+                </div>
+              ) : (
+                <ScrollArea className="h-full">
+                  <div className="app-members-panel-member-list">
+                    {conversation.participants.map((participant) => {
+                      const name =
+                        participant.userId === viewer.id
+                          ? `${viewer.name} (you)`
+                          : directory.nameOf(participant.userId);
+                      const online = presence[participant.userId]?.online === true;
+                      return (
+                        <div key={participant.userId} className="app-members-panel-member-row">
+                          <Avatar className="app-members-panel-avatar">
+                            <AvatarImage
+                              src={directory.profiles[participant.userId]?.image ?? undefined}
+                            />
+                            <AvatarFallback>{initialsOf(name)}</AvatarFallback>
+                            {online && <AvatarBadge className="app-members-panel-online" />}
+                          </Avatar>
+                          <span className="app-members-panel-member-name">{name}</span>
+                          {participant.role === "admin" && (
+                            <Badge className="app-members-panel-role" variant="outline">
+                              admin
+                            </Badge>
+                          )}
+                          {participant.userId !== viewer.id && (
+                            <DropdownMenu>
+                              <DropdownMenuTrigger asChild>
+                                <Button
+                                  size="icon-sm"
+                                  variant="ghost"
+                                  className="app-members-panel-manage"
+                                  aria-label={`Manage ${name}`}
                                 >
-                                  <ShieldMinus />
-                                  Demote to member
-                                </DropdownMenuItem>
-                              ) : (
+                                  <MoreHorizontal />
+                                </Button>
+                              </DropdownMenuTrigger>
+                              <DropdownMenuContent align="end">
+                                {isAdmin &&
+                                  (participant.role === "admin" ? (
+                                    <DropdownMenuItem
+                                      onSelect={() => void setRole(participant.userId, "member")}
+                                    >
+                                      <ShieldMinus />
+                                      Demote to member
+                                    </DropdownMenuItem>
+                                  ) : (
+                                    <DropdownMenuItem
+                                      onSelect={() => void setRole(participant.userId, "admin")}
+                                    >
+                                      <ShieldPlus />
+                                      Make admin
+                                    </DropdownMenuItem>
+                                  ))}
+                                {isAdmin && (
+                                  <DropdownMenuItem
+                                    variant="destructive"
+                                    onSelect={() => void removeMember(participant.userId)}
+                                  >
+                                    <UserMinus />
+                                    Remove from group
+                                  </DropdownMenuItem>
+                                )}
                                 <DropdownMenuItem
-                                  onSelect={() => void setRole(participant.userId, "admin")}
+                                  onSelect={() => setReportedUserId(participant.userId)}
                                 >
-                                  <ShieldPlus />
-                                  Make admin
+                                  <TriangleAlert />
+                                  Report
                                 </DropdownMenuItem>
-                              ))}
-                            {isAdmin && (
-                              <DropdownMenuItem
-                                variant="destructive"
-                                onSelect={() => void removeMember(participant.userId)}
-                              >
-                                <UserMinus />
-                                Remove from group
-                              </DropdownMenuItem>
-                            )}
-                            <DropdownMenuItem
-                              onSelect={() => setReportedUserId(participant.userId)}
-                            >
-                              <TriangleAlert />
-                              Report
-                            </DropdownMenuItem>
-                            {/* Blocking is one-sided and immediate: it refuses new
-                                directs between the two of you and leaves this
-                                group untouched (`docs/decisions/0021`). */}
-                            <DropdownMenuItem onSelect={() => void toggleBlock(participant.userId)}>
-                              <Ban />
-                              {blockedUserIds.has(participant.userId) ? "Unblock" : "Block"}
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
-                      )}
-                    </div>
-                  );
-                })}
-
-                {isAdmin && (
-                  <div className="mt-4 flex flex-col gap-2">
-                    <Label>Add someone</Label>
-                    <ProfilePicker
-                      exclude={conversation.participants.map((participant) => participant.userId)}
-                      onPick={(profile) => {
-                        directory.put(profile);
-                        void addMember(profile.id);
-                      }}
-                    />
+                                {/* Blocking is one-sided and immediate: it refuses new
+                                    directs between the two of you and leaves this
+                                    group untouched (`docs/decisions/0021`). */}
+                                <DropdownMenuItem
+                                  onSelect={() => void toggleBlock(participant.userId)}
+                                >
+                                  <Ban />
+                                  {blockedUserIds.has(participant.userId) ? "Unblock" : "Block"}
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
+                </ScrollArea>
+              )}
+            </div>
+            {isAdmin && (
+              <div className="app-members-panel-add">
+                {addOpen && (
+                  <ProfilePicker
+                    exclude={conversation.participants.map((participant) => participant.userId)}
+                    onPick={(profile) => {
+                      directory.put(profile);
+                      void addMember(profile.id);
+                      setAddOpen(false);
+                    }}
+                  />
                 )}
+                <Button
+                  size="sm"
+                  className="app-members-panel-add-button"
+                  onClick={() => setAddOpen((current) => !current)}
+                >
+                  {addOpen ? "Close" : "Add people"}
+                </Button>
               </div>
-            </ScrollArea>
+            )}
           </TabsContent>
 
           {isAdmin && (

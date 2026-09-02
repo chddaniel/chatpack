@@ -1,0 +1,129 @@
+---
+title: UI Blocks
+description: Reusable React blocks for Chatpack chat experiences.
+---
+
+`@chatpack/ui` provides reusable React components on top of the headless
+`@chatpack/client` package. It does not own authentication, profiles, routing,
+or a database.
+
+## Install
+
+```sh
+pnpm add @chatpack/ui @chatpack/client
+```
+
+Import the stylesheet once, then provide a React-enabled client and the viewer
+id. User ids are opaque to Chatpack, so applications can render their own
+profiles:
+
+```tsx
+import { createChatClient } from "@chatpack/client/react";
+import { ChatpackUIProvider, ChatWindow } from "@chatpack/ui";
+import "@chatpack/ui/styles.css";
+
+const client = createChatClient({ baseURL: "/", basePath: "/api/chat" });
+
+export function Chat({ conversationId, userId }: { conversationId: string; userId: string }) {
+  return (
+    <ChatpackUIProvider client={client} userId={userId} renderUser={(id) => <span>{id}</span>}>
+      <ChatWindow conversationId={conversationId} />
+    </ChatpackUIProvider>
+  );
+}
+```
+
+## Current Blocks
+
+### Layout
+
+`ConversationList`, `CompactChatList`, `ConversationHeader`, `ConversationRow`,
+`MessageThread`, `FlatMessageThread`, `GroupedMessageThread`, `MessageRow`,
+`ChatWindow`, `InboxLayout`, `MobileChatSheet`, `FloatingChatWidget`,
+`AssistantThread`, `JumpToLatest`
+
+### Input
+
+`MessageComposer`, `ReplyComposer`, `MentionComposer`, `MentionAutocomplete`,
+`ChatComposerBar`, `MessageActions`, `ForwardDialog`, `MessageSearch`,
+`MessageSearchResults`, `ChatCommandPalette`, `StartDirectMessage`,
+`NewGroupForm`, `QuickReactions`, `MessageReactions`
+
+### Realtime
+
+`TypingIndicator`, `TypingDots`, `ConnectionStatus`, `PresenceBar`,
+`PresenceAvatarStack`, `PresenceIndicator`, `OnlineStatusChip`, `ReadReceipts`,
+`UnreadInbox`, `MarkReadButton`
+
+### Groups
+
+`MembersList`, `ParticipantManager`, `InviteManager`, `InviteAccept`,
+`JoinRequests`, `ChannelDirectory`, `ChannelSettings`, `LeaveGroup`
+
+### Moderation
+
+`BlockedUsers`, `MuteToggle`, `MutedList`, `ReportDialog`, `ModerationQueue`,
+`BanManager`
+
+### Media
+
+`AttachmentComposer`, `AttachmentDropzone`, `MessageAttachments`, `ImageBubble`,
+`FileBubble`, `UploadProgress`, `AttachmentGallery`, `UnavailableAttachment`
+
+### Primitives
+
+`UserAvatarUnreadBadge`, `ChatPrimitives`, `MessageBubble`, `Timestamp`,
+`PresenceDot`, `ReadReceiptTicks`, `ReactionPill`, `ReplyQuoteBar`,
+`ForwardedLabel`, `MentionChip`, `RoleTag`, `ErrorNotice`, `SystemMessage`,
+`SoftDeletedTombstone`, `EmptyInbox`, `EmojiPicker`
+
+All data comes from the public client hooks and actions. Realtime blocks do not
+implement their own reconnect or polling logic, and reactions are never copied
+into component state.
+
+Each block is exported from `@chatpack/ui` and has a corresponding catalog entry
+here. Blocks that depend on host policy accept callbacks instead of embedding
+authentication or user-database assumptions.
+
+## Connected block contract
+
+Configure one React client at module scope and pass it to
+`ChatpackUIProvider`. The provider owns only the opaque viewer id and profile
+renderer. It does not create users, authenticate requests, or invent profile
+fields.
+
+```tsx
+import { createChatClient } from "@chatpack/client/react";
+import { ChatpackUIProvider, ChatWindow } from "@chatpack/ui";
+import "@chatpack/ui/styles.css";
+
+const client = createChatClient({ baseURL: "/", basePath: "/api/chat" });
+
+export function Chat({ conversationId, userId }: { conversationId: string; userId: string }) {
+  return (
+    <ChatpackUIProvider client={client} userId={userId} renderUser={(id) => <span>{id}</span>}>
+      <ChatWindow conversationId={conversationId} />
+    </ChatpackUIProvider>
+  );
+}
+```
+
+Message actions call `messages.edit`, `messages.delete`, `messages.react`,
+`messages.unreact`, and `messages.forward`. Ownership is checked before edit
+and delete controls render; core remains the final authorization boundary.
+`MessageComposer` sends on Enter, preserves Shift+Enter, and throttles typing
+signals to one start action per three seconds. Message lists reverse the
+client's newest-first page for display and call `markRead` for the newest item.
+
+Group, channel, invite, join-request, and moderation blocks call their typed
+client actions. They do not accept fake report, mute, member, or channel arrays.
+Host callbacks remain for profile rendering, navigation, and success handling.
+
+## Filepack attachments
+
+Media metadata contains only `id`, `name`, `contentType`, and `size`. It never
+contains a URL. Configure `@chatpack/file` in the host and pass its authorized
+`resolveTarget` implementation to `ImageBubble`, `FileBubble`,
+`MessageAttachments`, or `AttachmentGallery`. A missing or failed target shows
+the unavailable state. UI must not call Chatpack routes directly or expose
+long-lived storage URLs.
