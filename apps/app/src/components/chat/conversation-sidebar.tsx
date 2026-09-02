@@ -10,7 +10,6 @@ import Image, { type ImageProps } from "next/image";
 import { toast } from "sonner";
 
 import { useChat } from "@/components/chat/chat-context";
-import { NewGroupDialog } from "@/components/chat/new-group-dialog";
 import { SearchDialog } from "@/components/chat/search-dialog";
 import { AuthButton } from "@/components/auth-button";
 import { ProfileSearch } from "@/components/profile-search";
@@ -34,15 +33,16 @@ export function ConversationSidebar({
   conversations,
   selectedId,
   isModerator,
+  onNewGroup,
 }: {
   conversations: ChatClientHookResult<ClientConversationPage>;
   selectedId: string | null;
   isModerator: boolean;
+  onNewGroup: () => void;
 }) {
   const { client, viewer, directory, mutedConversationIds, select } = useChat();
   const presence = client.usePresence();
   const [searchQuery, setSearchQuery] = useState("");
-  const [newGroupOpen, setNewGroupOpen] = useState(false);
   const [newMenuOpen, setNewMenuOpen] = useState(false);
   const [directOpen, setDirectOpen] = useState(false);
   const [messageSearchOpen, setMessageSearchOpen] = useState(false);
@@ -83,7 +83,7 @@ export function ConversationSidebar({
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-48">
             <DropdownMenuItem onSelect={() => setDirectOpen(true)}>Direct message</DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => setNewGroupOpen(true)}>
+            <DropdownMenuItem onSelect={onNewGroup}>
               <Users />
               New group
             </DropdownMenuItem>
@@ -249,7 +249,6 @@ export function ConversationSidebar({
         </div>
       </div>
 
-      {newGroupOpen && <NewGroupDialog onClose={() => setNewGroupOpen(false)} />}
       <ProfileSearch
         open={directOpen}
         onOpenChange={setDirectOpen}

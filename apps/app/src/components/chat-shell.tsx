@@ -9,6 +9,7 @@ import { toast } from "sonner";
 import { ChatProvider, type ChatContextValue } from "@/components/chat/chat-context";
 import { ConversationHeader } from "@/components/chat/conversation-header";
 import { ConversationSidebar } from "@/components/chat/conversation-sidebar";
+import { NewGroupDialog } from "@/components/chat/new-group-dialog";
 import { MessageComposer } from "@/components/chat/message-composer";
 import { MessageList } from "@/components/chat/message-list";
 import { ProfileSearch } from "@/components/profile-search";
@@ -41,10 +42,12 @@ import type { PublicProfile } from "@/lib/profiles";
 export function ChatShell({
   user,
   initialConversationId,
+  initialNewGroupOpen,
   isModerator,
 }: {
   user: PublicProfile;
   initialConversationId: string | null;
+  initialNewGroupOpen: boolean;
   isModerator: boolean;
 }) {
   const client = useMemo(() => createApplicationChatClient(user.id), [user.id]);
@@ -53,11 +56,16 @@ export function ChatShell({
   const conversations = client.useConversations({ limit: 50 });
   const [selectedId, setSelectedId] = useState<string | null>(initialConversationId);
   const [replyTo, setReplyTo] = useState<ClientMessage | null>(null);
+  const [newGroupOpen, setNewGroupOpen] = useState(initialNewGroupOpen);
   const [conversationsOpen, setConversationsOpen] = useState(false);
   const [mutedConversationIds, setMutedConversationIds] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
   const [blockedUserIds, setBlockedUserIds] = useState<ReadonlySet<string>>(() => new Set());
+
+  useEffect(() => {
+    if (initialNewGroupOpen) window.history.replaceState(null, "", window.location.pathname);
+  }, [initialNewGroupOpen]);
 
   const rows = conversations.data?.conversations ?? [];
   const selected =
@@ -207,11 +215,13 @@ export function ChatShell({
       conversations={conversations}
       selectedId={selectedId}
       isModerator={isModerator}
+      onNewGroup={() => setNewGroupOpen(true)}
     />
   );
 
   return (
     <ChatProvider value={context}>
+      {newGroupOpen && <NewGroupDialog onClose={() => setNewGroupOpen(false)} />}
       <main className="grid h-dvh bg-background md:grid-cols-[360px_1fr]">
         <aside className="hidden md:block">{sidebar}</aside>
 
