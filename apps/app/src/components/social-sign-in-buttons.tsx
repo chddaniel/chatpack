@@ -4,6 +4,7 @@ import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
 import { authClient } from "@/lib/auth-client";
+import type { SocialProvider } from "@/lib/auth-providers";
 
 function GoogleIcon() {
   return (
@@ -39,22 +40,26 @@ function GitHubIcon() {
   );
 }
 
-export function SocialSignInButtons() {
-  async function signIn(provider: "google" | "github"): Promise<void> {
+export function SocialSignInButtons({ providers }: { providers: readonly SocialProvider[] }) {
+  async function signIn(provider: SocialProvider): Promise<void> {
     const result = await authClient.signIn.social({ provider, callbackURL: "/" });
     if (result.error) toast.error(result.error.message);
   }
 
   return (
     <div className="grid gap-2 sm:grid-cols-2">
-      <Button type="button" variant="outline" onClick={() => void signIn("google")}>
-        <GoogleIcon />
-        Continue with Google
-      </Button>
-      <Button type="button" variant="outline" onClick={() => void signIn("github")}>
-        <GitHubIcon />
-        Continue with GitHub
-      </Button>
+      {providers.includes("google") && (
+        <Button type="button" variant="outline" onClick={() => void signIn("google")}>
+          <GoogleIcon />
+          Continue with Google
+        </Button>
+      )}
+      {providers.includes("github") && (
+        <Button type="button" variant="outline" onClick={() => void signIn("github")}>
+          <GitHubIcon />
+          Continue with GitHub
+        </Button>
+      )}
     </div>
   );
 }
