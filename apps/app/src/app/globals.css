@@ -667,6 +667,158 @@
   }
 }
 
+.app-members-panel {
+  width: min(320px, 100vw) !important;
+  max-width: none !important;
+  gap: 0 !important;
+  border-left: 1px solid var(--chatpack-ui-border);
+  background: var(--chatpack-ui-panel);
+  color: var(--chatpack-ui-text);
+  padding: 0 !important;
+}
+
+.app-members-panel-header {
+  gap: 3px;
+  padding: 16px 14px;
+}
+
+.app-members-panel-header [data-slot="sheet-title"] {
+  color: var(--chatpack-ui-text);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 17px;
+}
+
+.app-members-panel-header [data-slot="sheet-description"] {
+  color: var(--chatpack-ui-muted);
+  font-size: 11px;
+  line-height: 13px;
+}
+
+.app-members-panel-tabs {
+  align-self: flex-start;
+  margin: 0 14px 12px;
+}
+
+.app-members-panel-content {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+
+.app-members-panel-member-area {
+  min-height: 0;
+  flex: 1 1 auto;
+}
+
+.app-members-panel-member-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 14px 16px;
+}
+
+.app-members-panel-member-row {
+  display: flex;
+  min-height: 48px;
+  align-items: center;
+  gap: 9px;
+  border-radius: 10px;
+  padding: 7px 8px;
+}
+
+.app-members-panel-avatar {
+  height: 34px;
+  width: 34px;
+  flex: 0 0 auto;
+}
+
+.app-members-panel-avatar [data-slot="avatar-fallback"] {
+  font-size: 12px;
+}
+
+.app-members-panel-online {
+  right: 0;
+  bottom: 0;
+  height: 11px !important;
+  width: 11px !important;
+  background: var(--chatpack-ui-online) !important;
+  box-shadow: 0 0 0 2px var(--chatpack-ui-panel);
+}
+
+.app-members-panel-member-name {
+  min-width: 0;
+  flex: 1 1 auto;
+  overflow: hidden;
+  color: var(--chatpack-ui-text);
+  font-size: 13px;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.app-members-panel-role {
+  border: 0;
+  border-radius: 9999px;
+  background: var(--chatpack-ui-secondary);
+  color: var(--chatpack-ui-text);
+  padding: 2px 6px;
+  font-size: 10px;
+  font-weight: 500;
+  line-height: 12px;
+}
+
+.app-members-panel-manage {
+  height: 28px;
+  width: 28px;
+  flex: 0 0 auto;
+}
+
+.app-members-panel-empty {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 0 24px;
+  text-align: center;
+}
+
+.app-members-panel-empty strong {
+  color: var(--chatpack-ui-text);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 17px;
+}
+
+.app-members-panel-empty p {
+  max-width: 230px;
+  margin: 0;
+  color: var(--chatpack-ui-muted);
+  font-size: 12px;
+  line-height: 14px;
+}
+
+.app-members-panel-add {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 0 14px 16px;
+}
+
+.app-members-panel-add-button {
+  align-self: flex-start;
+  height: 30px;
+  min-height: 30px;
+  border-radius: 10px;
+  box-shadow: var(--chatpack-ui-control-shadow);
+  padding: 8px 13px;
+  font-size: 12px;
+  line-height: 14px;
+}
+
 .app-conversation-header {
   box-sizing: border-box;
   height: 72px;
