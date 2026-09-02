@@ -14,6 +14,10 @@ first-party adapter.
 - Any Postgres you can reach with a **connection string** (Neon, RDS, Railway,
   Fly, Replit, Vercel Postgres): [`@chatpack/adapter-drizzle`](/docs/storage/drizzle).
   Do **not** write a custom adapter for these.
+- Prisma ORM 7 with PostgreSQL: use the first-party
+  [`@chatpack/adapter-prisma`](/docs/storage/prisma) adapter. Copy its models
+  and migration, generate the client in your application, and pass that
+  server-side client to `prismaAdapter(client)`.
 - Supabase/PostgREST: use the first-party `@chatpack/adapter-supabase` adapter.
   It is server-only, accepts an already-created privileged Supabase client, and
   ships with its own RPC-backed migration.

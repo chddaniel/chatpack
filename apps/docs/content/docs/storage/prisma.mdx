@@ -1,0 +1,61 @@
+---
+title: Prisma / Postgres
+description: Server-side PostgreSQL persistence with the Prisma ORM 7 adapter.
+---
+
+`@chatpack/adapter-prisma` is a server-only Chatpack storage adapter for Prisma
+ORM 7 and PostgreSQL. It accepts the generated client owned by your
+application.
+
+## Install
+
+```sh
+npm install @chatpack/core @chatpack/adapter-prisma @prisma/client @prisma/adapter-pg pg
+npm install -D prisma
+```
+
+Prisma 7 requires Node.js 20.19 or newer. Prisma 8 uses a different
+contract/query client and is not supported by this adapter.
+
+## Add models and migrate
+
+Copy models from `@chatpack/adapter-prisma/prisma/schema.prisma` into your
+application schema. Keep your datasource and generator. Put `DATABASE_URL` in
+Prisma 7's `prisma.config.ts`, then copy the package migration into your
+migrations directory:
+
+```sh
+npx prisma format
+npx prisma validate
+npx prisma migrate deploy
+npx prisma generate
+```
+
+Run the migration before serving requests. Existing incompatible Chatpack
+tables need an explicit migration; the supplied `CREATE TABLE IF NOT EXISTS`
+statements do not alter them.
+
+## Server-only setup
+
+```ts
+import { PrismaPg } from "@prisma/adapter-pg";
+import { PrismaClient } from "./generated/client/client.js";
+import { prismaAdapter } from "@chatpack/adapter-prisma";
+import { chatpack } from "@chatpack/core";
+
+const prisma = new PrismaClient({
+  adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL! }),
+});
+
+export const chat = chatpack({ storage: prismaAdapter(prisma), auth });
+```
+
+The adapter provides the required contract plus search, invites, public
+channels, and moderation. Message sequences use a transaction and PostgreSQL
+row locking. Invite caps use a conditional update. Active bans use a
+transaction advisory lock. Run `backfillMessageSearchTokens(prisma)` after
+importing messages without search tokens.
+
+Verified matrix: Prisma 7.10.0, `@prisma/adapter-pg` 7.10.0, PostgreSQL 16.
+Other providers, Prisma 8, edge/serverless drivers, and Accelerate are not
+claimed compatible.
