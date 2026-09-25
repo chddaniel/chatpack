@@ -8,7 +8,7 @@ A production-oriented Chatpack next starter with Neon Postgres, Drizzle, and bet
 2. Copy `.env.example` to `.env.local`.
 3. Add the required secrets described in the environment example.
 4. Run `pnpm run db:generate`, `pnpm run db:migrate`, and `pnpm run setup:check`.
-   `db:migrate` runs drizzle-kit, adds the thread column to existing Chatpack tables, then creates Filepack's attachment tables. Filepack's tables are outside `src/db/schema.ts`, so drizzle-kit does not create them.
+   `db:migrate` runs drizzle-kit, adds thread reply and follow tables to existing Chatpack databases, then creates Filepack's attachment tables. Filepack's tables are outside `src/db/schema.ts`, so drizzle-kit does not create them.
 5. Run `pnpm run dev`.
 
 The generated source is application-owned. Edit it to fit your product. It is not a reusable `@chatpack/ui` package.
@@ -64,6 +64,16 @@ above plus `/stream`. Read the server file first.
 
 The UI is application-owned React. Nothing under `src/components` is a Chatpack
 API - delete whatever your product does not need.
+
+## Threads and alerts
+
+Threads are enabled in `src/lib/chatpack.server.ts`. A reply stays in its thread unless the sender checks **Also send to chat**. The Threads button lists followed threads and unread replies. People follow a thread when they start it, reply, or are mentioned. Direct message participants also follow automatically. Readers can follow or mute a thread, mark it unread, and open a reply from a search result or shared URL.
+
+Run `pnpm run db:threads` when upgrading an existing app. The script adds the message columns, follow state, alert jobs, and browser push subscriptions. It can be run again safely. Run the script before deploying code that reads these tables.
+
+Email alerts use Resend when `RESEND_API_KEY` and `THREAD_EMAIL_FROM` are set. Browser alerts use Web Push when `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`, and `VAPID_SUBJECT` are set. Generate the VAPID pair with `pnpm exec web-push generate-vapid-keys`. Users must enable browser alerts in the Threads dialog and grant browser permission. The app sends alerts to followers when a new reply arrives. Muting a thread stops email and browser alerts.
+
+Set `CRON_SECRET` in the deployed app. The protected `/api/threads/deliver` route retries failed deliveries, and `vercel.json` calls it once a day on Vercel. Hosts outside Vercel can call the same route with `Authorization: Bearer <CRON_SECRET>`. Normal delivery happens when the reply is sent; the scheduled call handles failures. Set `BETTER_AUTH_URL` to the public app URL so alert links open the correct thread.
 
 ## Authentication
 

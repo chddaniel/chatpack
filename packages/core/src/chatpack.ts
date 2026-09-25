@@ -247,6 +247,8 @@ export interface SendMessageInput {
   replyToMessageId?: string;
   /** Send into a one-level thread rooted at this main-timeline message. */
   threadRootMessageId?: string;
+  /** Also show this thread reply in the conversation's main timeline. */
+  alsoSendToMain?: boolean;
   /**
    * User ids to mark as mentioned (`docs/decisions/0023`). Every id must be a
    * participant of this conversation, else `MENTION_NOT_PARTICIPANT`.
@@ -302,6 +304,13 @@ export interface ListMessagesApiInput {
 /** Input for loading replies under one main-timeline message. */
 export interface ListThreadApiInput extends ListMessagesApiInput {
   rootMessageId: string;
+}
+
+/** Input for fetching one message in a readable conversation. */
+export interface GetMessageApiInput {
+  userId: string;
+  conversationId: string;
+  messageId: string;
 }
 
 /** Result of {@link ChatpackApi.listMessages}. */
@@ -619,6 +628,9 @@ export interface ChatpackApi {
   listMessages(input: ListMessagesApiInput): Promise<ListMessagesApiResult>;
   /** List one root's replies newest-first. Requires installation threads and read permission. */
   listThread(input: ListThreadApiInput): Promise<ListMessagesApiResult>;
+
+  /** Fetch one message, including its reply count and reactions. */
+  getMessage(input: GetMessageApiInput): Promise<MessageWithDetails>;
 
   /** Search non-tombstone messages in the user's participant conversations. */
   searchMessages(input: SearchMessagesApiInput): Promise<SearchMessagesApiResult>;
@@ -2312,6 +2324,17 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
             "Thread root was not found in this conversation.",
           );
         }
+        if (input.alsoSendToMain === true && !storage.supportsThreadBroadcast) {
+          throw new ChatpackError(
+            "INVALID_INPUT",
+            "This storage adapter does not support broadcasting thread replies.",
+          );
+        }
+      } else if (input.alsoSendToMain === true) {
+        throw new ChatpackError(
+          "INVALID_INPUT",
+          "Only thread replies can also appear in the main timeline.",
+        );
       }
 
       // A reply must point inside this conversation (ADR 0013 §1). Same error
@@ -2356,6 +2379,7 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
         role: input.role ?? "user",
         replyToMessageId: input.replyToMessageId ?? null,
         threadRootMessageId: input.threadRootMessageId ?? null,
+        showInMain: input.alsoSendToMain === true,
         forwardedFromMessageId: null,
         forwardedFromConversationId: null,
         forwardedFromSenderId: null,
@@ -2508,6 +2532,19 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
         cursor: input.cursor,
       });
       return { messages: await withDetails(messages), nextCursor };
+    },
+
+    async getMessage(input) {
+      requireNonEmptyId(input.userId, "userId");
+      await requireActiveUser(input.userId);
+      const conversation = await requireConversation(input.conversationId);
+      await requireRead(input.userId, conversation);
+      requireNonEmptyId(input.messageId, "messageId");
+      const message = await storage.getMessage(input.messageId);
+      if (!message || message.conversationId !== conversation.id) {
+        throw new ChatpackError("MESSAGE_NOT_FOUND", "Message was not found in this conversation.");
+      }
+      return withDetailsOne(message);
     },
 
     async searchMessages(input) {

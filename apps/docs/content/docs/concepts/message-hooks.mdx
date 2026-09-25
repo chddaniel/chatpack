@@ -33,13 +33,11 @@ const chat = chatpack({
       // recipientIds is everyone except the sender - one id in a DM, N in a group.
       // mentions is the subset the message named, so a "mentions only" setting
       // is a filter here, not a feature Chatpack has to own.
-      await Promise.all(
-        recipientIds.map((id) =>
-          sendPushNotification(id, message, {
-            loud: mentions.includes(id),
-          }),
-        ),
-      );
+      await enqueueMessageAlerts({
+        messageId: message.id,
+        recipientIds,
+        mentionRecipientIds: mentions,
+      });
     },
   },
 });
@@ -91,9 +89,10 @@ beforeMessageSend: ({ body, forwardedFrom }) => {
 
 Receives the message **exactly as persisted** (rewritten body, assigned `id`
 and `seq`), the conversation, `recipientIds`, `mentions`, and the completed
-action. It runs after the storage write and the internal live broadcast. It cannot change the
-message or fail the request. If it throws, Chatpack logs the error and the
-request still succeeds.
+action. It runs after the storage write and the internal live broadcast. It
+cannot change the message. Chatpack catches hook errors, logs them, and still
+returns a successful message response. Chatpack awaits the hook, so slow work
+can delay that response.
 
 `recipientIds` is **every participant except the sender** - one id in a DM, up
 to 255 in a group, and empty when the sender is the only member (a creator-only
@@ -119,7 +118,9 @@ an integration may need to retract what it sent.
 
 Use it for side-effects: FCM, Web Push, queue the [AI assistant reply](/docs/ai/ai-assistant),
 notify analytics, or start moderation review. Filter by `action` when a
-provider should receive only new-message notifications.
+provider should receive only new-message notifications. For email or push,
+`recipientIds` is the delivery audience; use `mentions` to apply mention
+priority or mention-only preferences.
 
 Chatpack always emits its internal live events. This hook does not replace or
 control UI broadcasts. Your application owns device tokens, users, provider
@@ -130,7 +131,12 @@ receives `send` and `edit` only, and carries the same `recipientIds`. Use
 `afterMessageMutation` for new code.
 
 <Callout type="warn">
-  Hooks are **in-process functions, not webhooks** - there are no retries or delivery guarantees.
-  Keep them fast; put heavy or must-not-be-lost work into your own job queue and return. (Scope
-  rationale: ADR 0014.)
+  Hooks are **in-process functions, not webhooks**. Chatpack catches hook errors, but it awaits the
+  hook before finishing the request, so slow provider calls add message latency. Keep the hook fast.
+  For reliable delivery, write jobs to your queue or outbox here, then let a worker check
+  preferences and call your provider. See the app's
+  [hook](https://github.com/chddaniel/chatpack/blob/main/apps/app/src/lib/chatpack.server.ts) and
+  [email and browser push
+  delivery](https://github.com/chddaniel/chatpack/blob/main/apps/app/src/lib/thread-delivery.ts)
+  examples. (Scope rationale: ADR 0014.)
 </Callout>

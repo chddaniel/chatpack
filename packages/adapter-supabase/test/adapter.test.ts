@@ -217,7 +217,7 @@ describe("supabaseAdapter conversion and query boundaries", () => {
       threadRootMessageId: "root_1",
       limit: 10,
     });
-    expect(queries[0]).toContain("thread_root_message_id=is.null");
+    expect(queries[0]).toContain("thread_root_message_id.is.null%2Cshow_in_main.eq.true");
     expect(queries[1]).toContain("thread_root_message_id=eq.root_1");
     await expect(storage.countThreadReplies?.(["root_1", "root_2"])).resolves.toEqual({
       root_1: 2,

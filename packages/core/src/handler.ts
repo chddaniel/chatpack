@@ -962,6 +962,10 @@ export function createHandler(
           body["threadRootMessageId"],
           "threadRootMessageId",
         );
+        const alsoSendToMain = body["alsoSendToMain"];
+        if (alsoSendToMain !== undefined && typeof alsoSendToMain !== "boolean") {
+          throw new ChatpackError("INVALID_INPUT", '"alsoSendToMain" must be a boolean.');
+        }
         const mentions = optionalStringArray(body["mentions"], "mentions");
         const message = await api.sendMessage({
           userId,
@@ -970,6 +974,7 @@ export function createHandler(
           ...(role !== undefined ? { role } : {}),
           ...(replyToMessageId !== undefined ? { replyToMessageId } : {}),
           ...(threadRootMessageId !== undefined ? { threadRootMessageId } : {}),
+          ...(alsoSendToMain !== undefined ? { alsoSendToMain } : {}),
           ...(mentions !== undefined ? { mentions } : {}),
           ...(metadata !== undefined ? { metadata } : {}),
         });
@@ -1014,6 +1019,22 @@ export function createHandler(
             ...(cursor !== undefined ? { cursor } : {}),
           }),
         );
+      }
+
+      // GET /conversations/:id/messages/:messageId - one readable message
+      if (
+        method === "GET" &&
+        segments.length === 4 &&
+        segments[0] === "conversations" &&
+        segments[2] === "messages"
+      ) {
+        return json(200, {
+          message: await api.getMessage({
+            userId,
+            conversationId: segments[1]!,
+            messageId: segments[3]!,
+          }),
+        });
       }
 
       if (

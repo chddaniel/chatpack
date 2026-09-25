@@ -12,6 +12,7 @@ import {
   Check,
   CheckCheck,
   CornerUpLeft,
+  Link2,
   MessageSquare,
   Forward,
   MoreHorizontal,
@@ -96,6 +97,19 @@ export function MessageRow({
     // client can render a tombstone instead of a hole in the sequence.
     const result = await client.messages.delete({ messageId: message.id });
     if (result.error) toast.error(result.error.message);
+  }
+
+  async function copyLink(): Promise<void> {
+    const url = new URL("/", window.location.origin);
+    url.searchParams.set("conversation", message.conversationId);
+    url.searchParams.set("thread", message.threadRootMessageId ?? message.id);
+    if (message.threadRootMessageId !== null) url.searchParams.set("reply", message.id);
+    try {
+      await navigator.clipboard.writeText(url.toString());
+      toast.success("Message link copied.");
+    } catch {
+      toast.error("Could not copy message link.");
+    }
   }
 
   return (
@@ -200,6 +214,7 @@ export function MessageRow({
               onReact={toggleReaction}
               onReply={() => onReply(message)}
               onThread={onThread === undefined ? undefined : () => onThread(message)}
+              onCopyLink={() => void copyLink()}
               onEdit={() => setDraft(message.body)}
               onDelete={remove}
               onForward={() => setForwarding(true)}
@@ -215,7 +230,9 @@ export function MessageRow({
             onClick={() => onThread(message)}
           >
             <MessageSquare className="size-3" />
-            {message.threadReplyCount} {message.threadReplyCount === 1 ? "reply" : "replies"}
+            {message.threadRootMessageId === null
+              ? `${message.threadReplyCount} ${message.threadReplyCount === 1 ? "reply" : "replies"}`
+              : "View thread"}
           </button>
         )}
 
@@ -265,6 +282,7 @@ function MessageMenu({
   onReact,
   onReply,
   onThread,
+  onCopyLink,
   onEdit,
   onDelete,
   onForward,
@@ -274,6 +292,7 @@ function MessageMenu({
   onReact: (emoji: string) => Promise<void>;
   onReply: () => void;
   onThread?: () => void;
+  onCopyLink: () => void;
   onEdit: () => void;
   onDelete: () => Promise<void>;
   onForward: () => void;
@@ -316,6 +335,10 @@ function MessageMenu({
             Reply in thread
           </DropdownMenuItem>
         )}
+        <DropdownMenuItem onSelect={onCopyLink}>
+          <Link2 />
+          Copy link
+        </DropdownMenuItem>
         <DropdownMenuItem onSelect={onForward}>
           <Forward />
           Forward

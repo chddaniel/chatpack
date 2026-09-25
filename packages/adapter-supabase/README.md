@@ -21,7 +21,9 @@ supabase db push
 Or run the SQL file in Supabase SQL Editor. Run it before starting Chatpack.
 Existing installations should apply
 [`20260925072829_thread_replies.sql`](./supabase/migrations/20260925072829_thread_replies.sql)
-before enabling `threads`. New installations can apply both migrations in order.
+and [`20260925153817_thread_broadcast.sql`](./supabase/migrations/20260925153817_thread_broadcast.sql)
+before enabling `threads` and `alsoSendToMain`. New installations apply all
+three migrations in order.
 The adapter does not apply migrations automatically. If the migration is kept
 inside a package workspace, run the CLI from that directory or copy the file
 into the Supabase project's migration directory first.

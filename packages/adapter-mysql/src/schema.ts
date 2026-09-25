@@ -77,6 +77,7 @@ export const messages = mysqlTable(
     deletedAt: nullableStamp("deleted_at"),
     replyToMessageId: id("reply_to_message_id"),
     threadRootMessageId: id("thread_root_message_id"),
+    showInMain: boolean("show_in_main").notNull().default(false),
     forwardedFromMessageId: id("forwarded_from_message_id"),
     forwardedFromConversationId: id("forwarded_from_conversation_id"),
     forwardedFromSenderId: id("forwarded_from_sender_id"),
@@ -302,7 +303,7 @@ export const migrationStatements: readonly string[] = [
   `CREATE TABLE IF NOT EXISTS chatpack_messages (
   id varchar(255) NOT NULL, conversation_id varchar(255) NOT NULL, sender_id varchar(255) NOT NULL, body text NOT NULL,
   role varchar(16) NOT NULL DEFAULT 'user', seq int NOT NULL, created_at datetime(3) NOT NULL, edited_at datetime(3) NULL, deleted_at datetime(3) NULL,
-  reply_to_message_id varchar(255) NULL, thread_root_message_id varchar(255) NULL, forwarded_from_message_id varchar(255) NULL, forwarded_from_conversation_id varchar(255) NULL,
+  reply_to_message_id varchar(255) NULL, thread_root_message_id varchar(255) NULL, show_in_main boolean NOT NULL DEFAULT false, forwarded_from_message_id varchar(255) NULL, forwarded_from_conversation_id varchar(255) NULL,
   forwarded_from_sender_id varchar(255) NULL, metadata json NOT NULL DEFAULT ('{}'), PRIMARY KEY (id),
   UNIQUE KEY chatpack_messages_conv_seq_idx (conversation_id, seq), KEY chatpack_messages_thread_seq_idx (thread_root_message_id, seq), KEY chatpack_messages_forwarded_from_idx (forwarded_from_message_id),
   CONSTRAINT chatpack_messages_conversation_fk FOREIGN KEY (conversation_id) REFERENCES chatpack_conversations (id) ON DELETE CASCADE

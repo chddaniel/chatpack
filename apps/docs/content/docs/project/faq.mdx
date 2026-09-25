@@ -114,6 +114,12 @@ does work once you swap in
 code change beyond the `transport` option. See
 [Deployment](/docs/integrations/deployment).
 
+For a new app that needs live chat, Railway is the easiest default for the
+Chatpack API because it runs as a long-lived Node service. Render, Fly.io, and
+a conventional server or VM are also options. The frontend can stay on Vercel
+while the API runs on one of these hosts. Before calling realtime ready, test
+message delivery between two authenticated users in separate sessions.
+
 </Accordion>
 
 <Accordion title="Typing indicators / read ticks are flaky - is that a bug?">
@@ -280,9 +286,10 @@ so fixing a typo doesn't have to drop a mention that was legitimate when it was
 made. Read the array as a **set** - it comes back sorted, not in the order you
 sent it.
 
-What isn't there: notifications and a mention inbox. Chatpack stores mentions and
-stops. `afterMessageMutation` hands you `mentions` next to `recipientIds`, which
-is where a push or email integration belongs.
+Chatpack core does not provide a general notification service or mention inbox.
+It stores mentions and stops. `afterMessageMutation` gives your app `mentions`
+and `recipientIds` for its own email or push integration. The Chatpack app
+includes a separate thread inbox and alert-delivery example.
 
 </Accordion>
 
@@ -309,12 +316,14 @@ pass fresh ones in the forward body if you want them. See
 
 <Accordion title="Are replies threads?">
 
-No. `replyToMessageId` is a flat pointer at one earlier message in the same
-conversation - there are no thread ids, no per-thread reply counts, and no
-nested pagination. The API hydrates a read-only `replyTo` preview
-(`{ id, senderId, excerpt, deleted }`) per request so the quote bar follows
-edits and deletions of the parent. Real threads need a different data model and
-stay a non-goal.
+`replyToMessageId` makes a quote reply in the main conversation. Set
+`threads: { enabled: true }` on the Chatpack installation and send with
+`threadRootMessageId` to put a reply in a thread. Apply the storage adapter's
+thread migration first. Thread replies have their own page and count. A sender
+can also set `alsoSendToMain: true` to show the same reply in the main
+conversation. Chatpack provides the thread API; your app owns the thread UI,
+inbox, and alert delivery. See [Message threads](/docs/concepts/message-threads)
+for migration steps and the app example.
 
 </Accordion>
 

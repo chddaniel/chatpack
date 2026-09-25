@@ -68,10 +68,14 @@ describe("moderation client routes", () => {
       limit: 1,
       cursor: firstBlockPage.data.nextCursor!,
     });
-    expect(secondBlockPage).toMatchObject({
-      error: null,
-      data: { blocks: [{ blockedUserId: "bob" }] },
-    });
+    expect(secondBlockPage.error).toBeNull();
+    if (secondBlockPage.error !== null) return;
+    expect(
+      new Set([
+        ...firstBlockPage.data.blocks.map((block) => block.blockedUserId),
+        ...secondBlockPage.data.blocks.map((block) => block.blockedUserId),
+      ]),
+    ).toEqual(new Set(["bob", "carol"]));
 
     const unblocked = await alice.moderation.unblockUser({ targetUserId: "bob" });
     expect(unblocked).toEqual({ data: { ok: true }, error: null });

@@ -58,6 +58,7 @@ model ChatpackMessage {
   deletedAt                   DateTime? @map("deleted_at")
   replyToMessageId            String?   @map("reply_to_message_id")
   threadRootMessageId         String?   @map("thread_root_message_id")
+  showInMain                  Boolean   @default(false) @map("show_in_main")
   forwardedFromMessageId      String?   @map("forwarded_from_message_id")
   forwardedFromConversationId String?   @map("forwarded_from_conversation_id")
   forwardedFromSenderId       String?   @map("forwarded_from_sender_id")

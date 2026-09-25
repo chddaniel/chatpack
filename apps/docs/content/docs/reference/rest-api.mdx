@@ -8,21 +8,23 @@ All routes are served by the one handler, relative to `basePath` (default
 
 ## Core routes
 
-| Method | Path                          | Request body / query                                       | Response (200/201)                        |
-| ------ | ----------------------------- | ---------------------------------------------------------- | ----------------------------------------- |
-| POST   | `/conversations`              | `{ otherUserId, metadata? }`                               | `{ conversation }` - DM, find-or-create   |
-| GET    | `/conversations`              | `?limit=&cursor=`                                          | `{ conversations, nextCursor }`           |
-| GET    | `/conversations/:id`          | -                                                          | `{ conversation }`                        |
-| POST   | `/conversations/:id/messages` | `{ body, role?, replyToMessageId?, mentions?, metadata? }` | `{ message }` (201)                       |
-| GET    | `/conversations/:id/messages` | `?limit=&cursor=`                                          | `{ messages, nextCursor }` - newest first |
-| GET    | `/search/messages`            | `?q=&limit=&cursor=`                                       | `{ messages, nextCursor }` - ranked       |
-| POST   | `/conversations/:id/read`     | `{ messageId }`                                            | `{ ok: true }`                            |
-| PATCH  | `/messages/:id`               | `{ body, mentions? }`                                      | `{ message }`                             |
-| DELETE | `/messages/:id`               | -                                                          | `{ message }` (soft-deleted)              |
-| POST   | `/messages/:id/forward`       | `{ conversationId, role?, mentions?, metadata? }`          | `{ message }` (201) - the copy            |
-| POST   | `/messages/:id/reactions`     | `{ emoji }`                                                | `{ message }` (full reaction set)         |
-| DELETE | `/messages/:id/reactions`     | `{ emoji }`                                                | `{ message }` (full reaction set)         |
-| GET    | `/stream`                     | SSE; auto `Last-Event-ID` on reconnect                     | `text/event-stream`                       |
+| Method | Path                                          | Request body / query                                                                              | Response (200/201)                        |
+| ------ | --------------------------------------------- | ------------------------------------------------------------------------------------------------- | ----------------------------------------- |
+| POST   | `/conversations`                              | `{ otherUserId, metadata? }`                                                                      | `{ conversation }` - DM, find-or-create   |
+| GET    | `/conversations`                              | `?limit=&cursor=`                                                                                 | `{ conversations, nextCursor }`           |
+| GET    | `/conversations/:id`                          | -                                                                                                 | `{ conversation }`                        |
+| POST   | `/conversations/:id/messages`                 | `{ body, role?, replyToMessageId?, threadRootMessageId?, alsoSendToMain?, mentions?, metadata? }` | `{ message }` (201)                       |
+| GET    | `/conversations/:id/messages`                 | `?limit=&cursor=`                                                                                 | `{ messages, nextCursor }` - newest first |
+| GET    | `/conversations/:id/messages/:messageId`      | -                                                                                                 | `{ message }`                             |
+| GET    | `/conversations/:id/threads/:rootId/messages` | `?limit=&cursor=`                                                                                 | `{ messages, nextCursor }` - newest first |
+| GET    | `/search/messages`                            | `?q=&limit=&cursor=`                                                                              | `{ messages, nextCursor }` - ranked       |
+| POST   | `/conversations/:id/read`                     | `{ messageId }`                                                                                   | `{ ok: true }`                            |
+| PATCH  | `/messages/:id`                               | `{ body, mentions? }`                                                                             | `{ message }`                             |
+| DELETE | `/messages/:id`                               | -                                                                                                 | `{ message }` (soft-deleted)              |
+| POST   | `/messages/:id/forward`                       | `{ conversationId, role?, mentions?, metadata? }`                                                 | `{ message }` (201) - the copy            |
+| POST   | `/messages/:id/reactions`                     | `{ emoji }`                                                                                       | `{ message }` (full reaction set)         |
+| DELETE | `/messages/:id/reactions`                     | `{ emoji }`                                                                                       | `{ message }` (full reaction set)         |
+| GET    | `/stream`                                     | SSE; auto `Last-Event-ID` on reconnect                                                            | `text/event-stream`                       |
 
 ## Group routes
 
@@ -311,13 +313,18 @@ These trip up hand-written and generated clients alike:
   `400 INVALID_INPUT`. It is not validated as a Unicode emoji.
 - **A reaction is not a message.** It gets no `seq`, never bumps
   `unreadCount`, and never reorders the conversation list.
-- **Replies are flat pointers, not threads.** `replyToMessageId` must name a
+- **Quote replies are flat pointers.** `replyToMessageId` must name a
   message in the **same conversation** (else `404 MESSAGE_NOT_FOUND` - the same
   wording used for unknown ids, so a cross-conversation probe reveals nothing).
   Replying to a soft-deleted message is allowed (the parent can be deleted
   between render and send); deleting a parent leaves its replies intact with
   `replyTo.deleted: true`; a reply to a reply is still one hop; and the pointer
   is immutable, since `PATCH /messages/:id` only ever changes the body.
+- **Thread replies use a root id.** Set `threads: { enabled: true }` in the
+  installation and send with `threadRootMessageId`. The root must be a main
+  conversation message. A thread reply stays out of the main message page unless
+  `alsoSendToMain` is `true`. The same message id then appears in both pages.
+  Reading one message by id requires access to its conversation.
 - **Mentions are ids you supply.** Send or edit with `mentions: ["user_1"]`.
   Core never parses `body`, so the text and the array can legitimately disagree
   and your app owns keeping them in step: it renders the `@name`, it tells

@@ -36,7 +36,7 @@ export function SearchDialog({
   onOpenChange?: (open: boolean) => void;
   hideTrigger?: boolean;
 }) {
-  const { client, directory, select } = useChat();
+  const { client, directory, openMessage } = useChat();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [submitted, setSubmitted] = useState("");
@@ -131,7 +131,7 @@ export function SearchDialog({
                   type="button"
                   key={message.id}
                   onClick={() => {
-                    select(message.conversationId);
+                    openMessage(message);
                     setIsOpen(false);
                   }}
                   className="chatpack-ui-search-dialog-result"

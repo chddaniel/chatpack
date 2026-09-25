@@ -1,5 +1,6 @@
 export * from "@chatpack/adapter-drizzle";
 export * from "@/db/auth-schema";
+export * from "@/db/thread-schema";
 
 // Filepack's four attachment tables are deliberately NOT re-exported here, and
 // that is load-bearing rather than an oversight.

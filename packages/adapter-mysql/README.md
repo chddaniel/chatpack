@@ -59,6 +59,8 @@ after importing messages into a database that predates search tokens.
 For an existing database, run `thread-upgrade.sql` once before updating the
 adapter. New databases get the thread column from `migrationStatements`. Set
 `threads: { enabled: true }` on the Chatpack installation to allow thread replies.
+Run `thread-broadcast-upgrade.sql` before using `alsoSendToMain` on an existing
+database. New databases include the column.
 
 The adapter requires transactions for group creation, message sequence
 allocation, invite consumption, mention replacement, and moderation ban

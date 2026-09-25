@@ -328,6 +328,7 @@ export function tursoAdapter(db: DrizzleTursoDatabase): StorageAdapter {
 
   return {
     moderation,
+    supportsThreadBroadcast: true,
     async getOrCreateDirectConversation(
       input: GetOrCreateDirectConversationInput,
     ): Promise<GetOrCreateDirectConversationResult> {
@@ -525,7 +526,9 @@ export function tursoAdapter(db: DrizzleTursoDatabase): StorageAdapter {
           .update(conversations)
           .set({
             lastSeq: sql`${conversations.lastSeq} + 1`,
-            ...(input.threadRootMessageId === null ? { lastActivityAt: now } : {}),
+            ...(input.threadRootMessageId === null || input.showInMain === true
+              ? { lastActivityAt: now }
+              : {}),
           })
           .where(eq(conversations.id, input.conversationId))
           .returning({ seq: conversations.lastSeq });
@@ -548,6 +551,7 @@ export function tursoAdapter(db: DrizzleTursoDatabase): StorageAdapter {
             deletedAt: null,
             replyToMessageId: input.replyToMessageId,
             threadRootMessageId: input.threadRootMessageId,
+            showInMain: input.showInMain ?? false,
             forwardedFromMessageId: input.forwardedFromMessageId,
             forwardedFromConversationId: input.forwardedFromConversationId,
             forwardedFromSenderId: input.forwardedFromSenderId,
@@ -589,7 +593,7 @@ export function tursoAdapter(db: DrizzleTursoDatabase): StorageAdapter {
       const conversationFilter = and(
         eq(messages.conversationId, input.conversationId),
         input.threadRootMessageId === undefined
-          ? isNull(messages.threadRootMessageId)
+          ? or(isNull(messages.threadRootMessageId), eq(messages.showInMain, true))
           : eq(messages.threadRootMessageId, input.threadRootMessageId),
       );
 
@@ -778,7 +782,7 @@ export function tursoAdapter(db: DrizzleTursoDatabase): StorageAdapter {
             or(...input.conversationIds.map((id) => eq(messages.conversationId, id))),
             // A viewer's own messages are never unread; tombstones count.
             ne(messages.senderId, input.userId),
-            isNull(messages.threadRootMessageId),
+            or(isNull(messages.threadRootMessageId), eq(messages.showInMain, true)),
             sql`${messages.seq} > coalesce(${readMsg.seq}, 0)`,
           ),
         )
