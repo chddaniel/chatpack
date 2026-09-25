@@ -9,6 +9,7 @@ next-env.d.ts
 *.tsbuildinfo
 # copied from the repo root by each package's prepack script
 packages/*/llms.txt
+packages/adapter-prisma/generated/
 
 # Test coverage
 coverage/

@@ -1,0 +1,76 @@
+{
+  "name": "@chatpack/adapter-prisma",
+  "version": "0.0.0",
+  "description": "Prisma ORM (PostgreSQL) storage adapter for Chatpack",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "homepage": "https://github.com/chddaniel/chatpack#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chddaniel/chatpack.git",
+    "directory": "packages/adapter-prisma"
+  },
+  "bugs": {
+    "url": "https://github.com/chddaniel/chatpack/issues"
+  },
+  "keywords": [
+    "chat",
+    "chatpack",
+    "storage-adapter",
+    "prisma",
+    "postgres"
+  ],
+  "sideEffects": false,
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    },
+    "./schema": "./prisma/schema.prisma",
+    "./migration": "./prisma/migrations/0001_chatpack/migration.sql"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "llms.txt",
+    "prisma"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch",
+    "pretest": "prisma generate --schema prisma/schema.prisma",
+    "pretypecheck": "prisma generate --schema prisma/schema.prisma",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint src",
+    "prepack": "node -e \"require('fs').copyFileSync('../../llms.txt','llms.txt')\""
+  },
+  "dependencies": {
+    "@chatpack/core": "workspace:^"
+  },
+  "peerDependencies": {
+    "@prisma/client": ">=7.0.0 <8"
+  },
+  "devDependencies": {
+    "@prisma/adapter-pg": "^7.0.0",
+    "@prisma/client": "^7.0.0",
+    "@types/node": "^26.1.1",
+    "@types/pg": "^8.11.11",
+    "pg": "^8.22.0",
+    "prisma": "^7.0.0",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2",
+    "vitest": "^3.0.0"
+  },
+  "publishConfig": {
+    "access": "public"
+  }
+}

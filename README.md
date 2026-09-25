@@ -158,6 +158,12 @@ export const chat = chatpack({
 });
 ```
 
+If your application already uses Prisma ORM 7, use the server-only
+[`@chatpack/adapter-prisma`](./packages/adapter-prisma) adapter. Copy its
+Prisma models and migration into your app, generate your own client, and pass
+it to `prismaAdapter(client)`. Verified provider is PostgreSQL 16; Prisma 8
+and other providers are not claimed compatible.
+
 > **No direct Postgres connection string?** Platforms that only expose a
 > database client (Supabase's JS client, Convex, and most AI-builder clouds)
 > are supported through a custom `StorageAdapter`. The full guide - reference
@@ -173,6 +179,12 @@ export const chat = chatpack({
 For Turso/libSQL, install `@chatpack/adapter-turso`, `@libsql/client`, and
 `drizzle-orm`, then run its exported migration statements before creating the
 Chatpack instance. See the [Turso adapter guide](./apps/docs/content/docs/storage/turso.mdx).
+
+For MySQL 8, install `@chatpack/adapter-mysql`, `mysql2`, and `drizzle-orm`,
+create a server-side transaction-capable pool, and run its exported migration
+statements before creating the Chatpack instance. See the [MySQL adapter
+guide](./apps/docs/content/docs/storage/mysql.mdx). This package does not claim
+MariaDB, PlanetScale, Aurora, serverless/HTTP drivers, or edge-runtime support.
 
 > Using a coding agent (Claude Code, Cursor, Codex)? Install the
 > [Chatpack agent skill](./skills) into your app's repo so the agent follows
@@ -839,6 +851,8 @@ threads. See [docs/MVP.md](./docs/MVP.md) for the full scope and reasoning.
 | ----------------------------------------------------------- | ------------------------------------------------ |
 | [`@chatpack/core`](./packages/core)                         | The chat engine: domain logic, permissions, API  |
 | [`@chatpack/adapter-drizzle`](./packages/adapter-drizzle)   | Drizzle/Postgres storage (production)            |
+| [`@chatpack/adapter-prisma`](./packages/adapter-prisma)     | Prisma 7/Postgres storage (server-only)          |
+| [`@chatpack/adapter-mysql`](./packages/adapter-mysql)       | MySQL 8 storage via Drizzle/mysql2 (server-side) |
 | [`@chatpack/adapter-turso`](./packages/adapter-turso)       | Turso/libSQL storage via Drizzle                 |
 | [`@chatpack/adapter-sqlite`](./packages/adapter-sqlite)     | Drizzle/SQLite storage (local, single node)      |
 | [`@chatpack/adapter-memory`](./packages/adapter-memory)     | In-memory storage (demos, tests)                 |
