@@ -13,11 +13,11 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate && tsx scripts/chatpack-thread-migrate.ts && tsx scripts/filepack-migrate.ts",
-    "db:filepack": "tsx scripts/filepack-migrate.ts",
-    "db:threads": "tsx scripts/chatpack-thread-migrate.ts",
+    "db:migrate": "drizzle-kit migrate && tsx scripts/chatpack-thread-migrate.mts && tsx scripts/filepack-migrate.mts",
+    "db:filepack": "tsx scripts/filepack-migrate.mts",
+    "db:threads": "tsx scripts/chatpack-thread-migrate.mts",
     "db:proxy": "tsx scripts/wsproxy.ts",
-    "setup:check": "tsx scripts/setup-check.ts"
+    "setup:check": "tsx scripts/setup-check.mts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "3.1097.0",
