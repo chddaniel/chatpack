@@ -1,6 +1,6 @@
 {
   "name": "@chatpack/adapter-mysql",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Drizzle ORM MySQL storage adapter for Chatpack",
   "license": "MIT",
   "engines": {
