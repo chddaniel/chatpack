@@ -44,8 +44,17 @@ page. The core REST routes are listed in [REST API](/docs/reference/rest-api).
 
 ## Existing installations
 
-Update core, client, and your storage adapter together. Apply the matching
-SQL migration before enabling threads or `alsoSendToMain`:
+To add threads to an existing app:
+
+1. Update `@chatpack/core`, `@chatpack/client`, and your storage adapter
+   together.
+2. Apply the matching migration below before enabling threads or
+   `alsoSendToMain`.
+3. Set `threads: { enabled: true }` in the server's `chatpack()` options.
+4. Add thread UI and alert delivery in your app. Existing installations keep
+   their own UI and notification providers.
+
+Run the migration for your adapter:
 
 | Adapter              | Existing database                                                                        |
 | -------------------- | ---------------------------------------------------------------------------------------- |
@@ -58,7 +67,7 @@ SQL migration before enabling threads or `alsoSendToMain`:
 The [Chatpack app](https://github.com/chddaniel/chatpack/tree/main/apps/app)
 shows one way to add a Threads inbox, follow and mute state, email alerts,
 browser push, search navigation, and links to replies. These are app-owned
-features. To use them in another app, copy or adapt the app tables and routes,
-run its `db:threads` migration, and connect its `afterMessageMutation` hook to
-your users and email or push providers. The app README lists the environment
-variables and retry route.
+features. To adapt the alert flow, connect `afterMessageMutation` to a durable
+job or outbox, resolve the recipient's email or push subscription, and retry
+failed delivery in your worker. The app README lists its environment variables
+and retry route.

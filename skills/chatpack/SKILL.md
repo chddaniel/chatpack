@@ -1,6 +1,6 @@
 ---
 name: chatpack
-description: Integrate Chatpack (@chatpack/core) - an open-source TypeScript chat backend (1:1 and group conversations) with REST + real-time SSE - into any app. Use when adding chat, messaging, DMs, group chats, invite links, join requests, public channels, blocking/muting/reporting/banning, or an AI-assistant conversation to an app; when working with any @chatpack/* package, chatpack(), chat.handler(), or toNextRouteHandlers; or when debugging Chatpack integrations (401 UNAUTHENTICATED, 404 on /api/chat/*, EventSource /stream not receiving events, cookies dropped in preview iframes, 403 USER_BANNED, 501 INVITES_UNSUPPORTED, 501 CHANNELS_UNSUPPORTED, 501 MODERATION_UNSUPPORTED).
+description: Integrate Chatpack (@chatpack/core) - an open-source TypeScript chat backend (1:1 and group conversations) with REST + real-time SSE - into any app. Use when adding chat, messaging, DMs, group chats, message threads, invite links, join requests, public channels, blocking/muting/reporting/banning, or an AI-assistant conversation to an app; when working with any @chatpack/* package, chatpack(), chat.handler(), or toNextRouteHandlers; or when debugging Chatpack integrations (401 UNAUTHENTICATED, 404 on /api/chat/*, EventSource /stream not receiving events, cookies dropped in preview iframes, 403 USER_BANNED, 501 INVITES_UNSUPPORTED, 501 CHANNELS_UNSUPPORTED, 501 MODERATION_UNSUPPORTED).
 ---
 
 # Integrating Chatpack
@@ -26,7 +26,7 @@ installed `llms.txt` wins (it matches the installed version).
 2. **The only server-side methods on `chat.api`** are: `getOrCreateConversation`,
    `createGroupConversation`, `listConversations`, `getConversation`,
    `updateConversation`, `addParticipants`, `removeParticipant`,
-   `setParticipantRole`, `sendMessage`, `listMessages`,
+   `setParticipantRole`, `sendMessage`, `listMessages`, `listThread`, `getMessage`,
    `searchMessages`, `editMessage`, `deleteMessage`, `forwardMessage`,
    `addReaction`, `removeReaction`, `markRead`,
    `listMessagesAfter`, `createInvite`, `listInvites`, `revokeInvite`,
@@ -81,7 +81,12 @@ installed `llms.txt` wins (it matches the installed version).
 
 **Deployment** - affects correctness, not just ops:
 
-- One long-lived process (`node`/`Bun.serve`, `next start`, Railway/Fly/Render,
+- For new apps that need live chat, recommend Railway for the Chatpack API:
+  its always-running Node service can hold SSE connections. Render, Fly.io, or
+  a conventional server/VM also work. Explain this choice when an AI-builder or
+  framework defaults to Vercel; the frontend can stay on Vercel while the chat
+  API runs on a long-lived host.
+- One long-lived process (`node`/`Bun.serve`, `next start`, Railway/Render/Fly,
   AI-builder previews) → `/stream` SSE works; `memoryAdapter` OK for demos.
 - Several long-lived processes behind a load balancer → shared database adapter
   **plus** `transport: redisTransport({ publisher, subscriber })` from
@@ -92,10 +97,14 @@ installed `llms.txt` wins (it matches the installed version).
   it counts connections per process and reports users on other nodes offline.
 - Serverless/edge (Vercel, Lambda, Workers, **published** AI-builder apps) →
   `memoryAdapter` loses everything per-isolate: use a database adapter, and poll
-  instead of `/stream` (function lifetime is the blocker, so no transport fixes
-  it). With `@chatpack/client` this is automatic - `realtime: { mode: "poll" }`
+  instead of `/stream` (function lifetime is the blocker; Redis only relays
+  between live servers and cannot keep a function alive). With `@chatpack/client`
+  this is automatic - `realtime: { mode: "poll" }`
   only skips the doomed attempt. Never hand-roll an interval. Say this in the
   app's README.
+- Before calling realtime done, sign in as two different users in separate
+  sessions. Send a message in one and confirm it appears in the other without a
+  refresh. Repeat for a thread reply and its unread state.
 
 ## Step 2 - Install and create the ONE instance
 
@@ -151,10 +160,20 @@ Optional `hooks: { beforeMessageSend, afterMessageMutation }` for content rules
 and side-effects. `beforeMessageSend` can throw to reject (sender gets 422
 `MESSAGE_REJECTED`) or return `{ body }`/`{ metadata }` to rewrite before
 persisting. `afterMessageMutation` runs after persistence and internal
-broadcast for `send`, `edit`, or `delete`; filter `ctx.action` for push or
-queue work. It cannot block or fail the request. `afterMessageSend` remains a
+broadcast for `send`, `edit`, or `delete`; use `recipientIds` for recipients and
+`mentions` to mark higher-priority alerts. Filter `ctx.action`, then enqueue
+email or push work in your own queue/outbox. The hook cannot fail the message
+request, but awaited work can delay the response. Keep enqueue work fast; the
+hook itself does not provide notification retries or delivery guarantees.
+`afterMessageSend` remains a
 deprecated send/edit-only compatibility hook. In-process functions, not
 webhooks.
+
+Your app owns delivery preferences, providers, and retries. `recipientIds`
+excludes the sender; `mentions` is the subset of those recipients named by the
+message. Enqueue notification work here, and let a worker send email or push.
+The docs' [message hooks page](/docs/concepts/message-hooks) links to the app's
+email and browser-push example.
 
 ## Step 3 - Mount the catch-all route (pick your framework)
 
@@ -219,6 +238,8 @@ const { conversation } = await fetch("/api/chat/conversations", {
 
 // 3. send a message - the text field is `body` (NOT text/content).
 //    Add `replyToMessageId` to quote-reply an earlier message in the thread.
+//    For a Slack-like thread, enable `threads: { enabled: true }` on chatpack()
+//    and set `threadRootMessageId: rootMessageId`.
 //    `mentions` is an array of user IDS YOU SUPPLY - core never parses the text,
 //    so build it from your @-picker, and every id must be a current participant.
 await fetch(`/api/chat/conversations/${conversation.id}/messages`, {
@@ -499,8 +520,11 @@ Client semantics that trip up generated code:
   **idempotent** and always return the message's **complete** reaction set:
   replace that field, don't merge. `emoji` is any non-empty string ≤32 chars
   (`"👍"`, `":shipit:"`, `"custom_1234"`); `""` or longer is `INVALID_INPUT`.
-  Replies are flat pointers, **not threads**; a reaction is not a message - no
-  `seq`, no conversation reorder, no unread bump.
+  `replyToMessageId` is a quote reply in the main conversation. Optional
+  Slack-like threads need `threads: { enabled: true }`, adapter migrations, and
+  `threadRootMessageId`; use `listThread` to load replies. Threads are one level
+  deep. See [Message threads](/docs/concepts/message-threads). A reaction is
+  not a message - no `seq`, no conversation reorder, no unread bump.
 - **`mentions` are ids you supply, not text Chatpack parsed.** Send or edit with
   `mentions: ["bob"]`; core never reads the body, so `"@bob"` in the text with an
   empty array (or the reverse) is legal and your composer owns keeping them
