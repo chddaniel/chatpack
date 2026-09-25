@@ -1,6 +1,6 @@
 {
   "name": "@chatpack/adapter-prisma",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Prisma ORM (PostgreSQL) storage adapter for Chatpack",
   "license": "MIT",
   "engines": {

@@ -1,6 +1,6 @@
 {
   "name": "@chatpack/adapter-turso",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Drizzle ORM Turso/libSQL storage adapter for Chatpack",
   "license": "MIT",
   "engines": {
