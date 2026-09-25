@@ -39,6 +39,7 @@ export function toMessage(row: MessageRow): Message {
     editedAt: nullableDate(row.editedAt, "message.editedAt"),
     deletedAt: nullableDate(row.deletedAt, "message.deletedAt"),
     replyToMessageId: row.replyToMessageId,
+    threadRootMessageId: row.threadRootMessageId,
     forwardedFromMessageId: row.forwardedFromMessageId,
     forwardedFromConversationId: row.forwardedFromConversationId,
     forwardedFromSenderId: row.forwardedFromSenderId,

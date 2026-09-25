@@ -32,12 +32,17 @@ export default defineConfig({
 ```
 
 Copy this package's `prisma/migrations/0001_chatpack/migration.sql` into your
-application migrations directory. Then run `prisma format`, `prisma validate`,
+application migrations directory, followed by
+`prisma/migrations/0002_thread_replies/migration.sql`. Existing databases need
+the second migration before updating the adapter. Then run `prisma format`, `prisma validate`,
 `prisma migrate deploy`, and `prisma generate`. The migration is PostgreSQL
 DDL and creates twelve `chatpack_*` tables. It never creates or references an
 application-owned users table. For an existing Chatpack database, inspect the
 current schema and write an explicit migration; `CREATE TABLE IF NOT EXISTS`
 does not alter incompatible tables.
+
+Set `threads: { enabled: true }` on the Chatpack installation to allow thread
+replies.
 
 ## Server-only setup
 
