@@ -68,6 +68,47 @@ function send(
 }
 
 describe("M2 Definition of Done - find-or-create, send, list over HTTP with auth", () => {
+  it("returns a broadcast reply by id only to conversation readers", async () => {
+    const handler = createHttpChat({ threads: { enabled: true } });
+    const createResponse = await send(handler, "POST", "/conversations", "alice", {
+      otherUserId: "bob",
+    });
+    const { conversation } = (await createResponse.json()) as { conversation: { id: string } };
+    const rootResponse = await send(
+      handler,
+      "POST",
+      `/conversations/${conversation.id}/messages`,
+      "alice",
+      { body: "Root" },
+    );
+    const { message: root } = (await rootResponse.json()) as { message: { id: string } };
+    const replyResponse = await send(
+      handler,
+      "POST",
+      `/conversations/${conversation.id}/messages`,
+      "alice",
+      { body: "Shared reply", threadRootMessageId: root.id, alsoSendToMain: true },
+    );
+    expect(replyResponse.status).toBe(201);
+    const { message: reply } = (await replyResponse.json()) as { message: { id: string } };
+
+    const found = await get(
+      handler,
+      `/conversations/${conversation.id}/messages/${reply.id}`,
+      "bob",
+    );
+    expect(found.status).toBe(200);
+    await expect(found.json()).resolves.toMatchObject({
+      message: { id: reply.id, showInMain: true, threadRootMessageId: root.id },
+    });
+    const forbidden = await get(
+      handler,
+      `/conversations/${conversation.id}/messages/${reply.id}`,
+      "mallory",
+    );
+    expect(forbidden.status).toBe(403);
+  });
+
   it("runs the full curl flow", async () => {
     const handler = createHttpChat();
 

@@ -272,6 +272,8 @@ export interface Message {
   replyToMessageId: string | null;
   /** Root message for a one-level thread. Null for main-timeline messages. */
   threadRootMessageId: string | null;
+  /** Thread reply also shown in the main timeline. */
+  showInMain?: boolean;
   /**
    * The message this one was forwarded from, or `null` for an ordinary message
    * (`docs/decisions/0024`).

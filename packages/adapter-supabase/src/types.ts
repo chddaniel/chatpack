@@ -69,6 +69,7 @@ export interface MessageRow {
   deleted_at: Timestamp;
   reply_to_message_id: string | null;
   thread_root_message_id: string | null;
+  show_in_main?: boolean;
   forwarded_from_message_id: string | null;
   forwarded_from_conversation_id: string | null;
   forwarded_from_sender_id: string | null;

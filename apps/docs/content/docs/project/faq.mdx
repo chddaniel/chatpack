@@ -309,12 +309,11 @@ pass fresh ones in the forward body if you want them. See
 
 <Accordion title="Are replies threads?">
 
-No. `replyToMessageId` is a flat pointer at one earlier message in the same
-conversation - there are no thread ids, no per-thread reply counts, and no
-nested pagination. The API hydrates a read-only `replyTo` preview
-(`{ id, senderId, excerpt, deleted }`) per request so the quote bar follows
-edits and deletions of the parent. Real threads need a different data model and
-stay a non-goal.
+`replyToMessageId` makes a quote reply in the main conversation. Set
+`threads: { enabled: true }` on the Chatpack installation and send with
+`threadRootMessageId` to put a reply in a thread. Thread replies have their
+own page and count. A sender can also set `alsoSendToMain: true` to show the
+same reply in the main conversation. See [Message threads](/docs/concepts/message-threads).
 
 </Accordion>
 

@@ -36,6 +36,7 @@
     "dist",
     "README.md",
     "thread-upgrade.sql",
+    "thread-broadcast-upgrade.sql",
     "llms.txt"
   ],
   "scripts": {

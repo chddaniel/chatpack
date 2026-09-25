@@ -204,6 +204,7 @@ export function mysqlAdapter(db: DrizzleMysqlDatabase): StorageAdapter {
 
   return {
     moderation,
+    supportsThreadBroadcast: true,
 
     async getOrCreateDirectConversation(
       input: GetOrCreateDirectConversationInput,
@@ -374,7 +375,9 @@ export function mysqlAdapter(db: DrizzleMysqlDatabase): StorageAdapter {
           .update(conversations)
           .set({
             lastSeq: sql`${conversations.lastSeq} + 1`,
-            ...(input.threadRootMessageId === null ? { lastActivityAt: now } : {}),
+            ...(input.threadRootMessageId === null || input.showInMain === true
+              ? { lastActivityAt: now }
+              : {}),
           })
           .where(eq(conversations.id, input.conversationId));
         const [conversation] = await tx
@@ -397,6 +400,7 @@ export function mysqlAdapter(db: DrizzleMysqlDatabase): StorageAdapter {
           deletedAt: null,
           replyToMessageId: input.replyToMessageId,
           threadRootMessageId: input.threadRootMessageId,
+          showInMain: input.showInMain ?? false,
           forwardedFromMessageId: input.forwardedFromMessageId,
           forwardedFromConversationId: input.forwardedFromConversationId,
           forwardedFromSenderId: input.forwardedFromSenderId,
@@ -427,7 +431,7 @@ export function mysqlAdapter(db: DrizzleMysqlDatabase): StorageAdapter {
       const filter = and(
         eq(messages.conversationId, input.conversationId),
         input.threadRootMessageId === undefined
-          ? isNull(messages.threadRootMessageId)
+          ? or(isNull(messages.threadRootMessageId), eq(messages.showInMain, true))
           : eq(messages.threadRootMessageId, input.threadRootMessageId),
         cursorSeq !== undefined && Number.isFinite(cursorSeq)
           ? lt(messages.seq, cursorSeq)
@@ -596,7 +600,7 @@ export function mysqlAdapter(db: DrizzleMysqlDatabase): StorageAdapter {
           and(
             inArray(messages.conversationId, input.conversationIds),
             ne(messages.senderId, input.userId),
-            isNull(messages.threadRootMessageId),
+            or(isNull(messages.threadRootMessageId), eq(messages.showInMain, true)),
             sql`${messages.seq} > coalesce(${readMessage.seq}, 0)`,
           ),
         )

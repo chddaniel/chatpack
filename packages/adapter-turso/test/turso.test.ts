@@ -57,6 +57,46 @@ describe("Turso migrations", () => {
 });
 
 describe("Turso storage", () => {
+  it("shows a broadcast thread reply in both pages and main unread count", async () => {
+    const threaded = chatpack({
+      storage: tursoAdapter(db),
+      threads: { enabled: true },
+      telemetry: false,
+    });
+    const conversation = await threaded.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "bob",
+    });
+    const root = await threaded.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "Root",
+    });
+    const reply = await threaded.api.sendMessage({
+      userId: "bob",
+      conversationId: conversation.id,
+      body: "Shared reply",
+      threadRootMessageId: root.id,
+      alsoSendToMain: true,
+    });
+    expect(
+      (
+        await threaded.api.listMessages({ userId: "alice", conversationId: conversation.id })
+      ).messages.map((message) => message.id),
+    ).toEqual([reply.id, root.id]);
+    expect(
+      (
+        await threaded.api.listThread({
+          userId: "alice",
+          conversationId: conversation.id,
+          rootMessageId: root.id,
+        })
+      ).messages.map((message) => message.id),
+    ).toEqual([reply.id]);
+    expect(
+      (await threaded.api.listConversations({ userId: "alice" })).conversations[0]?.unreadCount,
+    ).toBe(1);
+  });
   it("stores thread replies outside the main page and unread count", async () => {
     const threaded = chatpack({
       storage: tursoAdapter(db),

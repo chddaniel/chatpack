@@ -479,16 +479,31 @@ export function createChatpackCache(options: ChatpackCacheOptions = {}): Chatpac
       if (typeof message.threadRootMessageId === "string") {
         const rootId = message.threadRootMessageId;
         const existingThread = current.threadsByRoot[rootId];
-        if (existingThread?.data == null) return current;
-        const messages = replaceReactions(existingThread.data.messages, message);
-        if (messages === null) return current;
-        return {
-          ...current,
-          threadsByRoot: {
-            ...current.threadsByRoot,
-            [rootId]: { ...existingThread, data: { ...existingThread.data, messages } },
-          },
-        };
+        let next = current;
+        if (existingThread?.data != null) {
+          const messages = replaceReactions(existingThread.data.messages, message);
+          if (messages !== null)
+            next = {
+              ...next,
+              threadsByRoot: {
+                ...next.threadsByRoot,
+                [rootId]: { ...existingThread, data: { ...existingThread.data, messages } },
+              },
+            };
+        }
+        if (message.showInMain !== true) return next;
+        const main = next.messagesByConversation[conversationId];
+        if (main?.data == null) return next;
+        const mainMessages = replaceReactions(main.data.messages, message);
+        return mainMessages === null
+          ? next
+          : {
+              ...next,
+              messagesByConversation: {
+                ...next.messagesByConversation,
+                [conversationId]: { ...main, data: { ...main.data, messages: mainMessages } },
+              },
+            };
       }
       const existing = current.messagesByConversation[conversationId];
       if (existing?.data == null) return current;
@@ -952,12 +967,11 @@ export function createChatpackCache(options: ChatpackCacheOptions = {}): Chatpac
           }
           return next;
         });
-        return;
+        if (durable.message.showInMain !== true) return;
       }
 
-      // Only `message.created` bumps server-side activity (adapters touch
-      // `lastActivityAt` in `addMessage` only), so edits and deletes must not
-      // reorder the list or the client would disagree with the next refetch.
+      // Main timeline messages, including broadcast thread replies, bump
+      // activity. Edits and deletes do not reorder the conversation list.
       const previousSeq = seenSeq.get(durable.conversationId) ?? 0;
       const isNew = durable.type === "message.created" && durable.message.seq > previousSeq;
       if (durable.message.seq > previousSeq) {

@@ -289,6 +289,8 @@ export interface AddMessageInput {
   replyToMessageId: string | null;
   /** Root message id for a thread reply; null for a main-timeline message. */
   threadRootMessageId: string | null;
+  /** Whether a thread reply is also visible in the main timeline. */
+  showInMain?: boolean;
   /**
    * Provenance for a forwarded message, or `null` on all three for an ordinary
    * one (`docs/decisions/0024` §1). Core has already checked the source message
@@ -614,6 +616,8 @@ export interface ChannelStorage {
  * messages (add, list, update-in-place), and read-state.
  */
 export interface StorageAdapter {
+  /** Supports one message appearing in both a thread and the main timeline. */
+  supportsThreadBroadcast?: boolean;
   /** Optional moderation persistence capability. */
   moderation?: ModerationStorage;
 

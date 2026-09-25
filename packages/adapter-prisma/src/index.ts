@@ -331,6 +331,7 @@ export function prismaAdapter(client: object): StorageAdapter {
   };
 
   const adapter: StorageAdapter = {
+    supportsThreadBroadcast: true,
     moderation: createModerationStorage(client),
     invites,
     channels: {
@@ -495,7 +496,9 @@ export function prismaAdapter(client: object): StorageAdapter {
             where: { id: input.conversationId },
             data: {
               lastSeq: { increment: 1 },
-              ...(input.threadRootMessageId === null ? { lastActivityAt: now } : {}),
+              ...(input.threadRootMessageId === null || input.showInMain === true
+                ? { lastActivityAt: now }
+                : {}),
             },
           });
           const row = await tx.chatpackMessage.create({
@@ -511,6 +514,7 @@ export function prismaAdapter(client: object): StorageAdapter {
               deletedAt: null,
               replyToMessageId: input.replyToMessageId,
               threadRootMessageId: input.threadRootMessageId,
+              showInMain: input.showInMain ?? false,
               forwardedFromMessageId: input.forwardedFromMessageId,
               forwardedFromConversationId: input.forwardedFromConversationId,
               forwardedFromSenderId: input.forwardedFromSenderId,
@@ -539,7 +543,9 @@ export function prismaAdapter(client: object): StorageAdapter {
       const rows = await messages.findMany({
         where: {
           conversationId: input.conversationId,
-          threadRootMessageId: input.threadRootMessageId ?? null,
+          ...(input.threadRootMessageId === undefined
+            ? { OR: [{ threadRootMessageId: null }, { showInMain: true }] }
+            : { threadRootMessageId: input.threadRootMessageId }),
           ...(cursor !== undefined && Number.isFinite(cursor) ? { seq: { lt: cursor } } : {}),
         },
         orderBy: { seq: "desc" },
@@ -683,7 +689,7 @@ export function prismaAdapter(client: object): StorageAdapter {
         where: {
           conversationId: { in: input.conversationIds },
           senderId: { not: input.userId },
-          threadRootMessageId: null,
+          OR: [{ threadRootMessageId: null }, { showInMain: true }],
         },
       });
       for (const row of rows)

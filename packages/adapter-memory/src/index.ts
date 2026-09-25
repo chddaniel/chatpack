@@ -458,6 +458,7 @@ export function memoryAdapter(): StorageAdapter {
 
   return {
     moderation,
+    supportsThreadBroadcast: true,
     async getOrCreateDirectConversation(
       input: GetOrCreateDirectConversationInput,
     ): Promise<GetOrCreateDirectConversationResult> {
@@ -614,7 +615,8 @@ export function memoryAdapter(): StorageAdapter {
       const record = requireRecord(input.conversationId);
 
       const seq = record.nextSeq++;
-      if (input.threadRootMessageId === null) record.lastActivityTick = ++activityTick;
+      if (input.threadRootMessageId === null || input.showInMain === true)
+        record.lastActivityTick = ++activityTick;
 
       const message: Message = {
         id: nextId("msg"),
@@ -628,6 +630,7 @@ export function memoryAdapter(): StorageAdapter {
         deletedAt: null,
         replyToMessageId: input.replyToMessageId,
         threadRootMessageId: input.threadRootMessageId,
+        showInMain: input.showInMain === true,
         // Frozen at write time, never re-resolved (ADR 0024 §2).
         forwardedFromMessageId: input.forwardedFromMessageId,
         forwardedFromConversationId: input.forwardedFromConversationId,
@@ -657,9 +660,10 @@ export function memoryAdapter(): StorageAdapter {
       const ids = messageIdsByConversation.get(input.conversationId) ?? [];
       // Stored ascending by seq; newest-first means iterating from the end.
       const newestFirst = [...ids].reverse().filter((id) => {
-        const root = messages.get(id)?.threadRootMessageId;
+        const message = messages.get(id);
+        const root = message?.threadRootMessageId;
         return input.threadRootMessageId === undefined
-          ? root === null
+          ? root === null || message?.showInMain === true
           : root === input.threadRootMessageId;
       });
 
@@ -781,7 +785,7 @@ export function memoryAdapter(): StorageAdapter {
           // Tombstones count (they render in lists); own messages never do.
           if (
             message &&
-            message.threadRootMessageId === null &&
+            (message.threadRootMessageId === null || message.showInMain === true) &&
             message.seq > readSeq &&
             message.senderId !== input.userId
           )

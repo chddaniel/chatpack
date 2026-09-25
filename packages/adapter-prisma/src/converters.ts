@@ -40,6 +40,7 @@ export function toMessage(row: MessageRow): Message {
     deletedAt: nullableDate(row.deletedAt, "message.deletedAt"),
     replyToMessageId: row.replyToMessageId,
     threadRootMessageId: row.threadRootMessageId,
+    showInMain: row.showInMain,
     forwardedFromMessageId: row.forwardedFromMessageId,
     forwardedFromConversationId: row.forwardedFromConversationId,
     forwardedFromSenderId: row.forwardedFromSenderId,

@@ -37,11 +37,15 @@ import type { PublicProfile } from "@/lib/profiles";
 export function ChatShell({
   user,
   initialConversationId,
+  initialThreadRootId,
+  initialReplyId,
   initialNewGroupOpen,
   isModerator,
 }: {
   user: PublicProfile;
   initialConversationId: string | null;
+  initialThreadRootId: string | null;
+  initialReplyId: string | null;
   initialNewGroupOpen: boolean;
   isModerator: boolean;
 }) {
@@ -52,6 +56,8 @@ export function ChatShell({
   const [selectedId, setSelectedId] = useState<string | null>(initialConversationId);
   const [replyTo, setReplyTo] = useState<ClientMessage | null>(null);
   const [threadRoot, setThreadRoot] = useState<ClientMessage | null>(null);
+  const [threadRootId, setThreadRootId] = useState<string | null>(initialThreadRootId);
+  const [targetReplyId, setTargetReplyId] = useState<string | null>(initialReplyId);
   const [newGroupOpen, setNewGroupOpen] = useState(initialNewGroupOpen);
   const [conversationsOpen, setConversationsOpen] = useState(false);
   const [channelsOpen, setChannelsOpen] = useState(false);
@@ -180,8 +186,53 @@ export function ChatShell({
     setSelectedId(conversationId);
     setReplyTo(null);
     setThreadRoot(null);
+    setThreadRootId(null);
+    setTargetReplyId(null);
     setConversationsOpen(false);
+    const url = new URL(window.location.href);
+    if (conversationId === null) url.searchParams.delete("conversation");
+    else url.searchParams.set("conversation", conversationId);
+    url.searchParams.delete("thread");
+    url.searchParams.delete("reply");
+    window.history.pushState(null, "", url);
   }, []);
+
+  const openMessage = useCallback(
+    (message: { id: string; conversationId: string; threadRootMessageId: string | null }) => {
+      const rootId = message.threadRootMessageId ?? message.id;
+      setSelectedId(message.conversationId);
+      setThreadRoot(null);
+      setThreadRootId(rootId);
+      setTargetReplyId(message.threadRootMessageId === null ? null : message.id);
+      setConversationsOpen(false);
+      const url = new URL(window.location.href);
+      url.searchParams.set("conversation", message.conversationId);
+      url.searchParams.set("thread", rootId);
+      if (message.threadRootMessageId === null) url.searchParams.delete("reply");
+      else url.searchParams.set("reply", message.id);
+      window.history.pushState(null, "", url);
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (selectedId === null || threadRootId === null) return;
+    let cancelled = false;
+    void client.messages
+      .get({ conversationId: selectedId, messageId: threadRootId })
+      .then((result) => {
+        if (cancelled) return;
+        if (result.error || result.data.threadRootMessageId !== null) {
+          toast.error("Could not open thread.");
+          setThreadRootId(null);
+          return;
+        }
+        setThreadRoot(result.data);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [client, selectedId, threadRootId]);
 
   const context = useMemo<ChatContextValue>(
     () => ({
@@ -194,6 +245,7 @@ export function ChatShell({
       blockedUserIds,
       toggleBlock,
       select,
+      openMessage,
     }),
     [
       blockedUserIds,
@@ -202,6 +254,7 @@ export function ChatShell({
       files,
       mutedConversationIds,
       select,
+      openMessage,
       toggleBlock,
       toggleMute,
       user,
@@ -318,7 +371,7 @@ export function ChatShell({
                 conversationId={selected.id}
                 conversation={selected}
                 onReply={setReplyTo}
-                onThread={setThreadRoot}
+                onThread={openMessage}
                 onSayHello={() => {
                   document
                     .querySelector<HTMLTextAreaElement>('textarea[aria-label="Message"]')
@@ -340,7 +393,16 @@ export function ChatShell({
               key={threadRoot.id}
               root={threadRoot}
               conversation={selected}
-              onClose={() => setThreadRoot(null)}
+              targetReplyId={targetReplyId}
+              onClose={() => {
+                setThreadRoot(null);
+                setThreadRootId(null);
+                setTargetReplyId(null);
+                const url = new URL(window.location.href);
+                url.searchParams.delete("thread");
+                url.searchParams.delete("reply");
+                window.history.replaceState(null, "", url);
+              }}
             />
           </aside>
         )}

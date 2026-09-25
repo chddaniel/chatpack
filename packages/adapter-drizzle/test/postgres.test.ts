@@ -116,6 +116,60 @@ describe("conversations on Postgres", () => {
     const page = await threaded.api.listConversations({ userId: "alice" });
     expect(page.conversations[0]?.unreadCount).toBe(0);
   });
+  it("shows one broadcast reply in both pages and counts it once as unread", async () => {
+    const threaded = chatpack({
+      storage: drizzleAdapter(db),
+      threads: { enabled: true },
+      telemetry: false,
+    });
+    const conversation = await threaded.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "bob",
+    });
+    const root = await threaded.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "Root",
+    });
+    const reply = await threaded.api.sendMessage({
+      userId: "bob",
+      conversationId: conversation.id,
+      body: "Shared reply",
+      threadRootMessageId: root.id,
+      alsoSendToMain: true,
+    });
+    const main = await threaded.api.listMessages({
+      userId: "alice",
+      conversationId: conversation.id,
+    });
+    const thread = await threaded.api.listThread({
+      userId: "alice",
+      conversationId: conversation.id,
+      rootMessageId: root.id,
+    });
+    expect(main.messages.map((message) => message.id)).toEqual([reply.id, root.id]);
+    expect(thread.messages.map((message) => message.id)).toEqual([reply.id]);
+    expect(main.messages[0]?.showInMain).toBe(true);
+    expect(
+      (await threaded.api.listConversations({ userId: "alice" })).conversations[0]?.unreadCount,
+    ).toBe(1);
+    expect(
+      (
+        await threaded.api.getMessage({
+          userId: "alice",
+          conversationId: conversation.id,
+          messageId: reply.id,
+        })
+      ).id,
+    ).toBe(reply.id);
+    await expect(
+      threaded.api.getMessage({
+        userId: "carol",
+        conversationId: conversation.id,
+        messageId: reply.id,
+      }),
+    ).rejects.toThrow();
+  });
   it("find-or-create is idempotent per user pair (unique pair_key)", async () => {
     const first = await chat.api.getOrCreateConversation({ userId: "alice", otherUserId: "bob" });
     const again = await chat.api.getOrCreateConversation({ userId: "bob", otherUserId: "alice" });

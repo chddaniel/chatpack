@@ -156,6 +156,7 @@ export const messages = sqliteTable(
      */
     replyToMessageId: text("reply_to_message_id"),
     threadRootMessageId: text("thread_root_message_id"),
+    showInMain: integer("show_in_main", { mode: "boolean" }).notNull().default(false),
     /** Frozen forward provenance, all three null for ordinary messages. */
     forwardedFromMessageId: text("forwarded_from_message_id"),
     forwardedFromConversationId: text("forwarded_from_conversation_id"),
@@ -461,6 +462,7 @@ export const migrationStatements: readonly string[] = [
   "deleted_at" integer,
   "reply_to_message_id" text,
   "thread_root_message_id" text,
+  "show_in_main" integer NOT NULL DEFAULT 0,
   "forwarded_from_message_id" text,
   "forwarded_from_conversation_id" text,
   "forwarded_from_sender_id" text,

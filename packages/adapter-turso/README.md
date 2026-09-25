@@ -30,6 +30,8 @@ migrationSql for clients that support multi-statement SQL.
 For an existing database, run [`thread-upgrade.sql`](./thread-upgrade.sql) once
 before enabling `threads`. New databases get the column from the exported
 migration statements.
+Run [`thread-broadcast-upgrade.sql`](./thread-broadcast-upgrade.sql) before using
+`alsoSendToMain` on an existing database. New databases include the column.
 
 The adapter uses async Drizzle/libSQL transactions for atomic message
 sequencing, direct-conversation creation, mention replacement, invite

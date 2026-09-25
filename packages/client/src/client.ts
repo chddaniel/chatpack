@@ -134,6 +134,12 @@ export interface ThreadListInput extends MessageListInput {
   rootMessageId: string;
 }
 
+/** Input for fetching a message by id in one conversation. */
+export interface MessageGetInput {
+  conversationId: string;
+  messageId: string;
+}
+
 /** Participant-scoped, relevance-ranked message search input. */
 export interface MessageSearchInput {
   /** Plain-text terms matched case-insensitively as whole tokens by the server. */
@@ -267,6 +273,8 @@ export interface MessageSendInput {
   replyToMessageId?: string;
   /** Send into the thread started by this top-level message. */
   threadRootMessageId?: string;
+  /** Also show this thread reply in the main conversation. */
+  alsoSendToMain?: boolean;
   /**
    * User ids this message mentions (ADR 0023). Ids, not names: Chatpack has no
    * users table to resolve a name against, and it never parses `body` for `@`
@@ -483,6 +491,10 @@ export interface ConversationActions {
 
 /** Typed actions for the messages resource. */
 export interface MessageActions {
+  get(
+    input: MessageGetInput,
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<ClientMessage>>;
   list(
     input: MessageListInput,
     options?: ChatClientRequestOptions,
@@ -766,7 +778,9 @@ export function createChatClient<
       // the viewer is unknown (no `userId` option, nothing sent yet) the
       // backfill errs toward fetching.
       const isNewMessage =
-        event.type === "message.created" && typeof event.message.threadRootMessageId !== "string";
+        event.type === "message.created" &&
+        (typeof event.message.threadRootMessageId !== "string" ||
+          event.message.showInMain === true);
       const isViewerAdded =
         event.type === "participant.added" &&
         (viewerId === undefined || event.affectedUserIds.includes(viewerId));
@@ -1087,6 +1101,16 @@ export function createChatClient<
   }
 
   const messageActions: MessageActions = {
+    async get(input, optionsForRequest) {
+      const result = await requester.request<unknown>(
+        "/conversations/" +
+          encodeURIComponent(input.conversationId) +
+          "/messages/" +
+          encodeURIComponent(input.messageId),
+        requestOptions(optionsForRequest),
+      );
+      return unwrapResult<ClientMessage>(result, "message");
+    },
     async list(input, optionsForRequest) {
       cache.setMessagesLoading(input.conversationId);
       // Listing a thread is what makes it "open" as far as polling is concerned.

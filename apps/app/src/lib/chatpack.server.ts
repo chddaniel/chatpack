@@ -7,6 +7,8 @@ import { eq } from "drizzle-orm";
 import { profiles } from "@/db/schema";
 import { currentUser } from "@/lib/auth";
 import { db, pool } from "@/lib/db";
+import { recordThreadReply } from "@/lib/thread-state";
+import { deliverThreadAlerts } from "@/lib/thread-delivery";
 import { MAX_ATTACHMENTS_PER_MESSAGE, createApplicationFilepack } from "@/lib/filepack";
 import { createApplicationTransport } from "@/lib/transport";
 
@@ -138,10 +140,11 @@ export const chat = chatpack({
     // for push notifications: `recipientIds` is everyone in the room except the
     // sender, `mentions` is the subset who were actually named. Keep it cheap -
     // the API call awaits this.
-    afterMessageMutation: ({ action, message, recipientIds, mentions }) => {
-      console.log(
-        `[chatpack] ${action} ${message.id}: ${recipientIds.length} recipient(s), ${mentions.length} mention(s)`,
-      );
+    afterMessageMutation: async (context) => {
+      await recordThreadReply(context);
+      if (context.action === "send" && context.message.threadRootMessageId !== null) {
+        await deliverThreadAlerts(context.message.id);
+      }
     },
   },
   // Undefined unless REDIS_URL is set, which leaves the single-node default in

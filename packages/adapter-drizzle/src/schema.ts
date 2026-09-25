@@ -162,6 +162,7 @@ export const messages = pgTable(
      */
     replyToMessageId: text("reply_to_message_id"),
     threadRootMessageId: text("thread_root_message_id"),
+    showInMain: boolean("show_in_main").notNull().default(false),
     /**
      * Forward provenance (ADR 0024) - all three null for an ordinary message,
      * all three set on a forward. Frozen at write time and never re-resolved, so
@@ -532,6 +533,7 @@ export const migrationStatements: readonly string[] = [
   "deleted_at" timestamptz,
   "reply_to_message_id" text,
   "thread_root_message_id" text,
+  "show_in_main" boolean NOT NULL DEFAULT false,
   "forwarded_from_message_id" text,
   "forwarded_from_conversation_id" text,
   "forwarded_from_sender_id" text,
@@ -544,6 +546,8 @@ export const migrationStatements: readonly string[] = [
   ADD COLUMN IF NOT EXISTS "reply_to_message_id" text`,
   `ALTER TABLE "chatpack_messages"
   ADD COLUMN IF NOT EXISTS "thread_root_message_id" text`,
+  `ALTER TABLE "chatpack_messages"
+  ADD COLUMN IF NOT EXISTS "show_in_main" boolean NOT NULL DEFAULT false`,
   // ADR 0024. Three nullable columns, no default and no backfill: every message
   // that predates forwarding was not forwarded, which is what null says. Pure
   // addition, so this is safe to run before deploying the new code.

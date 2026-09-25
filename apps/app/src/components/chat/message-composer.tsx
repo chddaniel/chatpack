@@ -47,6 +47,7 @@ export function MessageComposer({
   const [pending, setPending] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
   const [sending, setSending] = useState(false);
+  const [alsoSendToMain, setAlsoSendToMain] = useState(false);
   const [sendError, setSendError] = useState<{ code: string; message: string } | null>(null);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -188,6 +189,7 @@ export function MessageComposer({
       body: text,
       ...(replyTo === null ? {} : { replyToMessageId: replyTo.id }),
       ...(threadRootMessageId === undefined ? {} : { threadRootMessageId }),
+      ...(threadRootMessageId !== undefined && alsoSendToMain ? { alsoSendToMain: true } : {}),
       ...(mentions.length === 0 ? {} : { mentions }),
       ...(uploaded.length === 0 ? {} : { metadata: createFileAttachmentMetadata(uploaded) }),
     });
@@ -198,6 +200,7 @@ export function MessageComposer({
       return;
     }
     setBody("");
+    setAlsoSendToMain(false);
     setPending([]);
     setSendError(null);
     setMentionQuery(null);
@@ -352,6 +355,17 @@ export function MessageComposer({
             </InputGroupAddon>
           </InputGroup>
         </div>
+
+        {threadRootMessageId !== undefined && (
+          <label className="flex items-center gap-2 px-1 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={alsoSendToMain}
+              onChange={(event) => setAlsoSendToMain(event.target.checked)}
+            />
+            Also send to chat
+          </label>
+        )}
 
         <input
           ref={fileInputRef}

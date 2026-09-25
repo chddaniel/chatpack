@@ -55,6 +55,7 @@ export interface MessageRow {
   deletedAt: Date | null;
   replyToMessageId: string | null;
   threadRootMessageId: string | null;
+  showInMain: boolean;
   forwardedFromMessageId: string | null;
   forwardedFromConversationId: string | null;
   forwardedFromSenderId: string | null;

@@ -1,0 +1,64 @@
+---
+title: Message threads
+description: Enable thread replies, open reply pages, and add app alerts.
+---
+
+Threads are optional. Set `threads: { enabled: true }` when you create the
+Chatpack installation. Apply your storage adapter's thread migrations before
+you deploy the new code. Existing apps keep their own UI and notification setup.
+
+```ts
+const chat = chatpack({
+  storage: drizzleAdapter(db),
+  auth: resolveAppUser,
+  threads: { enabled: true },
+});
+
+const reply = await chat.api.sendMessage({
+  userId: "bob",
+  conversationId,
+  body: "I can take this.",
+  threadRootMessageId: rootMessageId,
+});
+
+const page = await chat.api.listThread({
+  userId: "alice",
+  conversationId,
+  rootMessageId,
+});
+```
+
+`listMessages` returns the main conversation. `listThread` returns replies to
+one root, newest first. A root message has `threadReplyCount`. Thread replies
+use the conversation's message sequence and permissions. A reply to a reply
+still uses the original thread root, so threads stay one level deep.
+
+Set `alsoSendToMain: true` when the sender wants the same reply in the main
+conversation. It keeps one message id and appears in both pages. That reply
+also counts toward the main conversation's unread count. The sender can turn
+this on per reply; it is off by default.
+
+The browser client provides `messages.get`, `messages.send`, and `useThread`.
+Use `messages.get` to open a link to a message when it is outside the loaded
+page. The core REST routes are listed in [REST API](/docs/reference/rest-api).
+
+## Existing installations
+
+Update core, client, and your storage adapter together. Apply the matching
+SQL migration before enabling threads or `alsoSendToMain`:
+
+| Adapter              | Existing database                                                                        |
+| -------------------- | ---------------------------------------------------------------------------------------- |
+| Drizzle Postgres     | Re-run exported `migrationStatements` or apply your generated Drizzle migration.         |
+| SQLite, Turso, MySQL | Run `thread-upgrade.sql`, then `thread-broadcast-upgrade.sql`.                           |
+| Prisma               | Apply `0002_thread_replies`, then `0003_thread_broadcast`; regenerate the Prisma client. |
+| Supabase             | Apply `20260925072829_thread_replies.sql`, then `20260925153817_thread_broadcast.sql`.   |
+| Memory               | No migration.                                                                            |
+
+The [Chatpack app](https://github.com/chddaniel/chatpack/tree/main/apps/app)
+shows one way to add a Threads inbox, follow and mute state, email alerts,
+browser push, search navigation, and links to replies. These are app-owned
+features. To use them in another app, copy or adapt the app tables and routes,
+run its `db:threads` migration, and connect its `afterMessageMutation` hook to
+your users and email or push providers. The app README lists the environment
+variables and retry route.

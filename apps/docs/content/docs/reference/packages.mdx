@@ -11,14 +11,15 @@ join requests, public channels with a browsable directory, text messages,
 permissions, read state and unread counts, SSE with gap-fill, memory and Drizzle
 storage, Redis event fan-out, typing/presence/receipts, reactions, quote-replies,
 validated mentions, message forwarding, participant-scoped search, the
+opt-in message thread API,
 post-persistence mutation hook, the browser client with React hooks and polling
 fallback, Filepack-backed file attachments, and project setup and complete
 starter generation with `@chatpack/cli init`, plus reusable React UI blocks from
 `@chatpack/ui`.
 
-Push notification providers, a mention inbox or mention notifications, and
-true message threads have not shipped. Multi-node presence is available with
-`redisPresenceStore()` and the Redis transport.
+The Chatpack app includes a thread inbox and optional email and browser push
+alerts. Those alerts are application code, not core package APIs. Multi-node
+presence is available with `redisPresenceStore()` and the Redis transport.
 
 ## `@chatpack/core`
 
