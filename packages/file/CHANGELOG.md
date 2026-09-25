@@ -1,5 +1,12 @@
 # @chatpack/file
 
+## 0.1.8
+
+### Patch Changes
+
+- Updated dependencies [31fc33f]
+  - @chatpack/core@0.14.0
+
 ## 0.1.7
 
 ### Patch Changes

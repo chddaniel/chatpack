@@ -1,5 +1,11 @@
 # @chatpack/core
 
+## 0.14.0
+
+### Minor Changes
+
+- 31fc33f: Add opt-in message threads with reply pages, counts, storage migrations, client hooks, and realtime cache updates.
+
 ## 0.13.0
 
 ### Minor Changes
