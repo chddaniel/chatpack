@@ -40,6 +40,103 @@ class ScriptedEventSource implements ChatpackEventSource {
 }
 
 describe("client and handler integration", () => {
+  it("keeps enabled thread replies out of main history and unread counts", async () => {
+    const chat = chatpack({
+      storage: memoryAdapter(),
+      threads: { enabled: true },
+      auth: (request) => {
+        const id = request.headers.get("x-user-id");
+        return id === null ? null : { id };
+      },
+    });
+    const handler = chat.handler({ heartbeatIntervalMs: 0 });
+    function actor(userId: string) {
+      return createChatClient({
+        userId,
+        fetch: async (input, init) => {
+          const url = new URL(input instanceof Request ? input.url : input);
+          const headers = new Headers(init?.headers);
+          headers.set("x-user-id", userId);
+          return handler.fetch(
+            new Request("http://chatpack.invalid" + url.pathname + url.search, {
+              ...init,
+              headers,
+            }),
+          );
+        },
+      });
+    }
+    const alice = actor("alice");
+    const bob = actor("bob");
+    const charlie = actor("charlie");
+    const conversation = await alice.conversations.create({ otherUserId: "bob" });
+    expect(conversation.error).toBeNull();
+    if (conversation.error !== null) return;
+    const conversationId = conversation.data.id;
+    const root = await alice.messages.send({ conversationId, body: "Root" });
+    expect(root.error).toBeNull();
+    if (root.error !== null) return;
+    const reply = await bob.messages.send({
+      conversationId,
+      body: "Thread reply",
+      threadRootMessageId: root.data.id,
+    });
+    expect(reply.error).toBeNull();
+    if (reply.error !== null) return;
+    expect(reply.data.threadRootMessageId).toBe(root.data.id);
+    expect(reply.data.threadReplyCount).toBe(1);
+    const newerReply = await bob.messages.send({
+      conversationId,
+      body: "Another reply",
+      threadRootMessageId: root.data.id,
+    });
+    expect(newerReply.error).toBeNull();
+    if (newerReply.error !== null) return;
+    expect(newerReply.data.threadReplyCount).toBe(2);
+
+    const main = await alice.messages.list({ conversationId });
+    const thread = await alice.messages.listThread({
+      conversationId,
+      rootMessageId: root.data.id,
+      limit: 1,
+    });
+    expect(thread.error).toBeNull();
+    if (thread.error !== null) return;
+    expect(main.data?.messages.map((message) => message.id)).toEqual([root.data.id]);
+    expect(main.data?.messages[0]?.threadReplyCount).toBe(2);
+    expect(thread.data?.messages.map((message) => message.id)).toEqual([newerReply.data.id]);
+    expect(thread.data?.nextCursor).toEqual(expect.any(String));
+    const olderPage = await alice.messages.listThread({
+      conversationId,
+      rootMessageId: root.data.id,
+      limit: 1,
+      cursor: thread.data.nextCursor!,
+    });
+    expect(olderPage.data?.messages.map((message) => message.id)).toEqual([reply.data.id]);
+    expect(
+      alice.$store
+        .getSnapshot()
+        .threadsByRoot[root.data.id]?.data?.messages.map((message) => message.id),
+    ).toEqual([newerReply.data.id, reply.data.id]);
+    const conversations = await alice.conversations.list();
+    expect(conversations.data?.conversations[0]?.unreadCount).toBe(0);
+
+    const nested = await alice.messages.send({
+      conversationId,
+      body: "Nested",
+      threadRootMessageId: reply.data.id,
+    });
+    expect(nested.error?.code).toBe("MESSAGE_NOT_FOUND");
+    const hidden = await charlie.messages.listThread({
+      conversationId,
+      rootMessageId: root.data.id,
+    });
+    expect(hidden.error?.code).toBe("FORBIDDEN_READ");
+    alice.dispose();
+    bob.dispose();
+    charlie.dispose();
+  });
+
   it("uses the public handler without duplicating protocol logic", async () => {
     const chat = chatpack({
       storage: memoryAdapter(),
@@ -72,6 +169,13 @@ describe("client and handler integration", () => {
       body: "hello from the client",
     });
     expect(sent.error).toBeNull();
+    if (sent.error !== null) return;
+    const disabled = await client.messages.send({
+      conversationId: conversation.data.id,
+      body: "thread reply",
+      threadRootMessageId: sent.data.id,
+    });
+    expect(disabled.error?.code).toBe("THREADS_DISABLED");
 
     const page = await client.messages.list({ conversationId: conversation.data.id });
     expect(page).toMatchObject({

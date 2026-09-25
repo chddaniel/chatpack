@@ -101,6 +101,7 @@ const files = createFileAttachmentPlugin({
 
 export const chat = chatpack({
   storage: drizzleAdapter(db),
+  threads: { enabled: true },
   auth: async () => {
     const user = await currentUser();
     return user ? { id: user.id } : null;

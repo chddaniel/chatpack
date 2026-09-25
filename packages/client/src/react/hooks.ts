@@ -5,6 +5,7 @@ import type {
   ChatClientWithPlugins,
   ConversationListInput,
   MessageListInput,
+  ThreadListInput,
   MessageSearchInput,
 } from "../client";
 import type { ChatClientResult, ChatpackClientError } from "../errors";
@@ -164,6 +165,39 @@ export function useMessages(client: ChatClient, input: MessageListInput): Messag
   return { ...useQuery(query, refetch, emptyMessagePage), loadMore };
 }
 
+/** Loads and subscribes to replies beneath one top-level message. */
+export function useThread(client: ChatClient, input: ThreadListInput): MessagesHookResult {
+  const requestInput = useMemo(
+    () => ({
+      conversationId: input.conversationId,
+      rootMessageId: input.rootMessageId,
+      ...(input.limit === undefined ? {} : { limit: input.limit }),
+    }),
+    [input.conversationId, input.rootMessageId, input.limit],
+  );
+  const query = useExternalStore(client.$store).threadsByRoot[requestInput.rootMessageId] ?? {
+    data: null,
+    error: null,
+    isPending: true,
+    isRefetching: false,
+  };
+  const refetch = useCallback(
+    () => client.messages.listThread(requestInput),
+    [client, requestInput],
+  );
+  useEffect(() => {
+    void refetch();
+  }, [refetch]);
+  useRealtimeEffect(client);
+  const loadMore = useCallback(async () => {
+    const current = client.$store.getSnapshot().threadsByRoot[requestInput.rootMessageId];
+    if (current?.data == null) return refetch();
+    if (current.data.nextCursor === null) return { data: current.data, error: null };
+    return client.messages.listThread({ ...requestInput, cursor: current.data.nextCursor });
+  }, [client, refetch, requestInput]);
+  return { ...useQuery(query, refetch, emptyMessagePage), loadMore };
+}
+
 /** Searches the authenticated participant's conversations and keeps each query isolated. */
 export function useMessageSearch(
   client: ChatClient,
@@ -266,6 +300,7 @@ export type ReactChatClient<Plugins extends readonly ChatClientPlugin[]> = ChatC
   useConversations(input?: ConversationListInput): ChatClientHookResult<ClientConversationPage>;
   useConversation(input: { conversationId: string }): ChatClientHookResult<ClientConversation>;
   useMessages(input: MessageListInput): MessagesHookResult;
+  useThread(input: ThreadListInput): MessagesHookResult;
   useMessageSearch(input: MessageSearchInput): MessageSearchHookResult;
   useRealtimeStatus(): ChatRealtimeSnapshot;
   useTyping(input: { conversationId: string }): TypingIndicator | null;
@@ -283,6 +318,7 @@ export function createReactChatClient<Plugins extends readonly ChatClientPlugin[
     useConversations: (input?: ConversationListInput) => useConversations(client, input),
     useConversation: (input: { conversationId: string }) => useConversation(client, input),
     useMessages: (input: MessageListInput) => useMessages(client, input),
+    useThread: (input: ThreadListInput) => useThread(client, input),
     useMessageSearch: (input: MessageSearchInput) => useMessageSearch(client, input),
     useRealtimeStatus: () => useRealtimeStatus(client),
     useTyping: (input: { conversationId: string }) => useTyping(client, input),

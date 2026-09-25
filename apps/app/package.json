@@ -13,8 +13,9 @@
     "lint": "eslint",
     "typecheck": "tsc --noEmit",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate && tsx scripts/filepack-migrate.ts",
+    "db:migrate": "drizzle-kit migrate && tsx scripts/chatpack-thread-migrate.ts && tsx scripts/filepack-migrate.ts",
     "db:filepack": "tsx scripts/filepack-migrate.ts",
+    "db:threads": "tsx scripts/chatpack-thread-migrate.ts",
     "db:proxy": "tsx scripts/wsproxy.ts",
     "setup:check": "tsx scripts/setup-check.ts"
   },

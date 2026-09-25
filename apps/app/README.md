@@ -8,7 +8,7 @@ A production-oriented Chatpack next starter with Neon Postgres, Drizzle, and bet
 2. Copy `.env.example` to `.env.local`.
 3. Add the required secrets described in the environment example.
 4. Run `pnpm run db:generate`, `pnpm run db:migrate`, and `pnpm run setup:check`.
-   `db:migrate` runs drizzle-kit and then `scripts/filepack-migrate.ts`, which creates the four attachment tables Filepack owns. Those are not in `src/db/schema.ts` on purpose - the comment there says why - so drizzle-kit alone leaves them out.
+   `db:migrate` runs drizzle-kit, adds the thread column to existing Chatpack tables, then creates Filepack's attachment tables. Filepack's tables are outside `src/db/schema.ts`, so drizzle-kit does not create them.
 5. Run `pnpm run dev`.
 
 The generated source is application-owned. Edit it to fit your product. It is not a reusable `@chatpack/ui` package.
@@ -36,6 +36,7 @@ Create the tables with `psql` instead of `db:migrate`, because drizzle-kit opens
 ```sh
 pnpm run db:generate
 docker exec -i chat-pg psql -U postgres -d postgres < drizzle/0000_*.sql
+pnpm run db:threads
 pnpm run db:filepack
 ```
 

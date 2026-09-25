@@ -54,6 +54,7 @@ create table if not exists public.chatpack_messages (
   edited_at timestamptz,
   deleted_at timestamptz,
   reply_to_message_id text,
+  thread_root_message_id text,
   forwarded_from_message_id text,
   forwarded_from_conversation_id text,
   forwarded_from_sender_id text,
@@ -61,6 +62,10 @@ create table if not exists public.chatpack_messages (
   unique (conversation_id, seq)
 );
 alter table public.chatpack_messages add column if not exists reply_to_message_id text;
+alter table public.chatpack_messages add column if not exists thread_root_message_id text;
+create index if not exists chatpack_messages_thread_root_seq_idx
+  on public.chatpack_messages (thread_root_message_id, seq)
+  where thread_root_message_id is not null;
 alter table public.chatpack_messages add column if not exists forwarded_from_message_id text;
 alter table public.chatpack_messages add column if not exists forwarded_from_conversation_id text;
 alter table public.chatpack_messages add column if not exists forwarded_from_sender_id text;
@@ -259,9 +264,10 @@ end;
 $$;
 
 -- Atomic sequence allocation, message insertion, and canonical token insertion.
+drop function if exists public.chatpack_add_message(text, text, text, text, text, text, text, text, text, jsonb, timestamptz, jsonb);
 create or replace function public.chatpack_add_message(
   p_id text, p_conversation_id text, p_sender_id text, p_body text, p_role text,
-  p_reply_to_message_id text, p_forwarded_from_message_id text,
+  p_reply_to_message_id text, p_thread_root_message_id text, p_forwarded_from_message_id text,
   p_forwarded_from_conversation_id text, p_forwarded_from_sender_id text,
   p_metadata jsonb, p_created_at timestamptz, p_tokens jsonb
 ) returns setof public.chatpack_messages
@@ -270,16 +276,17 @@ declare
   v_seq bigint;
 begin
   update public.chatpack_conversations
-  set last_seq = last_seq + 1, last_activity_at = p_created_at
+  set last_seq = last_seq + 1,
+      last_activity_at = case when p_thread_root_message_id is null then p_created_at else last_activity_at end
   where id = p_conversation_id
   returning last_seq into v_seq;
   if not found then raise exception 'unknown conversation %', p_conversation_id; end if;
   insert into public.chatpack_messages
     (id, conversation_id, sender_id, body, role, seq, created_at, edited_at, deleted_at,
-     reply_to_message_id, forwarded_from_message_id, forwarded_from_conversation_id,
+     reply_to_message_id, thread_root_message_id, forwarded_from_message_id, forwarded_from_conversation_id,
      forwarded_from_sender_id, metadata)
   values (p_id, p_conversation_id, p_sender_id, p_body, p_role, v_seq, p_created_at, null, null,
-          p_reply_to_message_id, p_forwarded_from_message_id, p_forwarded_from_conversation_id,
+          p_reply_to_message_id, p_thread_root_message_id, p_forwarded_from_message_id, p_forwarded_from_conversation_id,
           p_forwarded_from_sender_id, coalesce(p_metadata, '{}'));
   insert into public.chatpack_message_search_tokens (message_id, token, occurrences)
   select x.message_id, x.token, x.occurrences
@@ -335,9 +342,18 @@ returns table(conversation_id text, count bigint) language sql as $$
     on p.conversation_id = m.conversation_id and p.user_id = p_user_id
   left join public.chatpack_messages read_message on read_message.id = p.last_read_message_id
   where m.conversation_id = any(p_conversation_ids)
+    and m.thread_root_message_id is null
     and m.sender_id <> p_user_id
     and m.seq > coalesce(read_message.seq, 0)
   group by m.conversation_id;
+$$;
+
+create or replace function public.chatpack_count_thread_replies(p_root_message_ids text[])
+returns table(thread_root_message_id text, count bigint) language sql stable as $$
+  select m.thread_root_message_id, count(*)
+  from public.chatpack_messages m
+  where m.thread_root_message_id = any(p_root_message_ids)
+  group by m.thread_root_message_id;
 $$;
 
 -- Re-requesting a join resets the existing row in one statement and preserves
@@ -400,13 +416,14 @@ begin
 end;
 $$;
 
+drop function if exists public.chatpack_search_messages(text, text[], integer, timestamptz, text, integer);
 create or replace function public.chatpack_search_messages(
   p_user_id text, p_terms text[], p_cursor_rank integer, p_cursor_created_at timestamptz,
   p_cursor_id text, p_limit integer
 ) returns table(
   id text, conversation_id text, sender_id text, body text, role text, seq bigint,
   created_at timestamptz, edited_at timestamptz, deleted_at timestamptz,
-  reply_to_message_id text, forwarded_from_message_id text,
+  reply_to_message_id text, thread_root_message_id text, forwarded_from_message_id text,
   forwarded_from_conversation_id text, forwarded_from_sender_id text, metadata jsonb,
   rank integer
 ) language sql as $$
@@ -420,7 +437,7 @@ create or replace function public.chatpack_search_messages(
     having count(distinct t.token) = cardinality(p_terms)
   )
   select m.id, m.conversation_id, m.sender_id, m.body, m.role, m.seq, m.created_at,
-         m.edited_at, m.deleted_at, m.reply_to_message_id, m.forwarded_from_message_id,
+         m.edited_at, m.deleted_at, m.reply_to_message_id, m.thread_root_message_id, m.forwarded_from_message_id,
          m.forwarded_from_conversation_id, m.forwarded_from_sender_id, m.metadata, m.rank
   from matches m
   where p_cursor_rank is null

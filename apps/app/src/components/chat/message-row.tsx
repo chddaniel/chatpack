@@ -12,6 +12,7 @@ import {
   Check,
   CheckCheck,
   CornerUpLeft,
+  MessageSquare,
   Forward,
   MoreHorizontal,
   Pencil,
@@ -42,12 +43,14 @@ export function MessageRow({
   message,
   conversation,
   onReply,
+  onThread,
   readByOthers,
   delivered,
 }: {
   message: ClientMessage;
   conversation: ClientConversation | null;
   onReply: (message: ClientMessage) => void;
+  onThread?: (message: ClientMessage) => void;
   /** Whether anyone else has read up to this message (own messages only). */
   readByOthers: boolean;
   /** Whether a recipient's live stream has received it (own messages only). */
@@ -196,6 +199,7 @@ export function MessageRow({
               isOwn={isOwn}
               onReact={toggleReaction}
               onReply={() => onReply(message)}
+              onThread={onThread === undefined ? undefined : () => onThread(message)}
               onEdit={() => setDraft(message.body)}
               onDelete={remove}
               onForward={() => setForwarding(true)}
@@ -203,6 +207,17 @@ export function MessageRow({
             />
           )}
         </div>
+
+        {onThread !== undefined && (message.threadReplyCount ?? 0) > 0 && (
+          <button
+            type="button"
+            className="mt-1 flex items-center gap-1 text-xs text-primary hover:underline"
+            onClick={() => onThread(message)}
+          >
+            <MessageSquare className="size-3" />
+            {message.threadReplyCount} {message.threadReplyCount === 1 ? "reply" : "replies"}
+          </button>
+        )}
 
         {message.reactions.length > 0 && (
           <div className="app-message-reactions mt-1 flex flex-wrap gap-1">
@@ -249,6 +264,7 @@ function MessageMenu({
   isOwn,
   onReact,
   onReply,
+  onThread,
   onEdit,
   onDelete,
   onForward,
@@ -257,6 +273,7 @@ function MessageMenu({
   isOwn: boolean;
   onReact: (emoji: string) => Promise<void>;
   onReply: () => void;
+  onThread?: () => void;
   onEdit: () => void;
   onDelete: () => Promise<void>;
   onForward: () => void;
@@ -293,6 +310,12 @@ function MessageMenu({
           <CornerUpLeft />
           Reply
         </DropdownMenuItem>
+        {onThread !== undefined && (
+          <DropdownMenuItem onSelect={onThread}>
+            <MessageSquare />
+            Reply in thread
+          </DropdownMenuItem>
+        )}
         <DropdownMenuItem onSelect={onForward}>
           <Forward />
           Forward

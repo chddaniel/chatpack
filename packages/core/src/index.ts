@@ -26,6 +26,7 @@ export {
   type SendMessageInput,
   type ListMessagesApiInput,
   type ListMessagesApiResult,
+  type ListThreadApiInput,
   type SearchMessagesApiInput,
   type SearchMessagesApiResult,
   type ListMessagesAfterInput,

@@ -29,6 +29,8 @@ export interface ChatpackCacheSnapshot {
   conversations: QueryState<ClientConversationPage>;
   conversationsById: Record<string, QueryState<ClientConversation>>;
   messagesByConversation: Record<string, QueryState<ClientMessagePage>>;
+  /** Loaded reply pages keyed by their top-level message id. */
+  threadsByRoot: Record<string, QueryState<ClientMessagePage>>;
   /** Search snapshots keyed by cache-normalized query text. */
   messageSearches: Record<string, QueryState<ClientMessagePage>>;
 }
@@ -95,6 +97,13 @@ export interface ChatpackCache extends ReadonlyStore<ChatpackCacheSnapshot> {
     result: ChatClientResult<ClientMessagePage>,
     append: boolean,
   ): void;
+  setThreadLoading(rootMessageId: string, conversationId: string): void;
+  setThread(
+    rootMessageId: string,
+    result: ChatClientResult<ClientMessagePage>,
+    append: boolean,
+  ): void;
+  applyPolledThread(rootMessageId: string, page: ClientMessagePage): void;
   setMessageSearchLoading(query: string): void;
   setMessageSearch(
     query: string,
@@ -450,6 +459,7 @@ export function createChatpackCache(options: ChatpackCacheOptions = {}): Chatpac
     conversations: emptyQuery<ClientConversationPage>(),
     conversationsById: {},
     messagesByConversation: {},
+    threadsByRoot: {},
     messageSearches: {},
   });
   /**
@@ -459,12 +469,27 @@ export function createChatpackCache(options: ChatpackCacheOptions = {}): Chatpac
    * bump `unreadCount`.
    */
   const seenSeq = new Map<string, number>();
+  const threadConversationIds = new Map<string, string>();
   const messageSearchRecency = new Map<string, undefined>();
   let viewerId = options.userId;
 
   /** Shared by the stream event and the local echo of a react/unreact call. */
   function applyReactions(conversationId: string, message: ClientMessage): void {
     store.update((current) => {
+      if (typeof message.threadRootMessageId === "string") {
+        const rootId = message.threadRootMessageId;
+        const existingThread = current.threadsByRoot[rootId];
+        if (existingThread?.data == null) return current;
+        const messages = replaceReactions(existingThread.data.messages, message);
+        if (messages === null) return current;
+        return {
+          ...current,
+          threadsByRoot: {
+            ...current.threadsByRoot,
+            [rootId]: { ...existingThread, data: { ...existingThread.data, messages } },
+          },
+        };
+      }
       const existing = current.messagesByConversation[conversationId];
       if (existing?.data == null) return current;
       const messages = replaceReactions(existing.data.messages, message);
@@ -554,6 +579,17 @@ export function createChatpackCache(options: ChatpackCacheOptions = {}): Chatpac
           next.messagesByConversation;
         next = { ...next, messagesByConversation };
       }
+      const threadsByRoot = Object.fromEntries(
+        Object.entries(next.threadsByRoot).filter(
+          ([rootId]) => threadConversationIds.get(rootId) !== conversationId,
+        ),
+      );
+      for (const [rootId, id] of threadConversationIds) {
+        if (id === conversationId) threadConversationIds.delete(rootId);
+      }
+      if (Object.keys(threadsByRoot).length !== Object.keys(next.threadsByRoot).length) {
+        next = { ...next, threadsByRoot };
+      }
 
       const messageSearches = dropConversationSearchMessages(next.messageSearches, conversationId);
       if (messageSearches !== next.messageSearches) next = { ...next, messageSearches };
@@ -607,6 +643,21 @@ export function createChatpackCache(options: ChatpackCacheOptions = {}): Chatpac
           messagesByConversation: {
             ...current.messagesByConversation,
             [conversationId]: { ...existing, data: { ...existing.data, messages } },
+          },
+        };
+      });
+    },
+    applyPolledThread(rootMessageId, page) {
+      store.update((current) => {
+        const existing = current.threadsByRoot[rootMessageId];
+        if (existing?.data == null) return current;
+        const messages = mergePolledMessages(existing.data.messages, page.messages);
+        if (messages === null) return current;
+        return {
+          ...current,
+          threadsByRoot: {
+            ...current.threadsByRoot,
+            [rootMessageId]: { ...existing, data: { ...existing.data, messages } },
           },
         };
       });
@@ -735,6 +786,47 @@ export function createChatpackCache(options: ChatpackCacheOptions = {}): Chatpac
         };
       });
     },
+    setThreadLoading(rootMessageId, conversationId) {
+      threadConversationIds.set(rootMessageId, conversationId);
+      store.update((current) => ({
+        ...current,
+        threadsByRoot: {
+          ...current.threadsByRoot,
+          [rootMessageId]: {
+            ...(current.threadsByRoot[rootMessageId] ?? emptyQuery<ClientMessagePage>()),
+            isPending: current.threadsByRoot[rootMessageId]?.data == null,
+            isRefetching: current.threadsByRoot[rootMessageId]?.data != null,
+            error: null,
+          },
+        },
+      }));
+    },
+    setThread(rootMessageId, result, append) {
+      store.update((current) => {
+        const previous = current.threadsByRoot[rootMessageId];
+        const query =
+          result.error !== null
+            ? {
+                data: previous?.data ?? null,
+                error: result.error,
+                isPending: false,
+                isRefetching: false,
+              }
+            : {
+                data:
+                  append && previous?.data != null
+                    ? {
+                        messages: mergeMessages(previous.data.messages, result.data.messages),
+                        nextCursor: result.data.nextCursor,
+                      }
+                    : result.data,
+                error: null,
+                isPending: false,
+                isRefetching: false,
+              };
+        return { ...current, threadsByRoot: { ...current.threadsByRoot, [rootMessageId]: query } };
+      });
+    },
     setMessageSearchLoading(query) {
       const key = messageSearchKey(query);
       store.update((current) => {
@@ -820,6 +912,48 @@ export function createChatpackCache(options: ChatpackCacheOptions = {}): Chatpac
       // Re-bound as a const so the narrowing above survives into the closures
       // below - TypeScript discards narrowing of a parameter inside a callback.
       const durable: DurableChatEvent = event;
+
+      if (typeof durable.message.threadRootMessageId === "string") {
+        if (eventOptions.local === true) viewerId ??= durable.message.senderId;
+        const rootId = durable.message.threadRootMessageId;
+        store.update((current) => {
+          let next = current;
+          const thread = current.threadsByRoot[rootId];
+          if (thread !== undefined)
+            next = {
+              ...next,
+              threadsByRoot: {
+                ...next.threadsByRoot,
+                [rootId]: applyDurableEvent(thread, durable),
+              },
+            };
+          if (durable.type === "message.created") {
+            const main = next.messagesByConversation[durable.conversationId];
+            if (main?.data != null) {
+              const messages = main.data.messages.map((message) =>
+                message.id === rootId
+                  ? {
+                      ...message,
+                      threadReplyCount: Math.max(
+                        message.threadReplyCount ?? 0,
+                        durable.message.threadReplyCount ?? 0,
+                      ),
+                    }
+                  : message,
+              );
+              next = {
+                ...next,
+                messagesByConversation: {
+                  ...next.messagesByConversation,
+                  [durable.conversationId]: { ...main, data: { ...main.data, messages } },
+                },
+              };
+            }
+          }
+          return next;
+        });
+        return;
+      }
 
       // Only `message.created` bumps server-side activity (adapters touch
       // `lastActivityAt` in `addMessage` only), so edits and deletes must not

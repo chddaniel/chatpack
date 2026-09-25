@@ -13,6 +13,7 @@ import { ConversationSidebar } from "@/components/chat/conversation-sidebar";
 import { NewGroupDialog } from "@/components/chat/new-group-dialog";
 import { MessageComposer } from "@/components/chat/message-composer";
 import { MessageList } from "@/components/chat/message-list";
+import { ThreadPanel } from "@/components/chat/thread-panel";
 import { ProfileSearch } from "@/components/profile-search";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -50,6 +51,7 @@ export function ChatShell({
   const conversations = client.useConversations({ limit: 50 });
   const [selectedId, setSelectedId] = useState<string | null>(initialConversationId);
   const [replyTo, setReplyTo] = useState<ClientMessage | null>(null);
+  const [threadRoot, setThreadRoot] = useState<ClientMessage | null>(null);
   const [newGroupOpen, setNewGroupOpen] = useState(initialNewGroupOpen);
   const [conversationsOpen, setConversationsOpen] = useState(false);
   const [channelsOpen, setChannelsOpen] = useState(false);
@@ -177,6 +179,7 @@ export function ChatShell({
   const select = useCallback((conversationId: string | null) => {
     setSelectedId(conversationId);
     setReplyTo(null);
+    setThreadRoot(null);
     setConversationsOpen(false);
   }, []);
 
@@ -221,7 +224,13 @@ export function ChatShell({
       {channelsOpen && (
         <ChannelDirectory user={user} client={client} onClose={() => setChannelsOpen(false)} />
       )}
-      <main className="grid h-dvh bg-background md:grid-cols-[360px_1fr]">
+      <main
+        className={`grid h-dvh bg-background ${
+          threadRoot === null
+            ? "md:grid-cols-[360px_minmax(0,1fr)]"
+            : "md:grid-cols-[360px_minmax(0,1fr)_minmax(320px,420px)]"
+        }`}
+      >
         <aside className="hidden md:block">{sidebar}</aside>
 
         <Sheet open={conversationsOpen} onOpenChange={setConversationsOpen}>
@@ -309,6 +318,7 @@ export function ChatShell({
                 conversationId={selected.id}
                 conversation={selected}
                 onReply={setReplyTo}
+                onThread={setThreadRoot}
                 onSayHello={() => {
                   document
                     .querySelector<HTMLTextAreaElement>('textarea[aria-label="Message"]')
@@ -324,6 +334,16 @@ export function ChatShell({
             </>
           )}
         </section>
+        {threadRoot !== null && selected !== null && (
+          <aside className="fixed inset-0 z-50 bg-background md:relative md:inset-auto md:z-auto md:min-w-0">
+            <ThreadPanel
+              key={threadRoot.id}
+              root={threadRoot}
+              conversation={selected}
+              onClose={() => setThreadRoot(null)}
+            />
+          </aside>
+        )}
       </main>
     </ChatProvider>
   );

@@ -16,6 +16,7 @@ const page: ClientMessagePage = {
       editedAt: null,
       deletedAt: null,
       replyToMessageId: null,
+      threadRootMessageId: null,
       forwardedFromMessageId: null,
       forwardedFromConversationId: null,
       forwardedFromSenderId: null,
@@ -67,6 +68,47 @@ function cacheWithList(unread: [number, number] = [0, 0]) {
 
 const listOf = (cache: ReturnType<typeof cacheWithList>) =>
   cache.getSnapshot().conversations.data!.conversations.map((c) => [c.id, c.unreadCount]);
+
+describe("thread cache", () => {
+  it("routes reply events into the thread and counts each reply once", () => {
+    const cache = cacheWithList();
+    const root = makeMessage({
+      id: "root",
+      conversationId: "c1",
+      seq: 1,
+      threadRootMessageId: null,
+      threadReplyCount: 0,
+    });
+    const reply = makeMessage({
+      id: "reply",
+      conversationId: "c1",
+      seq: 2,
+      threadRootMessageId: root.id,
+      threadReplyCount: 1,
+    });
+    cache.setMessages("c1", { data: { messages: [root], nextCursor: null }, error: null }, false);
+    cache.setThreadLoading(root.id, "c1");
+    cache.setThread(root.id, { data: { messages: [], nextCursor: null }, error: null }, false);
+    const event = { type: "message.created" as const, conversationId: "c1", message: reply };
+    cache.applyEvent(event);
+    cache.applyEvent(event);
+    expect(
+      cache.getSnapshot().messagesByConversation.c1?.data?.messages.map((message) => message.id),
+    ).toEqual([root.id]);
+    expect(cache.getSnapshot().messagesByConversation.c1?.data?.messages[0]?.threadReplyCount).toBe(
+      1,
+    );
+    expect(
+      cache.getSnapshot().threadsByRoot[root.id]?.data?.messages.map((message) => message.id),
+    ).toEqual([reply.id]);
+    expect(listOf(cache)).toEqual([
+      ["c1", 0],
+      ["c2", 0],
+    ]);
+    cache.dropConversation("c1");
+    expect(cache.getSnapshot().threadsByRoot[root.id]).toBeUndefined();
+  });
+});
 
 describe("conversations list realtime updates", () => {
   it("reorders to most-recently-active and bumps unreadCount for another party's message", () => {

@@ -10,6 +10,8 @@
 
 /** Stable machine-readable error codes returned by the core API. */
 export type ChatpackErrorCode =
+  | "THREADS_UNSUPPORTED"
+  | "THREADS_DISABLED"
   /** The configured storage adapter does not provide message search. */
   | "SEARCH_UNSUPPORTED"
   /** The requesting user is not allowed to read this conversation. */

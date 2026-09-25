@@ -54,6 +54,22 @@ await chat.api.sendMessage({
 });
 ```
 
+## Message threads
+
+Threads are off by default. Enable them for an installation after its storage
+schema has the `thread_root_message_id` column and the adapter implements
+`countThreadReplies`:
+
+```ts
+const chat = chatpack({ storage, auth, threads: { enabled: true } });
+```
+
+Send a reply with `threadRootMessageId` set to a top-level message id. Read its
+replies with `chat.api.listThread({ userId, conversationId, rootMessageId })`
+or `GET /conversations/:conversationId/threads/:rootMessageId/messages`.
+Thread replies stay out of the main message list and main unread count. Quote
+replies still use `replyToMessageId`.
+
 ## How it fits together
 
 ```text

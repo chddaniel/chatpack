@@ -27,6 +27,10 @@ const chat = chatpack({
 Migration statements are safe to run repeatedly. The package also exports
 migrationSql for clients that support multi-statement SQL.
 
+For an existing database, run [`thread-upgrade.sql`](./thread-upgrade.sql) once
+before enabling `threads`. New databases get the column from the exported
+migration statements.
+
 The adapter uses async Drizzle/libSQL transactions for atomic message
 sequencing, direct-conversation creation, mention replacement, invite
 consumption, and moderation writes.

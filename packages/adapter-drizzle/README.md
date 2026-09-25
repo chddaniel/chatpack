@@ -69,6 +69,9 @@ referenced **by id only** - there is no foreign key into your users table.
 > index swaps on existing tables - so that part is safe to apply before deploying
 > the new code.
 >
+> Threads add nullable `thread_root_message_id` to `chatpack_messages` and an
+> index for reply pages. Re-run the exported migration before enabling threads.
+>
 > Public channels are gentle too: `visibility` and `join_policy` are added to
 > `chatpack_conversations` as `NOT NULL` columns with the closed defaults
 > (`'private'` / `'approval'`), so every existing conversation is correct without a

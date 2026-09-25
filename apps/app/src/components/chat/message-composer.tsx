@@ -34,11 +34,13 @@ export function MessageComposer({
   conversation,
   replyTo,
   onClearReply,
+  threadRootMessageId,
 }: {
   conversationId: string;
   conversation: ClientConversation | null;
   replyTo: ClientMessage | null;
   onClearReply: () => void;
+  threadRootMessageId?: string;
 }) {
   const { client, files, viewer, directory } = useChat();
   const [body, setBody] = useState("");
@@ -74,6 +76,7 @@ export function MessageComposer({
   }, [conversation?.participants, directory, mentionQuery, viewer.id]);
 
   function signalTyping(): void {
+    if (threadRootMessageId !== undefined) return;
     const now = Date.now();
     if (now < typingSignalledUntil.current) return;
     typingSignalledUntil.current = now + TYPING_SIGNAL_INTERVAL_MS;
@@ -83,6 +86,7 @@ export function MessageComposer({
   }
 
   function stopTyping(): void {
+    if (threadRootMessageId !== undefined) return;
     typingSignalledUntil.current = 0;
     void client.typing.stop({ conversationId });
   }
@@ -183,6 +187,7 @@ export function MessageComposer({
       conversationId,
       body: text,
       ...(replyTo === null ? {} : { replyToMessageId: replyTo.id }),
+      ...(threadRootMessageId === undefined ? {} : { threadRootMessageId }),
       ...(mentions.length === 0 ? {} : { mentions }),
       ...(uploaded.length === 0 ? {} : { metadata: createFileAttachmentMetadata(uploaded) }),
     });
