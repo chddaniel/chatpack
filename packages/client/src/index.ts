@@ -29,6 +29,7 @@ export type {
   MessageEditInput,
   MessageForwardInput,
   MessageListInput,
+  ThreadListInput,
   MessageReactInput,
   MessageSearchInput,
   MessageSendInput,

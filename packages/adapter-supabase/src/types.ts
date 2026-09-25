@@ -27,6 +27,7 @@ export const RPC = {
   updateMessage: "chatpack_update_message",
   mentions: "chatpack_replace_message_mentions",
   countUnread: "chatpack_count_unread",
+  countThreadReplies: "chatpack_count_thread_replies",
   createJoinRequest: "chatpack_create_join_request",
   consumeInvite: "chatpack_consume_invite",
   createBan: "chatpack_create_ban",
@@ -67,6 +68,7 @@ export interface MessageRow {
   edited_at: Timestamp;
   deleted_at: Timestamp;
   reply_to_message_id: string | null;
+  thread_root_message_id: string | null;
   forwarded_from_message_id: string | null;
   forwarded_from_conversation_id: string | null;
   forwarded_from_sender_id: string | null;

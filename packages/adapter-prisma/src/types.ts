@@ -54,6 +54,7 @@ export interface MessageRow {
   editedAt: Date | null;
   deletedAt: Date | null;
   replyToMessageId: string | null;
+  threadRootMessageId: string | null;
   forwardedFromMessageId: string | null;
   forwardedFromConversationId: string | null;
   forwardedFromSenderId: string | null;
@@ -235,7 +236,7 @@ export interface PrismaTransaction {
   chatpackUserBan: Delegate<BanRow, BanCreateData, BanUpdateData>;
   $queryRaw<T>(
     query: TemplateStringsArray,
-    ...values: readonly (string | number | boolean | Date | null)[]
+    ...values: readonly (string | string[] | number | boolean | Date | null)[]
   ): Promise<T[]>;
   $executeRaw(
     query: TemplateStringsArray,

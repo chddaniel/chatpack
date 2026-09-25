@@ -82,6 +82,42 @@ mysql("MySQL 8 migrations", () => {
 });
 
 mysql("MySQL 8 storage", () => {
+  it("stores thread replies outside the main timeline and unread count", async () => {
+    const threaded = chatpack({ storage, threads: { enabled: true }, telemetry: false });
+    const conversation = await threaded.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "bob",
+    });
+    const root = await threaded.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "root",
+    });
+    const reply = await threaded.api.sendMessage({
+      userId: "bob",
+      conversationId: conversation.id,
+      body: "reply",
+      threadRootMessageId: root.id,
+    });
+    const main = await threaded.api.listMessages({
+      userId: "alice",
+      conversationId: conversation.id,
+    });
+    const thread = await threaded.api.listThread({
+      userId: "alice",
+      conversationId: conversation.id,
+      rootMessageId: root.id,
+    });
+    expect(main.messages.map((message) => message.id)).toEqual([root.id]);
+    expect(main.messages[0]?.threadReplyCount).toBe(1);
+    expect(thread.messages.map((message) => message.id)).toEqual([reply.id]);
+    expect(
+      await storage.countUnread({ userId: "alice", conversationIds: [conversation.id] }),
+    ).toEqual({
+      [conversation.id]: 0,
+    });
+  });
+
   it("converges concurrent DMs and gives concurrent messages strict sequences", async () => {
     const conversations = await Promise.all(
       Array.from({ length: 12 }, () =>

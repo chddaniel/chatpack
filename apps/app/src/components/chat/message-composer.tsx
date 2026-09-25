@@ -4,7 +4,7 @@ import { useMemo, useRef, useState, type KeyboardEvent } from "react";
 import type { ClientConversation, ClientMessage } from "@chatpack/client";
 import { createFileAttachmentMetadata } from "@chatpack/file";
 import type { FilepackFile } from "@filepack/core";
-import { Loader2, Paperclip, Send, X } from "lucide-react";
+import { Paperclip, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { useChat } from "@/components/chat/chat-context";
@@ -22,27 +22,32 @@ import {
   MAX_ATTACHMENT_BYTES,
 } from "@/lib/filepack.client";
 import { initialsOf } from "@/lib/profiles";
+import { cn } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 /** Only re-announce typing this often; the plugin expires an indicator after 5s. */
 const TYPING_SIGNAL_INTERVAL_MS = 3000;
+const MAX_MESSAGE_LENGTH = 2000;
 
 export function MessageComposer({
   conversationId,
   conversation,
   replyTo,
   onClearReply,
+  threadRootMessageId,
 }: {
   conversationId: string;
   conversation: ClientConversation | null;
   replyTo: ClientMessage | null;
   onClearReply: () => void;
+  threadRootMessageId?: string;
 }) {
   const { client, files, viewer, directory } = useChat();
   const [body, setBody] = useState("");
   const [pending, setPending] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
   const [sending, setSending] = useState(false);
+  const [sendError, setSendError] = useState<{ code: string; message: string } | null>(null);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   /**
@@ -71,6 +76,7 @@ export function MessageComposer({
   }, [conversation?.participants, directory, mentionQuery, viewer.id]);
 
   function signalTyping(): void {
+    if (threadRootMessageId !== undefined) return;
     const now = Date.now();
     if (now < typingSignalledUntil.current) return;
     typingSignalledUntil.current = now + TYPING_SIGNAL_INTERVAL_MS;
@@ -80,12 +86,14 @@ export function MessageComposer({
   }
 
   function stopTyping(): void {
+    if (threadRootMessageId !== undefined) return;
     typingSignalledUntil.current = 0;
     void client.typing.stop({ conversationId });
   }
 
   function updateBody(value: string, caret: number): void {
     setBody(value);
+    setSendError(null);
     signalTyping();
     // The word being typed right before the caret, if it starts an `@`.
     const openMention = /@([^\s@]*)$/u.exec(value.slice(0, caret));
@@ -141,6 +149,10 @@ export function MessageComposer({
       result.status === "completed" ? [result.file] : [],
     );
     if (completed.length !== results.length) {
+      setSendError({
+        code: "UPLOAD_ERROR",
+        message: `${results.length - completed.length} of ${results.length} files failed to upload.`,
+      });
       toast.error(
         `${results.length - completed.length} of ${results.length} files failed to upload. Nothing was sent.`,
       );
@@ -152,6 +164,7 @@ export function MessageComposer({
   async function send(): Promise<void> {
     const text = body.trim();
     if (conversationId === "" || (text.length === 0 && pending.length === 0)) return;
+    setSendError(null);
     setSending(true);
     const uploaded = await uploadPending();
     if (uploaded === null) {
@@ -174,16 +187,19 @@ export function MessageComposer({
       conversationId,
       body: text,
       ...(replyTo === null ? {} : { replyToMessageId: replyTo.id }),
+      ...(threadRootMessageId === undefined ? {} : { threadRootMessageId }),
       ...(mentions.length === 0 ? {} : { mentions }),
       ...(uploaded.length === 0 ? {} : { metadata: createFileAttachmentMetadata(uploaded) }),
     });
     setSending(false);
     if (result.error) {
+      setSendError(result.error);
       toast.error(result.error.message);
       return;
     }
     setBody("");
     setPending([]);
+    setSendError(null);
     setMentionQuery(null);
     pickedMentions.current.clear();
     onClearReply();
@@ -225,12 +241,13 @@ export function MessageComposer({
   const busy = sending || uploading;
 
   return (
-    <div className="border-t p-4">
-      <div className="mx-auto flex max-w-3xl flex-col gap-2">
+    <div className="chatpack-ui-composer app-message-composer">
+      <div className="app-message-composer-inner">
         {replyTo !== null && (
-          <div className="flex items-center gap-2 rounded-lg bg-muted px-3 py-2 text-xs">
-            <span className="font-medium">Replying to {directory.nameOf(replyTo.senderId)}</span>
-            <span className="min-w-0 flex-1 truncate text-muted-foreground">{replyTo.body}</span>
+          <div className="chatpack-ui-composer-reply app-message-composer-reply">
+            <span className="chatpack-ui-composer-reply-label">
+              Replying to <strong>{directory.nameOf(replyTo.senderId)}</strong> · {replyTo.body}
+            </span>
             <Button size="icon-sm" variant="ghost" onClick={onClearReply} aria-label="Cancel reply">
               <X />
             </Button>
@@ -257,7 +274,7 @@ export function MessageComposer({
           </div>
         )}
 
-        <div className="relative">
+        <div className="app-message-composer-field-shell">
           {mentionQuery !== null && candidates.length > 0 && (
             <div className="absolute bottom-full left-0 z-10 mb-2 w-64 overflow-hidden rounded-lg border bg-popover p-1 shadow-md">
               {candidates.map((person, index) => (
@@ -286,7 +303,15 @@ export function MessageComposer({
             </div>
           )}
 
-          <InputGroup>
+          <InputGroup
+            className={cn(
+              "app-message-composer-field",
+              sendError !== null && "app-message-composer-field-error",
+              busy && "app-message-composer-field-sending",
+            )}
+            data-error={sendError !== null ? "true" : undefined}
+            data-sending={busy ? "true" : undefined}
+          >
             <InputGroupTextarea
               ref={textareaRef}
               value={body}
@@ -300,6 +325,8 @@ export function MessageComposer({
               onBlur={() => setMentionQuery(null)}
               placeholder="Write a message. Type @ to mention someone."
               aria-label="Message"
+              aria-invalid={sendError !== null}
+              maxLength={MAX_MESSAGE_LENGTH}
               disabled={conversationId === ""}
             />
             <InputGroupAddon align="inline-end">
@@ -308,6 +335,7 @@ export function MessageComposer({
                 variant="ghost"
                 onClick={() => fileInputRef.current?.click()}
                 disabled={busy || pending.length >= MAX_ATTACHMENTS_PER_MESSAGE}
+                className="app-message-composer-attach"
                 aria-label="Attach files"
               >
                 <Paperclip />
@@ -316,9 +344,10 @@ export function MessageComposer({
                 size="icon-sm"
                 onClick={() => void send()}
                 disabled={busy || (body.trim().length === 0 && pending.length === 0)}
+                className="app-message-composer-send"
                 aria-label="Send"
               >
-                {busy ? <Loader2 className="animate-spin" /> : <Send />}
+                {busy ? "Sending…" : "Send"}
               </InputGroupButton>
             </InputGroupAddon>
           </InputGroup>
@@ -335,7 +364,26 @@ export function MessageComposer({
             event.target.value = "";
           }}
         />
-        {uploading && <p className="text-xs text-muted-foreground">Uploading attachments…</p>}
+        <div className="chatpack-ui-composer-hint-row app-message-composer-hint-row">
+          <small
+            className={
+              sendError !== null ? "chatpack-ui-composer-error" : "chatpack-ui-composer-hint"
+            }
+          >
+            {sendError !== null
+              ? "Message didn't send. Tap Send to try again."
+              : uploading
+                ? "Uploading attachments…"
+                : "Enter to send · Shift+Enter for a new line"}
+          </small>
+          {sendError !== null ? (
+            <code className="chatpack-ui-composer-error-code">{sendError.code}</code>
+          ) : (
+            <small className="chatpack-ui-composer-count" aria-live="polite">
+              {body.length}/{MAX_MESSAGE_LENGTH}
+            </small>
+          )}
+        </div>
       </div>
     </div>
   );

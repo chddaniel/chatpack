@@ -493,7 +493,10 @@ export function prismaAdapter(client: object): StorageAdapter {
           const now = new Date();
           const conversation = await tx.chatpackConversation.update({
             where: { id: input.conversationId },
-            data: { lastSeq: { increment: 1 }, lastActivityAt: now },
+            data: {
+              lastSeq: { increment: 1 },
+              ...(input.threadRootMessageId === null ? { lastActivityAt: now } : {}),
+            },
           });
           const row = await tx.chatpackMessage.create({
             data: {
@@ -507,6 +510,7 @@ export function prismaAdapter(client: object): StorageAdapter {
               editedAt: null,
               deletedAt: null,
               replyToMessageId: input.replyToMessageId,
+              threadRootMessageId: input.threadRootMessageId,
               forwardedFromMessageId: input.forwardedFromMessageId,
               forwardedFromConversationId: input.forwardedFromConversationId,
               forwardedFromSenderId: input.forwardedFromSenderId,
@@ -533,10 +537,11 @@ export function prismaAdapter(client: object): StorageAdapter {
     async listMessages(input: ListMessagesInput): Promise<ListMessagesResult> {
       const cursor = input.cursor === undefined ? undefined : Number(input.cursor);
       const rows = await messages.findMany({
-        where:
-          cursor !== undefined && Number.isFinite(cursor)
-            ? { conversationId: input.conversationId, seq: { lt: cursor } }
-            : { conversationId: input.conversationId },
+        where: {
+          conversationId: input.conversationId,
+          threadRootMessageId: input.threadRootMessageId ?? null,
+          ...(cursor !== undefined && Number.isFinite(cursor) ? { seq: { lt: cursor } } : {}),
+        },
         orderBy: { seq: "desc" },
         take: input.limit + 1,
       });
@@ -546,6 +551,22 @@ export function prismaAdapter(client: object): StorageAdapter {
         messages: page.map(toMessage),
         nextCursor: rows.length > input.limit && last ? String(last.seq) : null,
       };
+    },
+    async countThreadReplies(rootMessageIds: string[]): Promise<Record<string, number>> {
+      const counts: Record<string, number> = Object.fromEntries(
+        rootMessageIds.map((id) => [id, 0]),
+      );
+      if (rootMessageIds.length === 0) return counts;
+      const rows = await client.$queryRaw<{
+        threadRootMessageId: string;
+        count: bigint;
+      }>`
+        SELECT "thread_root_message_id" AS "threadRootMessageId", count(*) AS "count"
+        FROM "chatpack_messages"
+        WHERE "thread_root_message_id" = ANY(${rootMessageIds}::text[])
+        GROUP BY "thread_root_message_id"`;
+      for (const row of rows) counts[row.threadRootMessageId] = Number(row.count);
+      return counts;
     },
     async searchMessages(input: SearchMessagesInput): Promise<SearchMessagesResult> {
       const terms = getSearchTerms(input.query);
@@ -659,7 +680,11 @@ export function prismaAdapter(client: object): StorageAdapter {
         ]),
       );
       const rows = await messages.findMany({
-        where: { conversationId: { in: input.conversationIds }, senderId: { not: input.userId } },
+        where: {
+          conversationId: { in: input.conversationIds },
+          senderId: { not: input.userId },
+          threadRootMessageId: null,
+        },
       });
       for (const row of rows)
         if (row.seq > (threshold.get(row.conversationId) ?? 0))

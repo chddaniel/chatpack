@@ -161,6 +161,7 @@ export const messages = pgTable(
      * soft-deleted anyway.
      */
     replyToMessageId: text("reply_to_message_id"),
+    threadRootMessageId: text("thread_root_message_id"),
     /**
      * Forward provenance (ADR 0024) - all three null for an ordinary message,
      * all three set on a forward. Frozen at write time and never re-resolved, so
@@ -175,6 +176,7 @@ export const messages = pgTable(
   },
   (table) => [
     uniqueIndex("chatpack_messages_conv_seq_idx").on(table.conversationId, table.seq),
+    index("chatpack_messages_thread_seq_idx").on(table.threadRootMessageId, table.seq),
     // "What was forwarded from this message" - not a query core makes, but the
     // one an app builds a "shared N times" affordance on. Partial, because a
     // btree indexes nulls too and almost every row here is null - the same
@@ -529,6 +531,7 @@ export const migrationStatements: readonly string[] = [
   "edited_at" timestamptz,
   "deleted_at" timestamptz,
   "reply_to_message_id" text,
+  "thread_root_message_id" text,
   "forwarded_from_message_id" text,
   "forwarded_from_conversation_id" text,
   "forwarded_from_sender_id" text,
@@ -539,6 +542,8 @@ export const migrationStatements: readonly string[] = [
   // idempotent statement.
   `ALTER TABLE "chatpack_messages"
   ADD COLUMN IF NOT EXISTS "reply_to_message_id" text`,
+  `ALTER TABLE "chatpack_messages"
+  ADD COLUMN IF NOT EXISTS "thread_root_message_id" text`,
   // ADR 0024. Three nullable columns, no default and no backfill: every message
   // that predates forwarding was not forwarded, which is what null says. Pure
   // addition, so this is safe to run before deploying the new code.
@@ -550,6 +555,8 @@ export const migrationStatements: readonly string[] = [
   ADD COLUMN IF NOT EXISTS "forwarded_from_sender_id" text`,
   `CREATE UNIQUE INDEX IF NOT EXISTS "chatpack_messages_conv_seq_idx"
   ON "chatpack_messages" ("conversation_id", "seq")`,
+  `CREATE INDEX IF NOT EXISTS "chatpack_messages_thread_seq_idx"
+  ON "chatpack_messages" ("thread_root_message_id", "seq")`,
   `CREATE INDEX IF NOT EXISTS "chatpack_messages_forwarded_from_idx"
   ON "chatpack_messages" ("forwarded_from_message_id")
   WHERE "forwarded_from_message_id" IS NOT NULL`,

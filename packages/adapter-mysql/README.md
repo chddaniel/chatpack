@@ -56,6 +56,10 @@ They do not alter or validate an incompatible existing table; inspect and
 migrate such a schema explicitly. Run `backfillMessageSearchTokens(drizzle(pool))`
 after importing messages into a database that predates search tokens.
 
+For an existing database, run `thread-upgrade.sql` once before updating the
+adapter. New databases get the thread column from `migrationStatements`. Set
+`threads: { enabled: true }` on the Chatpack installation to allow thread replies.
+
 The adapter requires transactions for group creation, message sequence
 allocation, invite consumption, mention replacement, and moderation ban
 serialization. Run migrations before serving requests.

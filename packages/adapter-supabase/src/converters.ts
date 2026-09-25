@@ -37,6 +37,7 @@ export function message(row: MessageRow): Message {
     editedAt: nullableDate(row.edited_at, "message.edited_at"),
     deletedAt: nullableDate(row.deleted_at, "message.deleted_at"),
     replyToMessageId: row.reply_to_message_id,
+    threadRootMessageId: row.thread_root_message_id,
     forwardedFromMessageId: row.forwarded_from_message_id,
     forwardedFromConversationId: row.forwarded_from_conversation_id,
     forwardedFromSenderId: row.forwarded_from_sender_id,

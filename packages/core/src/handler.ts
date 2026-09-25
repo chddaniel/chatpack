@@ -104,6 +104,8 @@ export interface ChatpackHandler {
 
 /** HTTP status for each {@link ChatpackErrorCode}. */
 const STATUS_BY_CODE: Record<ChatpackErrorCode, number> = {
+  THREADS_UNSUPPORTED: 501,
+  THREADS_DISABLED: 403,
   SEARCH_UNSUPPORTED: 501,
   INVALID_INPUT: 400,
   FORBIDDEN_READ: 403,
@@ -956,6 +958,10 @@ export function createHandler(
         }
         const metadata = optionalMetadata(body["metadata"]);
         const replyToMessageId = optionalString(body["replyToMessageId"], "replyToMessageId");
+        const threadRootMessageId = optionalString(
+          body["threadRootMessageId"],
+          "threadRootMessageId",
+        );
         const mentions = optionalStringArray(body["mentions"], "mentions");
         const message = await api.sendMessage({
           userId,
@@ -963,6 +969,7 @@ export function createHandler(
           body: requiredString(body["body"], "body"),
           ...(role !== undefined ? { role } : {}),
           ...(replyToMessageId !== undefined ? { replyToMessageId } : {}),
+          ...(threadRootMessageId !== undefined ? { threadRootMessageId } : {}),
           ...(mentions !== undefined ? { mentions } : {}),
           ...(metadata !== undefined ? { metadata } : {}),
         });
@@ -987,7 +994,28 @@ export function createHandler(
         return json(200, result);
       }
 
-      // GET /search/messages - ranked, permission-filtered search
+      // GET /conversations/:id/threads/:rootId/messages - one thread's replies
+      if (
+        method === "GET" &&
+        segments.length === 5 &&
+        segments[0] === "conversations" &&
+        segments[2] === "threads" &&
+        segments[4] === "messages"
+      ) {
+        const limit = parseLimit(url.searchParams);
+        const cursor = url.searchParams.get("cursor") ?? undefined;
+        return json(
+          200,
+          await api.listThread({
+            userId,
+            conversationId: segments[1]!,
+            rootMessageId: segments[3]!,
+            ...(limit !== undefined ? { limit } : {}),
+            ...(cursor !== undefined ? { cursor } : {}),
+          }),
+        );
+      }
+
       if (
         method === "GET" &&
         segments.length === 2 &&

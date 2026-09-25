@@ -57,6 +57,7 @@ model ChatpackMessage {
   editedAt                    DateTime? @map("edited_at")
   deletedAt                   DateTime? @map("deleted_at")
   replyToMessageId            String?   @map("reply_to_message_id")
+  threadRootMessageId         String?   @map("thread_root_message_id")
   forwardedFromMessageId      String?   @map("forwarded_from_message_id")
   forwardedFromConversationId String?   @map("forwarded_from_conversation_id")
   forwardedFromSenderId       String?   @map("forwarded_from_sender_id")
@@ -68,6 +69,7 @@ model ChatpackMessage {
   mentions     ChatpackMessageMention[]
 
   @@unique([conversationId, seq], map: "chatpack_messages_conv_seq_idx")
+  @@index([threadRootMessageId, seq], map: "chatpack_messages_thread_seq_idx")
   @@index([forwardedFromMessageId], map: "chatpack_messages_forwarded_from_idx")
   @@map("chatpack_messages")
 }

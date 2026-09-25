@@ -82,6 +82,7 @@ CREATE TABLE "chatpack_messages" (
 	"edited_at" timestamp with time zone,
 	"deleted_at" timestamp with time zone,
 	"reply_to_message_id" text,
+	"thread_root_message_id" text,
 	"forwarded_from_message_id" text,
 	"forwarded_from_conversation_id" text,
 	"forwarded_from_sender_id" text,
@@ -193,6 +194,7 @@ CREATE UNIQUE INDEX "chatpack_reactions_msg_user_emoji_idx" ON "chatpack_message
 CREATE INDEX "chatpack_reactions_message_idx" ON "chatpack_message_reactions" USING btree ("message_id","created_at");--> statement-breakpoint
 CREATE INDEX "chatpack_message_search_tokens_token_idx" ON "chatpack_message_search_tokens" USING btree ("token","message_id");--> statement-breakpoint
 CREATE UNIQUE INDEX "chatpack_messages_conv_seq_idx" ON "chatpack_messages" USING btree ("conversation_id","seq");--> statement-breakpoint
+CREATE INDEX "chatpack_messages_thread_seq_idx" ON "chatpack_messages" USING btree ("thread_root_message_id","seq");--> statement-breakpoint
 CREATE INDEX "chatpack_messages_forwarded_from_idx" ON "chatpack_messages" USING btree ("forwarded_from_message_id") WHERE "chatpack_messages"."forwarded_from_message_id" IS NOT NULL;--> statement-breakpoint
 CREATE INDEX "chatpack_moderation_reports_queue_idx" ON "chatpack_moderation_reports" USING btree ("status","created_at","id");--> statement-breakpoint
 CREATE INDEX "chatpack_moderation_reports_target_idx" ON "chatpack_moderation_reports" USING btree ("reporter_user_id","target_type","target_id","status");--> statement-breakpoint

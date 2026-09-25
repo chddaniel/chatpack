@@ -5,23 +5,10 @@ import { drizzleAdapter } from "better-auth/adapters/drizzle";
 import { accounts, sessions, users, verifications } from "@/db/auth-schema";
 import { db } from "@/lib/db";
 
-function socialProviderCredentials(
-  provider: "Google" | "GitHub",
-): { clientId: string; clientSecret: string } | undefined {
-  const prefix = provider.toUpperCase();
-  const clientId = process.env[`${prefix}_CLIENT_ID`];
-  const clientSecret = process.env[`${prefix}_CLIENT_SECRET`];
-  if (!clientId && !clientSecret) return undefined;
-  if (!clientId || !clientSecret) {
-    throw new Error(
-      `${prefix}_CLIENT_ID and ${prefix}_CLIENT_SECRET must both be set to enable ${provider} sign-in.`,
-    );
-  }
-  return { clientId, clientSecret };
-}
+import { socialProviderCredentials } from "@/lib/auth-providers";
 
-const google = socialProviderCredentials("Google");
-const github = socialProviderCredentials("GitHub");
+const google = socialProviderCredentials("google");
+const github = socialProviderCredentials("github");
 
 export const auth = betterAuth({
   database: drizzleAdapter(db, {

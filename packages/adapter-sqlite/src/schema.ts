@@ -155,6 +155,7 @@ export const messages = sqliteTable(
      * soft-deleted anyway.
      */
     replyToMessageId: text("reply_to_message_id"),
+    threadRootMessageId: text("thread_root_message_id"),
     /** Frozen forward provenance, all three null for ordinary messages. */
     forwardedFromMessageId: text("forwarded_from_message_id"),
     forwardedFromConversationId: text("forwarded_from_conversation_id"),
@@ -163,6 +164,7 @@ export const messages = sqliteTable(
   },
   (table) => [
     uniqueIndex("chatpack_messages_conv_seq_idx").on(table.conversationId, table.seq),
+    index("chatpack_messages_thread_seq_idx").on(table.threadRootMessageId, table.seq),
     index("chatpack_messages_forwarded_from_idx")
       .on(table.forwardedFromMessageId)
       .where(sql`${table.forwardedFromMessageId} IS NOT NULL`),
@@ -458,6 +460,7 @@ export const migrationStatements: readonly string[] = [
   "edited_at" integer,
   "deleted_at" integer,
   "reply_to_message_id" text,
+  "thread_root_message_id" text,
   "forwarded_from_message_id" text,
   "forwarded_from_conversation_id" text,
   "forwarded_from_sender_id" text,
@@ -465,6 +468,8 @@ export const migrationStatements: readonly string[] = [
 )`,
   `CREATE UNIQUE INDEX IF NOT EXISTS "chatpack_messages_conv_seq_idx"
   ON "chatpack_messages" ("conversation_id", "seq")`,
+  `CREATE INDEX IF NOT EXISTS "chatpack_messages_thread_seq_idx"
+  ON "chatpack_messages" ("thread_root_message_id", "seq")`,
   `CREATE INDEX IF NOT EXISTS "chatpack_messages_forwarded_from_idx"
   ON "chatpack_messages" ("forwarded_from_message_id")
   WHERE "forwarded_from_message_id" IS NOT NULL`,

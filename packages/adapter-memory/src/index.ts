@@ -614,7 +614,7 @@ export function memoryAdapter(): StorageAdapter {
       const record = requireRecord(input.conversationId);
 
       const seq = record.nextSeq++;
-      record.lastActivityTick = ++activityTick;
+      if (input.threadRootMessageId === null) record.lastActivityTick = ++activityTick;
 
       const message: Message = {
         id: nextId("msg"),
@@ -627,6 +627,7 @@ export function memoryAdapter(): StorageAdapter {
         editedAt: null,
         deletedAt: null,
         replyToMessageId: input.replyToMessageId,
+        threadRootMessageId: input.threadRootMessageId,
         // Frozen at write time, never re-resolved (ADR 0024 §2).
         forwardedFromMessageId: input.forwardedFromMessageId,
         forwardedFromConversationId: input.forwardedFromConversationId,
@@ -655,7 +656,12 @@ export function memoryAdapter(): StorageAdapter {
     async listMessages(input: ListMessagesInput): Promise<ListMessagesResult> {
       const ids = messageIdsByConversation.get(input.conversationId) ?? [];
       // Stored ascending by seq; newest-first means iterating from the end.
-      const newestFirst = [...ids].reverse();
+      const newestFirst = [...ids].reverse().filter((id) => {
+        const root = messages.get(id)?.threadRootMessageId;
+        return input.threadRootMessageId === undefined
+          ? root === null
+          : root === input.threadRootMessageId;
+      });
 
       const start = input.cursor ? newestFirst.indexOf(input.cursor) + 1 : 0;
       const pageIds = newestFirst.slice(start, start + input.limit);
@@ -668,6 +674,15 @@ export function memoryAdapter(): StorageAdapter {
         .map((m) => ({ ...m }));
 
       return { messages: page, nextCursor };
+    },
+
+    async countThreadReplies(rootMessageIds: string[]): Promise<Record<string, number>> {
+      const counts = Object.fromEntries(rootMessageIds.map((id) => [id, 0]));
+      for (const message of messages.values()) {
+        const root = message.threadRootMessageId;
+        if (root !== null && root in counts) counts[root] = (counts[root] ?? 0) + 1;
+      }
+      return counts;
     },
 
     async searchMessages(input: SearchMessagesInput): Promise<SearchMessagesResult> {
@@ -764,7 +779,13 @@ export function memoryAdapter(): StorageAdapter {
         for (const id of messageIdsByConversation.get(conversationId) ?? []) {
           const message = messages.get(id);
           // Tombstones count (they render in lists); own messages never do.
-          if (message && message.seq > readSeq && message.senderId !== input.userId) count++;
+          if (
+            message &&
+            message.threadRootMessageId === null &&
+            message.seq > readSeq &&
+            message.senderId !== input.userId
+          )
+            count++;
         }
         counts[conversationId] = count;
       }

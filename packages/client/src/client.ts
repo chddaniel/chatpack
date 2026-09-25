@@ -129,6 +129,11 @@ export interface MessageListInput {
   cursor?: string;
 }
 
+/** Pagination input for replies beneath one top-level message. */
+export interface ThreadListInput extends MessageListInput {
+  rootMessageId: string;
+}
+
 /** Participant-scoped, relevance-ranked message search input. */
 export interface MessageSearchInput {
   /** Plain-text terms matched case-insensitively as whole tokens by the server. */
@@ -260,6 +265,8 @@ export interface MessageSendInput {
    * conversation; replying to a deleted one is allowed.
    */
   replyToMessageId?: string;
+  /** Send into the thread started by this top-level message. */
+  threadRootMessageId?: string;
   /**
    * User ids this message mentions (ADR 0023). Ids, not names: Chatpack has no
    * users table to resolve a name against, and it never parses `body` for `@`
@@ -480,6 +487,10 @@ export interface MessageActions {
     input: MessageListInput,
     options?: ChatClientRequestOptions,
   ): Promise<ChatClientResult<ClientMessagePage>>;
+  listThread(
+    input: ThreadListInput,
+    options?: ChatClientRequestOptions,
+  ): Promise<ChatClientResult<ClientMessagePage>>;
   /** Search every conversation visible to the authenticated participant. */
   search(
     input: MessageSearchInput,
@@ -598,6 +609,11 @@ export function createChatClient<
   const POLLED_THREAD_LIMIT = 3;
   /** Conversation ids most-recently read or written by this client, newest first. */
   const recentThreads: string[] = [];
+  const recentReplyThreads: Array<{
+    conversationId: string;
+    rootMessageId: string;
+    limit?: number;
+  }> = [];
   /**
    * The `limit` each surface was last fetched with, so a poll re-reads the same
    * page size the host asked for. Without this a host paginating 10 at a time
@@ -615,6 +631,19 @@ export function createChatClient<
       polledLimits.delete(dropped);
     }
     if (limit !== undefined) polledLimits.set(conversationId, limit);
+  }
+
+  function touchReplyThread(input: ThreadListInput): void {
+    const index = recentReplyThreads.findIndex(
+      (item) => item.rootMessageId === input.rootMessageId,
+    );
+    if (index !== -1) recentReplyThreads.splice(index, 1);
+    recentReplyThreads.unshift({
+      conversationId: input.conversationId,
+      rootMessageId: input.rootMessageId,
+      ...(input.limit === undefined ? {} : { limit: input.limit }),
+    });
+    recentReplyThreads.splice(POLLED_THREAD_LIMIT);
   }
 
   /**
@@ -689,7 +718,25 @@ export function createChatClient<
         .catch(() => undefined),
     );
 
-    await Promise.all([listPoll, ...threadPolls]);
+    const replyPolls = recentReplyThreads
+      .filter((thread) => loaded.threadsByRoot[thread.rootMessageId]?.data != null)
+      .map((thread) =>
+        requester
+          .request<ClientMessagePage>(
+            "/conversations/" +
+              encodeURIComponent(thread.conversationId) +
+              "/threads/" +
+              encodeURIComponent(thread.rootMessageId) +
+              "/messages",
+            { query: { limit: thread.limit } },
+          )
+          .then((result) => {
+            if (result.error === null) cache.applyPolledThread(thread.rootMessageId, result.data);
+          })
+          .catch(() => undefined),
+      );
+
+    await Promise.all([listPoll, ...threadPolls, ...replyPolls]);
   }
 
   const realtimeOptions = options.realtime ?? {};
@@ -718,7 +765,8 @@ export function createChatClient<
       // a no-op and the row stays correct wherever pagination finds it. When
       // the viewer is unknown (no `userId` option, nothing sent yet) the
       // backfill errs toward fetching.
-      const isNewMessage = event.type === "message.created";
+      const isNewMessage =
+        event.type === "message.created" && typeof event.message.threadRootMessageId !== "string";
       const isViewerAdded =
         event.type === "participant.added" &&
         (viewerId === undefined || event.affectedUserIds.includes(viewerId));
@@ -779,7 +827,13 @@ export function createChatClient<
         ...requestOptions(optionsForRequest),
       });
       const conversation = unwrapResult<ClientConversation>(result, "conversation");
-      if (conversation.error === null) cache.setConversation(conversation.data.id, conversation);
+      if (conversation.error === null) {
+        cache.setConversation(conversation.data.id, conversation);
+        // A direct conversation has no activity yet, so its creator does not
+        // receive a stream event that could add it to the loaded list. Echo the
+        // successful response locally, matching createGroup and invite joins.
+        cache.prependConversation(conversation.data);
+      }
       return conversation;
     },
     async createGroup(input = {}, optionsForRequest) {
@@ -1048,6 +1102,23 @@ export function createChatClient<
       cache.setMessages(input.conversationId, result, input.cursor !== undefined);
       return result;
     },
+    async listThread(input, optionsForRequest) {
+      cache.setThreadLoading(input.rootMessageId, input.conversationId);
+      if (input.cursor === undefined) touchReplyThread(input);
+      const result = await requester.request<ClientMessagePage>(
+        "/conversations/" +
+          encodeURIComponent(input.conversationId) +
+          "/threads/" +
+          encodeURIComponent(input.rootMessageId) +
+          "/messages",
+        {
+          query: { limit: input.limit, cursor: input.cursor },
+          ...requestOptions(optionsForRequest),
+        },
+      );
+      cache.setThread(input.rootMessageId, result, input.cursor !== undefined);
+      return result;
+    },
     async search(input, optionsForRequest) {
       cache.setMessageSearchLoading(input.query);
       const result = await requester.request<ClientMessagePage>("/search/messages", {
@@ -1059,7 +1130,7 @@ export function createChatClient<
     },
     async send(input, optionsForRequest) {
       const { conversationId, ...body } = input;
-      touchThread(conversationId);
+      if (input.threadRootMessageId === undefined) touchThread(conversationId);
       const result = await requester.request<unknown>(
         "/conversations/" + encodeURIComponent(conversationId) + "/messages",
         {

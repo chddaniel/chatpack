@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import type { ChatpackClientError } from "@chatpack/client";
 import {
   MAX_CONVERSATION_NAME_LENGTH,
   MAX_GROUP_PARTICIPANTS,
@@ -8,7 +9,6 @@ import {
   type ChannelVisibility,
 } from "@chatpack/core";
 import { X } from "lucide-react";
-import { toast } from "sonner";
 
 import { useChat } from "@/components/chat/chat-context";
 import { ProfilePicker } from "@/components/chat/profile-picker";
@@ -40,8 +40,10 @@ export function NewGroupDialog({ onClose }: { onClose: () => void }) {
   const [joinPolicy, setJoinPolicy] = useState<ChannelJoinPolicy>("approval");
   const [members, setMembers] = useState<PublicProfile[]>([]);
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<ChatpackClientError | null>(null);
 
   async function create(): Promise<void> {
+    setError(null);
     setBusy(true);
     const trimmed = name.trim();
     const result = await client.conversations.createGroup({
@@ -54,7 +56,7 @@ export function NewGroupDialog({ onClose }: { onClose: () => void }) {
     });
     setBusy(false);
     if (result.error) {
-      toast.error(result.error.message);
+      setError(result.error);
       return;
     }
     for (const member of members) directory.put(member);
@@ -64,122 +66,141 @@ export function NewGroupDialog({ onClose }: { onClose: () => void }) {
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent>
-        <DialogHeader>
+      <DialogContent className="app-new-group-dialog">
+        <DialogHeader className="app-new-group-dialog-header">
           <DialogTitle>New group</DialogTitle>
-          <DialogDescription>
-            A group can start with nobody but you - add members now or invite them later.
-          </DialogDescription>
+          {!busy && error === null && (
+            <DialogDescription>Name it and pick who is in it.</DialogDescription>
+          )}
         </DialogHeader>
 
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="group-name">Name</Label>
-            <Input
-              id="group-name"
-              value={name}
-              onChange={(event) => setName(event.target.value)}
-              maxLength={MAX_CONVERSATION_NAME_LENGTH}
-              placeholder="Design team"
-            />
+        {busy ? (
+          <div className="app-new-group-dialog-state app-new-group-dialog-loading" aria-busy="true">
+            {[0, 1, 2, 3].map((index) => (
+              <span key={index} />
+            ))}
           </div>
-
-          <div className="flex flex-col gap-2">
-            <Label>Visibility</Label>
-            <div className="flex gap-2">
-              <Button
-                type="button"
-                size="sm"
-                variant={visibility === "private" ? "default" : "outline"}
-                onClick={() => setVisibility("private")}
-              >
-                Private group
-              </Button>
-              <Button
-                type="button"
-                size="sm"
-                variant={visibility === "public" ? "default" : "outline"}
-                onClick={() => setVisibility("public")}
-              >
-                Public channel
-              </Button>
+        ) : error !== null ? (
+          <div className="app-new-group-dialog-state" role="alert">
+            <span className="app-new-group-dialog-error-icon" aria-hidden="true">
+              !
+            </span>
+            <strong>Couldn&apos;t create the group</strong>
+            <p>Nothing was created. Check the name is under 200 characters and try again.</p>
+            <code>{error.code}</code>
+            <Button className="app-new-group-dialog-retry" onClick={() => void create()}>
+              Try again
+            </Button>
+          </div>
+        ) : (
+          <div className="app-new-group-dialog-body">
+            <div className="app-new-group-dialog-name">
+              <Label htmlFor="group-name">Name</Label>
+              <Input
+                id="group-name"
+                value={name}
+                onChange={(event) => setName(event.target.value)}
+                maxLength={MAX_CONVERSATION_NAME_LENGTH}
+                placeholder="Launch crew"
+              />
             </div>
-            <p className="text-xs text-muted-foreground">
-              {visibility === "public"
-                ? "Listed in /channels for every signed-in user. Discovery only - joining is still how someone gets to read it."
-                : "Invisible to anyone who is not a member."}
-            </p>
-          </div>
 
-          {visibility === "public" && (
             <div className="flex flex-col gap-2">
-              <Label>Joining</Label>
-              <div className="flex gap-2">
+              <Label>Visibility</Label>
+              <div className="app-new-group-dialog-choice-row">
                 <Button
                   type="button"
                   size="sm"
-                  variant={joinPolicy === "approval" ? "default" : "outline"}
-                  onClick={() => setJoinPolicy("approval")}
+                  variant={visibility === "private" ? "default" : "outline"}
+                  onClick={() => setVisibility("private")}
                 >
-                  Needs approval
+                  Private group
                 </Button>
                 <Button
                   type="button"
                   size="sm"
-                  variant={joinPolicy === "open" ? "default" : "outline"}
-                  onClick={() => setJoinPolicy("open")}
+                  variant={visibility === "public" ? "default" : "outline"}
+                  onClick={() => setVisibility("public")}
                 >
-                  Anyone can join
+                  Public channel
                 </Button>
               </div>
+              <p className="text-xs text-muted-foreground">
+                {visibility === "public"
+                  ? "Listed in /channels for every signed-in user. Discovery only - joining is still how someone gets to read it."
+                  : "Invisible to anyone who is not a member."}
+              </p>
             </div>
-          )}
 
-          <div className="flex flex-col gap-2">
-            <Label htmlFor="group-members">
-              Members ({members.length + 1}/{MAX_GROUP_PARTICIPANTS})
-            </Label>
-            {members.length > 0 && (
-              <div className="flex flex-wrap gap-2">
-                {members.map((member) => (
-                  <span
-                    key={member.id}
-                    className="flex items-center gap-2 rounded-full border px-2 py-1 text-xs"
+            {visibility === "public" && (
+              <div className="flex flex-col gap-2">
+                <Label>Joining</Label>
+                <div className="app-new-group-dialog-choice-row">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={joinPolicy === "approval" ? "default" : "outline"}
+                    onClick={() => setJoinPolicy("approval")}
                   >
-                    <Avatar size="sm">
-                      <AvatarImage src={member.image ?? undefined} />
-                      <AvatarFallback>{initialsOf(member.name)}</AvatarFallback>
-                    </Avatar>
-                    {member.name}
-                    <button
-                      onClick={() =>
-                        setMembers((current) => current.filter((item) => item.id !== member.id))
-                      }
-                      aria-label={`Remove ${member.name}`}
-                    >
-                      <X className="size-3" />
-                    </button>
-                  </span>
-                ))}
+                    Needs approval
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={joinPolicy === "open" ? "default" : "outline"}
+                    onClick={() => setJoinPolicy("open")}
+                  >
+                    Anyone can join
+                  </Button>
+                </div>
               </div>
             )}
-            <ProfilePicker
-              id="group-members"
-              placeholder="Search people to add"
-              exclude={members.map((member) => member.id)}
-              onPick={(profile) => setMembers((current) => [...current, profile])}
-            />
-          </div>
-        </div>
 
-        <DialogFooter>
-          <Button variant="ghost" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button disabled={busy} onClick={() => void create()}>
-            Create group
-          </Button>
-        </DialogFooter>
+            <div className="app-new-group-dialog-members">
+              <Label htmlFor="group-members">
+                Members ({members.length + 1}/{MAX_GROUP_PARTICIPANTS})
+              </Label>
+              {members.length > 0 && (
+                <div className="app-new-group-dialog-chips">
+                  {members.map((member) => (
+                    <span key={member.id} className="app-new-group-dialog-chip">
+                      <Avatar size="sm">
+                        <AvatarImage src={member.image ?? undefined} />
+                        <AvatarFallback>{initialsOf(member.name)}</AvatarFallback>
+                      </Avatar>
+                      {member.name}
+                      <button
+                        onClick={() =>
+                          setMembers((current) => current.filter((item) => item.id !== member.id))
+                        }
+                        aria-label={`Remove ${member.name}`}
+                      >
+                        <X className="size-3" />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              )}
+              <ProfilePicker
+                id="group-members"
+                placeholder="Search people to add"
+                exclude={members.map((member) => member.id)}
+                onPick={(profile) => setMembers((current) => [...current, profile])}
+              />
+            </div>
+          </div>
+        )}
+
+        {error === null && !busy && (
+          <DialogFooter className="app-new-group-dialog-footer">
+            <Button variant="ghost" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button disabled={busy} onClick={() => void create()}>
+              Create group
+            </Button>
+          </DialogFooter>
+        )}
       </DialogContent>
     </Dialog>
   );

@@ -686,6 +686,7 @@ export function supabaseAdapter(
           p_body: input.body,
           p_role: input.role,
           p_reply_to_message_id: input.replyToMessageId,
+          p_thread_root_message_id: input.threadRootMessageId,
           p_forwarded_from_message_id: input.forwardedFromMessageId,
           p_forwarded_from_conversation_id: input.forwardedFromConversationId,
           p_forwarded_from_sender_id: input.forwardedFromSenderId,
@@ -729,6 +730,10 @@ export function supabaseAdapter(
         .from(TABLE.messages)
         .select("*")
         .eq("conversation_id", input.conversationId);
+      query =
+        input.threadRootMessageId === undefined
+          ? query.is("thread_root_message_id", null)
+          : query.eq("thread_root_message_id", input.threadRootMessageId);
       if (cursorValue !== null && Number.isSafeInteger(cursorValue)) {
         query = query.lt("seq", cursorValue);
       }
@@ -838,6 +843,20 @@ export function supabaseAdapter(
         "count unread",
       );
       for (const row of rows) counts[row.conversation_id] = Number(row.count);
+      return counts;
+    },
+
+    async countThreadReplies(rootMessageIds: string[]): Promise<Record<string, number>> {
+      const counts: Record<string, number> = {};
+      for (const rootId of rootMessageIds) counts[rootId] = 0;
+      if (rootMessageIds.length === 0) return counts;
+      const rows = requiredRows(
+        (await client.rpc(RPC.countThreadReplies, {
+          p_root_message_ids: rootMessageIds,
+        })) as QueryResult<Array<{ thread_root_message_id: string; count: number | string }>>,
+        "count thread replies",
+      );
+      for (const row of rows) counts[row.thread_root_message_id] = Number(row.count);
       return counts;
     },
 

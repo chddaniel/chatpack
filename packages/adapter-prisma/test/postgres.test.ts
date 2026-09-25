@@ -23,6 +23,12 @@ suite("Prisma PostgreSQL adapter", () => {
         "utf8",
       ),
     );
+    await pool.query(
+      await readFile(
+        new URL("../prisma/migrations/0002_thread_replies/migration.sql", import.meta.url),
+        "utf8",
+      ),
+    );
     client = new PrismaClient({ adapter: new PrismaPg({ connectionString: databaseUrl }) });
     storage = prismaAdapter(client);
     chat = chatpack({ storage, telemetry: false });
@@ -31,6 +37,43 @@ suite("Prisma PostgreSQL adapter", () => {
   afterAll(async () => {
     await client.$disconnect();
     await pool.end();
+  });
+
+  it("stores thread replies outside the main timeline and unread count", async () => {
+    const threaded = chatpack({ storage, threads: { enabled: true }, telemetry: false });
+    const conversation = await threaded.api.getOrCreateConversation({
+      userId: `alice-thread-${runId}`,
+      otherUserId: `bob-thread-${runId}`,
+    });
+    const root = await threaded.api.sendMessage({
+      userId: `alice-thread-${runId}`,
+      conversationId: conversation.id,
+      body: "root",
+    });
+    const reply = await threaded.api.sendMessage({
+      userId: `bob-thread-${runId}`,
+      conversationId: conversation.id,
+      body: "reply",
+      threadRootMessageId: root.id,
+    });
+    const main = await threaded.api.listMessages({
+      userId: `alice-thread-${runId}`,
+      conversationId: conversation.id,
+    });
+    const thread = await threaded.api.listThread({
+      userId: `alice-thread-${runId}`,
+      conversationId: conversation.id,
+      rootMessageId: root.id,
+    });
+    expect(main.messages.map((message) => message.id)).toEqual([root.id]);
+    expect(main.messages[0]?.threadReplyCount).toBe(1);
+    expect(thread.messages.map((message) => message.id)).toEqual([reply.id]);
+    expect(
+      await storage.countUnread({
+        userId: `alice-thread-${runId}`,
+        conversationIds: [conversation.id],
+      }),
+    ).toEqual({ [conversation.id]: 0 });
   });
 
   it("converges concurrent DMs and allocates message sequences", async () => {

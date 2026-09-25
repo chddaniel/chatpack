@@ -40,7 +40,7 @@ function envSet(name: string): Set<string> {
 const moderatorEmails = envSet("MODERATOR_EMAILS");
 const moderatorUserIds = envSet("MODERATOR_USER_IDS");
 
-async function isModerator(userId: string): Promise<boolean> {
+export async function isModerator(userId: string): Promise<boolean> {
   if (moderatorUserIds.has(userId.toLowerCase())) return true;
   if (moderatorEmails.size === 0) return false;
   // One primary-key lookup per moderator action, deliberately not cached: a
@@ -101,6 +101,7 @@ const files = createFileAttachmentPlugin({
 
 export const chat = chatpack({
   storage: drizzleAdapter(db),
+  threads: { enabled: true },
   auth: async () => {
     const user = await currentUser();
     return user ? { id: user.id } : null;

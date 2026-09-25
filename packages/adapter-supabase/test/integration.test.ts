@@ -31,6 +31,7 @@ describe.skipIf(!enabled)("Supabase integration (opt-in)", () => {
           body: `integration ${index}`,
           role: "user",
           replyToMessageId: null,
+          threadRootMessageId: null,
           forwardedFromMessageId: null,
           forwardedFromConversationId: null,
           forwardedFromSenderId: null,

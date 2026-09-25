@@ -80,6 +80,42 @@ describe("migrationStatements (single-statement drivers, e.g. Neon HTTP)", () =>
 });
 
 describe("conversations on Postgres", () => {
+  it("stores thread replies outside the main page and unread count", async () => {
+    const threaded = chatpack({
+      storage: drizzleAdapter(db),
+      threads: { enabled: true },
+      telemetry: false,
+    });
+    const conversation = await threaded.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "bob",
+    });
+    const root = await threaded.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "Root",
+    });
+    const reply = await threaded.api.sendMessage({
+      userId: "bob",
+      conversationId: conversation.id,
+      body: "Reply",
+      threadRootMessageId: root.id,
+    });
+    const main = await threaded.api.listMessages({
+      userId: "alice",
+      conversationId: conversation.id,
+    });
+    const thread = await threaded.api.listThread({
+      userId: "alice",
+      conversationId: conversation.id,
+      rootMessageId: root.id,
+    });
+    expect(main.messages.map((message) => message.id)).toEqual([root.id]);
+    expect(main.messages[0]?.threadReplyCount).toBe(1);
+    expect(thread.messages.map((message) => message.id)).toEqual([reply.id]);
+    const page = await threaded.api.listConversations({ userId: "alice" });
+    expect(page.conversations[0]?.unreadCount).toBe(0);
+  });
   it("find-or-create is idempotent per user pair (unique pair_key)", async () => {
     const first = await chat.api.getOrCreateConversation({ userId: "alice", otherUserId: "bob" });
     const again = await chat.api.getOrCreateConversation({ userId: "bob", otherUserId: "alice" });

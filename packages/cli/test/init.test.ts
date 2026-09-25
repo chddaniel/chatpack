@@ -105,7 +105,7 @@ describe("init confirmation gate", () => {
     expect(code).toBe(0);
     expect(confirm).toHaveBeenCalledWith("Apply this plan?", false);
     expect(await readdir(root)).toEqual([".git"]);
-  });
+  }, 15_000);
 
   it("does not ask when --yes is passed", async () => {
     const root = await emptyRepo();

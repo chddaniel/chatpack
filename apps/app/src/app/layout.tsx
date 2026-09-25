@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Geist_Mono, Nunito } from "next/font/google";
 import { Toaster } from "@/components/ui/sonner";
 import { ThemeProvider } from "@/components/theme-provider";
+import "@chatpack/ui/styles.css";
 import "./globals.css";
 
 const nunito = Nunito({ variable: "--font-nunito", subsets: ["latin"] });

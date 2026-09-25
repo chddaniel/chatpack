@@ -80,6 +80,7 @@ const messageRow = {
   edited_at: null,
   deleted_at: "2026-01-01T00:04:00.000Z",
   reply_to_message_id: "msg_0",
+  thread_root_message_id: null,
   forwarded_from_message_id: "source_1",
   forwarded_from_conversation_id: "source_conv",
   forwarded_from_sender_id: "carol",
@@ -195,6 +196,33 @@ describe("supabaseAdapter conversion and query boundaries", () => {
       cursor: first.nextCursor!,
     });
     expect(second.messages.map((entry) => entry.id)).toEqual(["msg_0"]);
+  });
+
+  it("filters top-level and thread pages and counts replies through the RPC", async () => {
+    const queries: string[] = [];
+    const client = fakeClient(({ pathname, search }) => {
+      if (pathname.endsWith("/chatpack_messages")) {
+        queries.push(search);
+        return { body: [messageRow] };
+      }
+      if (pathname.endsWith("/rpc/chatpack_count_thread_replies")) {
+        return { body: [{ thread_root_message_id: "root_1", count: "2" }] };
+      }
+      throw new Error(`unexpected request ${pathname}`);
+    });
+    const storage = supabaseAdapter(client);
+    await storage.listMessages({ conversationId: "conv_1", limit: 10 });
+    await storage.listMessages({
+      conversationId: "conv_1",
+      threadRootMessageId: "root_1",
+      limit: 10,
+    });
+    expect(queries[0]).toContain("thread_root_message_id=is.null");
+    expect(queries[1]).toContain("thread_root_message_id=eq.root_1");
+    await expect(storage.countThreadReplies?.(["root_1", "root_2"])).resolves.toEqual({
+      root_1: 2,
+      root_2: 0,
+    });
   });
 
   it("pages conversations through the SQL RPC instead of an unbounded id filter", async () => {

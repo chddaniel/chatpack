@@ -37,6 +37,7 @@
   "files": [
     "dist",
     "README.md",
+    "thread-upgrade.sql",
     "llms.txt"
   ],
   "scripts": {

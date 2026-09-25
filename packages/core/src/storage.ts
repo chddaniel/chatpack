@@ -287,6 +287,8 @@ export interface AddMessageInput {
    * conversation - store it verbatim, no validation needed.
    */
   replyToMessageId: string | null;
+  /** Root message id for a thread reply; null for a main-timeline message. */
+  threadRootMessageId: string | null;
   /**
    * Provenance for a forwarded message, or `null` on all three for an ordinary
    * one (`docs/decisions/0024` §1). Core has already checked the source message
@@ -326,6 +328,8 @@ export interface ReactionInput {
 /** Input for {@link StorageAdapter.listMessages}. */
 export interface ListMessagesInput {
   conversationId: string;
+  /** When present, list only replies under this root; otherwise list main messages. */
+  threadRootMessageId?: string;
   /** Max messages to return. */
   limit: number;
   /**
@@ -691,6 +695,9 @@ export interface StorageAdapter {
 
   /** List messages in a conversation, newest-first, with cursor pagination. */
   listMessages(input: ListMessagesInput): Promise<ListMessagesResult>;
+
+  /** Count replies for a page of root messages, keyed by root id. */
+  countThreadReplies?(rootMessageIds: string[]): Promise<Record<string, number>>;
 
   /**
    * Search non-tombstone messages in the user's participant conversations by

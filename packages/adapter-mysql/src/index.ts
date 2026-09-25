@@ -372,7 +372,10 @@ export function mysqlAdapter(db: DrizzleMysqlDatabase): StorageAdapter {
       return db.transaction(async (tx) => {
         await tx
           .update(conversations)
-          .set({ lastSeq: sql`${conversations.lastSeq} + 1`, lastActivityAt: now })
+          .set({
+            lastSeq: sql`${conversations.lastSeq} + 1`,
+            ...(input.threadRootMessageId === null ? { lastActivityAt: now } : {}),
+          })
           .where(eq(conversations.id, input.conversationId));
         const [conversation] = await tx
           .select({ lastSeq: conversations.lastSeq })
@@ -393,6 +396,7 @@ export function mysqlAdapter(db: DrizzleMysqlDatabase): StorageAdapter {
           editedAt: null,
           deletedAt: null,
           replyToMessageId: input.replyToMessageId,
+          threadRootMessageId: input.threadRootMessageId,
           forwardedFromMessageId: input.forwardedFromMessageId,
           forwardedFromConversationId: input.forwardedFromConversationId,
           forwardedFromSenderId: input.forwardedFromSenderId,
@@ -420,14 +424,19 @@ export function mysqlAdapter(db: DrizzleMysqlDatabase): StorageAdapter {
 
     async listMessages(input: ListMessagesInput): Promise<ListMessagesResult> {
       const cursorSeq = input.cursor === undefined ? undefined : Number(input.cursor);
+      const filter = and(
+        eq(messages.conversationId, input.conversationId),
+        input.threadRootMessageId === undefined
+          ? isNull(messages.threadRootMessageId)
+          : eq(messages.threadRootMessageId, input.threadRootMessageId),
+        cursorSeq !== undefined && Number.isFinite(cursorSeq)
+          ? lt(messages.seq, cursorSeq)
+          : undefined,
+      );
       const rows = await db
         .select()
         .from(messages)
-        .where(
-          cursorSeq !== undefined && Number.isFinite(cursorSeq)
-            ? and(eq(messages.conversationId, input.conversationId), lt(messages.seq, cursorSeq))
-            : eq(messages.conversationId, input.conversationId),
-        )
+        .where(filter)
         .orderBy(desc(messages.seq))
         .limit(input.limit + 1);
       const page = rows.slice(0, input.limit);
@@ -436,6 +445,23 @@ export function mysqlAdapter(db: DrizzleMysqlDatabase): StorageAdapter {
         messages: page.map(toMessage),
         nextCursor: rows.length > input.limit && last ? String(last.seq) : null,
       };
+    },
+
+    async countThreadReplies(rootMessageIds: string[]): Promise<Record<string, number>> {
+      const counts: Record<string, number> = Object.fromEntries(
+        rootMessageIds.map((id) => [id, 0]),
+      );
+      if (rootMessageIds.length === 0) return counts;
+      const rows = await db
+        .select({
+          rootId: messages.threadRootMessageId,
+          count: sql<number>`count(*)`.mapWith(Number),
+        })
+        .from(messages)
+        .where(inArray(messages.threadRootMessageId, rootMessageIds))
+        .groupBy(messages.threadRootMessageId);
+      for (const row of rows) if (row.rootId !== null) counts[row.rootId] = row.count;
+      return counts;
     },
 
     async searchMessages(input: SearchMessagesInput): Promise<SearchMessagesResult> {
@@ -570,6 +596,7 @@ export function mysqlAdapter(db: DrizzleMysqlDatabase): StorageAdapter {
           and(
             inArray(messages.conversationId, input.conversationIds),
             ne(messages.senderId, input.userId),
+            isNull(messages.threadRootMessageId),
             sql`${messages.seq} > coalesce(${readMessage.seq}, 0)`,
           ),
         )
