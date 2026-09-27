@@ -3,6 +3,8 @@ title: UI Blocks
 description: Reusable React blocks for Chatpack chat experiences.
 ---
 
+import { BlocksGallery } from "@/components/blocks-gallery";
+
 `@chatpack/ui` provides reusable React components on top of the headless
 `@chatpack/client` package. It does not own authentication, profiles, routing,
 or a database.
@@ -32,6 +34,8 @@ export function Chat({ conversationId, userId }: { conversationId: string; userI
   );
 }
 ```
+
+<BlocksGallery />
 
 ## Current Blocks
 
