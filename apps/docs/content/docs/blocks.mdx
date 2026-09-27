@@ -1,13 +1,14 @@
 ---
 title: UI Blocks
 description: Reusable React blocks for Chatpack chat experiences.
+full: true
 ---
 
 import { BlocksGallery } from "@/components/blocks-gallery";
 
-`@chatpack/ui` provides reusable React components on top of the headless
-`@chatpack/client` package. It does not own authentication, profiles, routing,
-or a database.
+Browse layouts, input controls, realtime status, group tools, and message primitives from `@chatpack/ui`. Previews use sample content. Connected components need a `ChatpackUIProvider` and a client in your app.
+
+<BlocksGallery />
 
 ## Install
 
@@ -34,8 +35,6 @@ export function Chat({ conversationId, userId }: { conversationId: string; userI
   );
 }
 ```
-
-<BlocksGallery />
 
 ## Current Blocks
 
@@ -85,9 +84,7 @@ All data comes from the public client hooks and actions. Realtime blocks do not
 implement their own reconnect or polling logic, and reactions are never copied
 into component state.
 
-Each block is exported from `@chatpack/ui` and has a corresponding catalog entry
-here. Blocks that depend on host policy accept callbacks instead of embedding
-authentication or user-database assumptions.
+The gallery highlights 42 exported components. The full list above covers the package. Blocks that depend on host policy accept callbacks instead of embedding authentication or user-database assumptions.
 
 ## Connected block contract
 
