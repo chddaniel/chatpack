@@ -1,11 +1,14 @@
 ---
 title: UI Blocks
 description: Reusable React blocks for Chatpack chat experiences.
+full: true
 ---
 
-`@chatpack/ui` provides reusable React components on top of the headless
-`@chatpack/client` package. It does not own authentication, profiles, routing,
-or a database.
+import { BlocksGallery } from "@/components/blocks-gallery";
+
+Browse layouts, input controls, realtime status, group tools, and message primitives from `@chatpack/ui`. Previews use sample content. Connected components need a `ChatpackUIProvider` and a client in your app.
+
+<BlocksGallery />
 
 ## Install
 
@@ -81,9 +84,7 @@ All data comes from the public client hooks and actions. Realtime blocks do not
 implement their own reconnect or polling logic, and reactions are never copied
 into component state.
 
-Each block is exported from `@chatpack/ui` and has a corresponding catalog entry
-here. Blocks that depend on host policy accept callbacks instead of embedding
-authentication or user-database assumptions.
+The gallery highlights 42 exported components. The full list above covers the package. Blocks that depend on host policy accept callbacks instead of embedding authentication or user-database assumptions.
 
 ## Connected block contract
 
@@ -127,3 +128,79 @@ contains a URL. Configure `@chatpack/file` in the host and pass its authorized
 `MessageAttachments`, or `AttachmentGallery`. A missing or failed target shows
 the unavailable state. UI must not call Chatpack routes directly or expose
 long-lived storage URLs.
+
+## Public API quick reference
+
+The blocks are small compositions around the public client. The props below are
+the main integration points; the TypeScript declarations remain the complete
+reference.
+
+### Connected layout and input blocks
+
+| Block              | Main props                                                                                 |
+| ------------------ | ------------------------------------------------------------------------------------------ |
+| `ConversationList` | `selectedId?`, `onSelect?`, `className?`, `renderUser?`                                    |
+| `MessageThread`    | `conversationId`, `onReply?`, `className?`, `showHeader?`, `onEmptyAction?`, `renderUser?` |
+| `ChatWindow`       | `conversationId`, `className?`                                                             |
+| `MessageComposer`  | `conversationId`, `replyTo?`, `disabled?`, `placeholder?`, `onSent?`, `onClearReply?`      |
+| `ConnectionStatus` | No props; reads the client's realtime status                                               |
+| `MessageActions`   | `message`, `canEdit?`, `onReply?`, `onForward?`, `onComplete?`                             |
+| `MessageSearch`    | `onSelect?`                                                                                |
+| `QuickReactions`   | `message`                                                                                  |
+
+`ConversationList` passes the selected `ClientConversation` to `onSelect`.
+`MessageThread` passes the selected `ClientMessage` to `onReply`. The composed
+blocks `CompactChatList`, `FlatMessageThread`, `GroupedMessageThread`,
+`InboxLayout`, `MobileChatSheet`, `FloatingChatWidget`, and `AssistantThread`
+wrap these connected blocks and preserve their client-backed behavior.
+
+### Realtime, groups, and moderation
+
+| Block                                            | Main props                          |
+| ------------------------------------------------ | ----------------------------------- |
+| `TypingIndicator`, `TypingDots`                  | `conversationId`                    |
+| `PresenceIndicator`, `OnlineStatusChip`          | `userId`                            |
+| `PresenceBar`, `PresenceAvatarStack`             | `userIds`                           |
+| `ReadReceipts`                                   | `conversationId`, `messageSeq`      |
+| `UnreadInbox`                                    | `conversationId`, `onSelect?`       |
+| `MarkReadButton`                                 | `conversationId`, `messageId`       |
+| `ParticipantManager`, `JoinRequests`             | `conversationId`, `renderUser?`     |
+| `InviteManager`, `ChannelSettings`, `MuteToggle` | `conversationId`                    |
+| `InviteAccept`                                   | `code`, `onAccepted?`               |
+| `ChannelDirectory`                               | `onJoined?`                         |
+| `LeaveGroup`                                     | `conversationId`, `onLeft?`         |
+| `ReportDialog`                                   | `targetType`, `targetId`, `onDone?` |
+| `BlockedUsers`, `MutedList`                      | `renderUser?`                       |
+
+These blocks use typed client actions for conversations, invites, channels,
+join requests, moderation, and participant changes. The host still owns
+authentication, profile rendering, navigation, and any success or error
+workflow outside the block.
+
+## Theme
+
+Import `styles.css` for the package defaults. Override a subtree with
+`ChatpackUIThemeProvider` when the host needs a small token adjustment:
+
+```tsx
+import { ChatpackUIThemeProvider, ChatWindow } from "@chatpack/ui";
+
+<ChatpackUIThemeProvider theme={{ accent: "#2563eb", accentContrast: "#ffffff", radius: "1rem" }}>
+  <ChatWindow conversationId={conversationId} />
+</ChatpackUIThemeProvider>;
+```
+
+Theme keys include `surface`, `panel`, `sidebar`, `border`, `input`, `text`,
+`muted`, `mutedSurface`, `accent`, `accentContrast`, `highlight`,
+`highlightContrast`, `secondary`, `secondaryContrast`, `bubbleOwn`,
+`bubbleOwnMuted`, `bubbleOwnContrast`, `bubbleOther`, `destructive`, `online`,
+`mentionRing`, `controlShadow`, `panelShadow`, `dialogShadow`, `subtleShadow`,
+and `radius`.
+
+## Replies and threads
+
+`MessageComposer.replyTo` and `ReplyQuoteBar` describe a reply to one message.
+They do not replace a full threaded-replies surface. A threaded UI still needs
+root-message identity, thread pagination, unread state, and navigation. Use the
+client thread APIs and app-owned routing or panels for those surfaces until a
+dedicated thread block is exported.
