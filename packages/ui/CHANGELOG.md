@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.1
+
+### Patch Changes
+
+- Updated dependencies [37946db]
+  - @chatpack/client@0.10.0
+  - @chatpack/file@0.1.9
+
 ## 0.2.0
 
 ### Minor Changes

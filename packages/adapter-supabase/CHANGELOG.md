@@ -1,5 +1,16 @@
 # @chatpack/adapter-supabase
 
+## 0.2.0
+
+### Minor Changes
+
+- 37946db: Allow one thread reply to appear in the main conversation and add a permission-scoped message lookup. The Chatpack app now has a thread inbox, follow and unread state, reply links, and optional email and browser push alerts.
+
+### Patch Changes
+
+- Updated dependencies [37946db]
+  - @chatpack/core@0.15.0
+
 ## 0.1.0
 
 ### Minor Changes
