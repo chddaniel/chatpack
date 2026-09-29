@@ -1,5 +1,11 @@
 # @chatpack/cli
 
+## 0.3.1
+
+### Patch Changes
+
+- Update starter package pins to the latest compatible Chatpack releases.
+
 ## 0.3.0
 
 ### Minor Changes
