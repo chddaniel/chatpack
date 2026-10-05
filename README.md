@@ -194,6 +194,10 @@ MariaDB, PlanetScale, Aurora, serverless/HTTP drivers, or edge-runtime support.
 > npx skills add chddaniel/chatpack
 > ```
 
+For MCP clients, [`@chatpack/mcp`](./packages/mcp) provides read-only tools for
+documentation search, framework guides, and React UI source. See its README for
+local setup and client configuration.
+
 ### 3. Mount the API (Next.js App Router)
 
 ```ts

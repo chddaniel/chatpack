@@ -1,0 +1,63 @@
+{
+  "name": "@chatpack/mcp",
+  "version": "0.1.0",
+  "description": "Read-only MCP server for Chatpack documentation and React UI source",
+  "license": "MIT",
+  "author": "Yeabsra Habtu <yeabsra.h@shipper.now> (https://github.com/Yeabsra-Habtu)",
+  "contributors": [
+    "DanielCH <hello@chdaniel.com> (https://github.com/chddaniel)",
+    "Ikem Peter <ikem.peter@shipper.now> (https://github.com/ikemHood)",
+    "DavidCH <chhddavid@gmail.com> (https://github.com/chhddavid)"
+  ],
+  "homepage": "https://github.com/chddaniel/chatpack#readme",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chddaniel/chatpack.git",
+    "directory": "packages/mcp"
+  },
+  "bugs": {
+    "url": "https://github.com/chddaniel/chatpack/issues"
+  },
+  "keywords": [
+    "chatpack",
+    "mcp",
+    "model-context-protocol",
+    "documentation"
+  ],
+  "type": "module",
+  "bin": {
+    "chatpack-mcp": "./dist/cli.js"
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "generate": "node scripts/generate-catalog.mjs",
+    "build": "pnpm generate && tsup",
+    "dev": "pnpm generate && tsup --watch",
+    "test": "pnpm build && vitest run",
+    "typecheck": "pnpm generate && tsc --noEmit",
+    "lint": "eslint src test",
+    "prepack": "pnpm build"
+  },
+  "devDependencies": {
+    "@modelcontextprotocol/client": "^2.3.0",
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@types/node": "^26.1.1",
+    "tsup": "^8.3.5",
+    "typescript": "^5.7.2",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/server": "^2.3.0",
+    "zod": "^4.1.12"
+  }
+}

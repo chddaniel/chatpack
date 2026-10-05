@@ -7,3 +7,4 @@ CHANGELOG.md
 .next/
 .source/
 apps/app/drizzle/meta/
+packages/mcp/src/catalog.generated.json
