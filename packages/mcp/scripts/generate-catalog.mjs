@@ -95,3 +95,12 @@ await writeFile(
   join(root, "packages/mcp/src/catalog.generated.json"),
   JSON.stringify({ snapshot, ...payload }),
 );
+const registryManifest = JSON.parse(await read("packages/mcp/server.json"));
+registryManifest.version = versions["@chatpack/mcp"];
+for (const entry of registryManifest.packages) {
+  if (entry.identifier === "@chatpack/mcp") entry.version = versions["@chatpack/mcp"];
+}
+await writeFile(
+  join(root, "packages/mcp/server.json"),
+  JSON.stringify(registryManifest, null, 2) + "\n",
+);
