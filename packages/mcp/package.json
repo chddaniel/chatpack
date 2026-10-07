@@ -1,6 +1,7 @@
 {
   "name": "@chatpack/mcp",
-  "version": "0.1.0",
+  "version": "0.2.0",
+  "mcpName": "io.github.ikemHood/chatpack",
   "description": "Read-only MCP server for Chatpack documentation and React UI source",
   "license": "MIT",
   "author": "Yeabsra Habtu <yeabsra.h@shipper.now> (https://github.com/Yeabsra-Habtu)",
