@@ -13,6 +13,7 @@ and real-time delivery - without rebuilding it from scratch.
 [![Discord](https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/gY3GCTRv5Y)
 [![X](https://img.shields.io/badge/X-@chatpackdev-000000?logo=x&logoColor=white)](https://x.com/chatpackdev)
 [![npm](https://img.shields.io/npm/v/@chatpack/core?logo=npm&color=CB3837&label=@chatpack/core)](https://www.npmjs.com/package/@chatpack/core)
+[![AllMCPs Verified](https://allmcps.com/api/badge/chatpack-mcp)](https://allmcps.com/mcp/chatpack-mcp?verify=487b08d3-e285-4de5-a2b7-fc05dc12c352)
 
 **[Documentation → docs.chatpack.dev](https://docs.chatpack.dev)** -
 quickstart, concepts, real-time, storage adapters, framework guides, and the
