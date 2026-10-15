@@ -89,7 +89,7 @@ curl -N http://localhost:3344/api/chat/u/test/bob/stream    # live events
 
 ## Deployment
 
-Vercel project `chatpack-demo-api` (team "Yeabsra's projects"), deployed from
+Vercel project `chatpack-demo-api`, deployed from
 this directory with `vercel deploy --prod` — same CLI-only flow as
 `apps/docs`, not git-connected, so redeploys are manual.
 

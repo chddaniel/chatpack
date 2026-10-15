@@ -20,9 +20,8 @@ quickstart, concepts, real-time, storage adapters, framework guides, and the
 full REST reference. (Source in [`apps/docs`](./apps/docs); run locally with
 `pnpm --filter @chatpack/docs dev`.)
 
-A project by **[DanielCH](https://github.com/chddaniel)** and
-**[DavidCH](https://github.com/chhddavid)** · principal author
-**[Yeabsra Habtu](https://github.com/Yeabsra-Habtu)** ·
+A project by **[CH Daniel](https://github.com/chddaniel)** and
+**[DavidCH](https://github.com/chhddavid)** ·
 [all contributors](https://github.com/chddaniel/chatpack/graphs/contributors)
 
 </div>
@@ -929,26 +928,19 @@ repo layout, dev workflow, and the adapter contract.
 
 ## Credits
 
-Chatpack is a project by **[DanielCH](https://github.com/chddaniel)** and
+Chatpack is a project by **[CH Daniel](https://github.com/chddaniel)** and
 **[DavidCH](https://github.com/chhddavid)**, who own and maintain it.
 
-The library itself was written by
-**[Yeabsra Habtu](https://github.com/Yeabsra-Habtu)** — the core engine and
-permission model, the HTTP handler, the storage adapter contract and both its
-memory and Drizzle/Postgres implementations, the real-time SSE transport and the
-ephemeral plugin trio, and the first-party browser client.
-
-**[Ikem Peter](https://github.com/ikemHood)** builds Chatpack alongside him — the
+**[Ikem Peter](https://github.com/ikemHood)** contributes to Chatpack — the
 moderation suite, the client's message search and its invite, join-request and
 channel wrappers, and the CLI refresh. **[DavidCH](https://github.com/chhddavid)**
 contributes to the code as well as co-owning the project.
 
-| Role                                                  |                                    |
-| ----------------------------------------------------- | ---------------------------------- |
-| **[DanielCH](https://github.com/chddaniel)**          | Project co-owner, maintainer       |
-| **[DavidCH](https://github.com/chhddavid)**           | Project co-owner, contributor      |
-| **[Yeabsra Habtu](https://github.com/Yeabsra-Habtu)** | Principal author, maintainer       |
-| **[Ikem Peter](https://github.com/ikemHood)**         | Contributing developer, maintainer |
+| Role                                          |                                    |
+| --------------------------------------------- | ---------------------------------- |
+| **[CH Daniel](https://github.com/chddaniel)** | Project co-owner, maintainer       |
+| **[DavidCH](https://github.com/chhddavid)**   | Project co-owner, contributor      |
+| **[Ikem Peter](https://github.com/ikemHood)** | Contributing developer, maintainer |
 
 Who wrote what is verifiable rather than asserted — see the
 [contributor graph](https://github.com/chddaniel/chatpack/graphs/contributors)

@@ -18,7 +18,7 @@ export const metadata: Metadata = {
   description:
     "Install a package, wire up your database and auth, and get a production-ready chat backend - 1:1 and group conversations, messages, permissions, read-state, and real-time delivery.",
   authors: [
-    { name: "Yeabsra Habtu", url: "https://github.com/Yeabsra-Habtu" },
+    { name: "CH Daniel", url: "https://github.com/chddaniel" },
     { name: "Ikem Peter", url: "https://github.com/ikemHood" },
     { name: "DavidCH", url: "https://github.com/chhddavid" },
   ],
