@@ -1,6 +1,6 @@
 {
   "name": "@chatpack/file",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Chatpack integration for Filepack-backed attachments",
   "license": "MIT",
   "author": "CH Daniel <hello@chdaniel.com> (https://github.com/chddaniel)",
