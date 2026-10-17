@@ -1,5 +1,17 @@
 # @chatpack/app
 
+## 0.1.2
+
+### Patch Changes
+
+- Updated dependencies [37946db]
+  - @chatpack/core@0.15.0
+  - @chatpack/client@0.10.0
+  - @chatpack/adapter-drizzle@0.11.0
+  - @chatpack/file@0.1.9
+  - @chatpack/transport-redis@0.2.2
+  - @chatpack/ui@0.2.1
+
 ## 0.1.1
 
 ### Patch Changes
