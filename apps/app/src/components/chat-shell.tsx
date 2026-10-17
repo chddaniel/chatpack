@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ClientMessage } from "@chatpack/client";
+import type { ChannelVisibility } from "@chatpack/core";
 import { X } from "lucide-react";
 import Image from "next/image";
 import { toast } from "sonner";
@@ -40,6 +41,7 @@ export function ChatShell({
   initialThreadRootId,
   initialReplyId,
   initialNewGroupOpen,
+  initialNewGroupVisibility = "private",
   isModerator,
 }: {
   user: PublicProfile;
@@ -47,6 +49,7 @@ export function ChatShell({
   initialThreadRootId: string | null;
   initialReplyId: string | null;
   initialNewGroupOpen: boolean;
+  initialNewGroupVisibility?: ChannelVisibility;
   isModerator: boolean;
 }) {
   const client = useMemo(() => createApplicationChatClient(user.id), [user.id]);
@@ -59,6 +62,8 @@ export function ChatShell({
   const [threadRootId, setThreadRootId] = useState<string | null>(initialThreadRootId);
   const [targetReplyId, setTargetReplyId] = useState<string | null>(initialReplyId);
   const [newGroupOpen, setNewGroupOpen] = useState(initialNewGroupOpen);
+  const [newGroupVisibility, setNewGroupVisibility] =
+    useState<ChannelVisibility>(initialNewGroupVisibility);
   const [conversationsOpen, setConversationsOpen] = useState(false);
   const [channelsOpen, setChannelsOpen] = useState(false);
   const [mutedConversationIds, setMutedConversationIds] = useState<ReadonlySet<string>>(
@@ -266,16 +271,35 @@ export function ChatShell({
       conversations={conversations}
       selectedId={selectedId}
       isModerator={isModerator}
-      onNewGroup={() => setNewGroupOpen(true)}
+      onNewGroup={() => {
+        setNewGroupVisibility("private");
+        setNewGroupOpen(true);
+      }}
       onBrowseChannels={() => setChannelsOpen(true)}
     />
   );
 
   return (
     <ChatProvider value={context}>
-      {newGroupOpen && <NewGroupDialog onClose={() => setNewGroupOpen(false)} />}
+      {newGroupOpen && (
+        <NewGroupDialog
+          initialVisibility={newGroupVisibility}
+          onClose={() => setNewGroupOpen(false)}
+        />
+      )}
       {channelsOpen && (
-        <ChannelDirectory user={user} client={client} onClose={() => setChannelsOpen(false)} />
+        <ChannelDirectory
+          user={user}
+          client={client}
+          onClose={() => setChannelsOpen(false)}
+          onCreateChannel={() => {
+            setChannelsOpen(false);
+            // Start with the safer private option; the dialog lets the user
+            // choose between a private group and a public channel.
+            setNewGroupVisibility("private");
+            setNewGroupOpen(true);
+          }}
+        />
       )}
       <main
         className={`grid h-dvh bg-background ${

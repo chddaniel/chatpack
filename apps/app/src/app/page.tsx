@@ -20,7 +20,7 @@ export default async function HomePage({
   if (!user) redirect("/sign-in");
   const initialConversationId =
     typeof params.conversation === "string" ? params.conversation : null;
-  const initialNewGroupOpen = params.new === "group";
+  const initialNewGroupOpen = params.new === "group" || params.new === "channel";
   const moderator = await isModerator(user.id);
   return (
     <ChatShell
@@ -29,6 +29,7 @@ export default async function HomePage({
       initialThreadRootId={typeof params.thread === "string" ? params.thread : null}
       initialReplyId={typeof params.reply === "string" ? params.reply : null}
       initialNewGroupOpen={initialNewGroupOpen}
+      initialNewGroupVisibility={params.new === "channel" ? "public" : "private"}
       isModerator={moderator}
     />
   );

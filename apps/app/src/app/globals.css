@@ -590,6 +590,18 @@
   gap: 3px;
 }
 
+.app-channel-directory-create {
+  margin-left: auto;
+  flex: 0 0 auto;
+  height: 28px;
+  min-height: 28px;
+  border-radius: 9px;
+  box-shadow: var(--chatpack-ui-control-shadow);
+  padding: 7px 12px;
+  font-size: 12px;
+  line-height: 14px;
+}
+
 .app-channel-directory-header [data-slot="dialog-title"],
 .app-channel-directory-state-copy strong {
   font-size: 15px;
@@ -609,6 +621,28 @@
   display: flex;
   min-height: 0;
   flex: 1 1 auto;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.app-channel-directory-section {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.app-channel-directory-section h3 {
+  margin: 2px 2px 0;
+  color: var(--chatpack-ui-muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.app-channel-directory-section-rows {
+  display: flex;
   flex-direction: column;
   gap: 6px;
 }
@@ -983,6 +1017,13 @@
   line-height: 17px;
 }
 
+.app-new-group-dialog-name [data-slot="input"]:focus-visible,
+.app-new-group-dialog-members .app-profile-picker-input:focus-visible {
+  border-color: var(--chatpack-ui-input) !important;
+  box-shadow: none;
+  outline: none;
+}
+
 .app-new-group-dialog-choice-row {
   display: flex;
   flex-wrap: wrap;
@@ -1158,73 +1199,96 @@
   line-height: 17px;
 }
 
-.app-profile-search-description {
+.app-profile-search-header [data-slot="dialog-description"] {
   color: var(--chatpack-ui-muted);
   font-size: 11px;
   line-height: 13px;
 }
 
-.app-profile-search-command {
+.app-profile-search-field-wrap {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.app-profile-search-field-wrap > svg {
+  position: absolute;
+  z-index: 1;
+  top: 10px;
+  left: 10px;
+  width: 16px;
+  height: 16px;
+  color: var(--chatpack-ui-muted);
+  pointer-events: none;
+}
+
+.app-profile-search-field {
+  width: 100%;
+  padding-left: 32px;
+}
+
+.app-profile-search-body {
+  display: flex;
   min-height: 0;
   flex: 1 1 auto;
-  gap: 0;
-  overflow: hidden;
-  border-radius: 0 !important;
-  background: transparent !important;
-  padding: 0 !important;
+  flex-direction: column;
+  align-self: stretch;
 }
 
-.app-profile-search-command [data-slot="command-input-wrapper"] {
-  padding: 0 0 8px;
-}
-
-.app-profile-search-command [data-slot="input-group"] {
-  height: 37px;
-  border: 1px solid var(--chatpack-ui-input);
-  border-radius: 10px;
-  background: var(--chatpack-ui-surface);
-}
-
-.app-profile-search-command [data-slot="command-input"] {
-  color: var(--chatpack-ui-text);
-  font-size: 14px;
-}
-
-.app-profile-search-command [data-slot="command-list"] {
-  max-height: none;
+.app-profile-search-body [data-slot="scroll-area-viewport"] {
+  display: flex;
   min-height: 0;
   flex: 1 1 auto;
-  padding: 0;
+  flex-direction: column;
 }
 
-.app-profile-search-command [data-slot="command-group"] {
+.app-profile-search-body [data-slot="scroll-area-viewport"] > div {
+  display: flex;
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+  flex-direction: column;
+}
+
+.app-profile-search-results {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: 0;
 }
 
-.app-profile-search-command [data-slot="command-item"] {
+.app-profile-search-result {
+  display: flex;
+  width: 100%;
   min-height: 48px;
+  align-items: center;
   gap: 9px;
-  border-radius: 10px !important;
+  border: 0;
+  border-radius: 10px;
+  background: var(--chatpack-ui-secondary);
   padding: 7px 8px;
   color: var(--chatpack-ui-text);
+  cursor: pointer;
   font-size: 13px;
   line-height: 16px;
+  text-align: left;
 }
 
-.app-profile-search-command [data-slot="command-item"] [data-slot="avatar"] {
+.app-profile-search-result:hover,
+.app-profile-search-result:focus-visible {
+  background: color-mix(in srgb, var(--chatpack-ui-secondary) 82%, var(--chatpack-ui-text));
+  outline: none;
+}
+
+.app-profile-search-result [data-slot="avatar"] {
   height: 34px;
   width: 34px;
   flex: 0 0 auto;
 }
 
-.app-profile-search-command [data-slot="command-item"] [data-slot="avatar-fallback"] {
+.app-profile-search-result [data-slot="avatar-fallback"] {
   font-size: 12px;
 }
 
-.app-profile-search-command [data-slot="command-empty"] {
+.app-profile-search-state {
   display: flex;
   height: 100%;
   align-items: center;
@@ -1262,8 +1326,8 @@
   background: var(--chatpack-ui-surface) !important;
   color: var(--chatpack-ui-text);
   padding: 10px 12px;
-  font-size: 13px;
-  line-height: 16px;
+  font-size: 14px;
+  line-height: 17px;
 }
 
 .app-profile-picker-results {
