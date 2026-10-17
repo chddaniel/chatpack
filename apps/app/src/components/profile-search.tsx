@@ -1,25 +1,20 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { MessageSquarePlus } from "lucide-react";
+import { MessageSquarePlus, Search } from "lucide-react";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-} from "@/components/ui/command";
-import {
   Dialog,
   DialogContent,
+  DialogDescription,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import { initialsOf, searchProfiles, type PublicProfile } from "@/lib/profiles";
 
 /**
@@ -49,6 +44,7 @@ export function ProfileSearch({
   const [profiles, setProfiles] = useState<PublicProfile[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
   const isOpen = controlledOpen ?? open;
   const setIsOpen = controlledOnOpenChange ?? setOpen;
 
@@ -80,7 +76,7 @@ export function ProfileSearch({
       controller.abort();
       window.clearTimeout(timer);
     };
-  }, [isOpen, query]);
+  }, [isOpen, query, retryCount]);
 
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
@@ -100,60 +96,76 @@ export function ProfileSearch({
       <DialogContent className="app-profile-search-dialog">
         <DialogHeader className="app-profile-search-header">
           <DialogTitle>New conversation</DialogTitle>
-          <p className="app-profile-search-description">Pick someone to message.</p>
+          <DialogDescription>Pick someone to message.</DialogDescription>
         </DialogHeader>
-        <Command shouldFilter={false} className="app-profile-search-command">
-          <CommandInput
+        <div className="app-profile-search-field-wrap">
+          <Search aria-hidden="true" />
+          <Input
+            className="chatpack-ui-search-dialog-field app-profile-search-field"
             placeholder="Search name or exact email"
+            aria-label="Search people"
+            autoFocus
             value={query}
-            onValueChange={(value) => {
+            onChange={(event) => {
+              const value = event.target.value;
               setQuery(value);
-              if (value.trim().length < 2) {
-                setLoading(false);
-                setError(false);
-              }
+              setProfiles([]);
+              setLoading(value.trim().length >= 2);
+              setError(false);
             }}
           />
-          <CommandList>
-            {loading ? (
-              <div className="app-profile-search-loading" aria-busy="true">
-                {[0, 1, 2, 3].map((index) => (
-                  <span key={index} />
-                ))}
-              </div>
-            ) : (
-              <>
-                <CommandEmpty>
-                  {error
-                    ? "Couldn’t load people. Try again."
-                    : query.length < 2
-                      ? "Enter at least two characters."
-                      : "No people found."}
-                </CommandEmpty>
-                <CommandGroup>
-                  {(query.trim().length < 2 ? [] : profiles).map((profile) => (
-                    <CommandItem
-                      key={profile.id}
-                      value={profile.id}
-                      onSelect={async () => {
-                        await onSelect(profile);
-                        setIsOpen(false);
-                        setQuery("");
-                        setProfiles([]);
-                      }}
-                    >
-                      <Avatar>
-                        <AvatarImage src={profile.image ?? undefined} />
-                        <AvatarFallback>{initialsOf(profile.name)}</AvatarFallback>
-                      </Avatar>
-                      <span>{profile.name}</span>
-                    </CommandItem>
-                  ))}
-                </CommandGroup>
-              </>
-            )}
-          </CommandList>
-        </Command>
+        </div>
+        <ScrollArea className="app-profile-search-body">
+          {loading ? (
+            <div className="app-profile-search-loading" aria-busy="true">
+              {[0, 1, 2, 3].map((index) => (
+                <span key={index} />
+              ))}
+            </div>
+          ) : error || query.trim().length < 2 || profiles.length === 0 ? (
+            <div className="app-profile-search-state">
+              {error ? (
+                <>
+                  <span>Couldn’t load people.</span>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setRetryCount((count) => count + 1)}
+                  >
+                    Try again
+                  </Button>
+                </>
+              ) : query.trim().length < 2 ? (
+                "Enter at least two characters."
+              ) : (
+                "No people found."
+              )}
+            </div>
+          ) : (
+            <div className="app-profile-search-results">
+              {profiles.map((profile) => (
+                <button
+                  type="button"
+                  key={profile.id}
+                  className="app-profile-search-result"
+                  onClick={async () => {
+                    await onSelect(profile);
+                    setIsOpen(false);
+                    setQuery("");
+                    setProfiles([]);
+                  }}
+                >
+                  <Avatar>
+                    <AvatarImage src={profile.image ?? undefined} />
+                    <AvatarFallback>{initialsOf(profile.name)}</AvatarFallback>
+                  </Avatar>
+                  <span>{profile.name}</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </ScrollArea>
       </DialogContent>
     </Dialog>
   );

@@ -33,10 +33,16 @@ import { initialsOf, type PublicProfile } from "@/lib/profiles";
  * two different groups, so every submit makes a new one and you become its first
  * admin.
  */
-export function NewGroupDialog({ onClose }: { onClose: () => void }) {
+export function NewGroupDialog({
+  onClose,
+  initialVisibility = "private",
+}: {
+  onClose: () => void;
+  initialVisibility?: ChannelVisibility;
+}) {
   const { client, directory, select } = useChat();
   const [name, setName] = useState("");
-  const [visibility, setVisibility] = useState<ChannelVisibility>("private");
+  const [visibility, setVisibility] = useState<ChannelVisibility>(initialVisibility);
   const [joinPolicy, setJoinPolicy] = useState<ChannelJoinPolicy>("approval");
   const [members, setMembers] = useState<PublicProfile[]>([]);
   const [busy, setBusy] = useState(false);
@@ -68,7 +74,7 @@ export function NewGroupDialog({ onClose }: { onClose: () => void }) {
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="app-new-group-dialog">
         <DialogHeader className="app-new-group-dialog-header">
-          <DialogTitle>New group</DialogTitle>
+          <DialogTitle>{visibility === "public" ? "New channel" : "New group"}</DialogTitle>
           {!busy && error === null && (
             <DialogDescription>Name it and pick who is in it.</DialogDescription>
           )}
@@ -197,7 +203,7 @@ export function NewGroupDialog({ onClose }: { onClose: () => void }) {
               Cancel
             </Button>
             <Button disabled={busy} onClick={() => void create()}>
-              Create group
+              {visibility === "public" ? "Create channel" : "Create group"}
             </Button>
           </DialogFooter>
         )}

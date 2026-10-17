@@ -1,7 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
-import type { ChatpackClientError, ClientChannelPreview } from "@chatpack/client";
+import type {
+  ChatpackClientError,
+  ClientChannelPreview,
+  ClientConversation,
+} from "@chatpack/client";
 import { ArrowLeft, LifeBuoy, Megaphone, UsersRound } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
@@ -30,14 +34,17 @@ export function ChannelDirectory({
   user,
   client: providedClient,
   onClose,
+  onCreateChannel,
 }: {
   user: PublicProfile;
   client?: ApplicationChatClient;
   onClose?: () => void;
+  onCreateChannel?: () => void;
 }) {
   const ownedClient = useMemo(() => createApplicationChatClient(user.id), [user.id]);
   const client = providedClient ?? ownedClient;
   const router = useRouter();
+  const conversations = client.useConversations({ limit: 50 });
   const [channels, setChannels] = useState<ClientChannelPreview[] | null>(null);
   const [error, setError] = useState<ChatpackClientError | null>(null);
   const [loading, setLoading] = useState(true);
@@ -112,6 +119,15 @@ export function ChannelDirectory({
   }
 
   const close = onClose ?? (() => router.push("/"));
+  const createChannel = onCreateChannel ?? (() => router.push("/?new=group"));
+  const groups = useMemo(
+    () =>
+      (conversations.data?.conversations ?? []).filter(
+        (conversation) => conversation.type === "group" && conversation.visibility === "private",
+      ),
+    [conversations.data],
+  );
+  const directoryError = error ?? conversations.error;
 
   return (
     <Dialog open onOpenChange={(open) => !open && close()}>
@@ -132,68 +148,68 @@ export function ChannelDirectory({
           </Button>
           <div className="app-channel-directory-header-copy">
             <DialogTitle>Channels</DialogTitle>
-            <DialogDescription>Public groups anyone can join.</DialogDescription>
+            <DialogDescription>Your groups and public channels.</DialogDescription>
           </div>
+          <Button
+            type="button"
+            size="sm"
+            className="app-channel-directory-create"
+            onClick={createChannel}
+          >
+            Create
+          </Button>
         </DialogHeader>
 
-        {error !== null ? (
+        {directoryError !== null ? (
           <ChannelDirectoryState
             image="/chatpack/error-3d.png"
             title="Couldn't load channels"
             description="The directory is unavailable right now. Channels you have already joined are unaffected."
-            detail={error.code}
+            detail={directoryError.code}
             actionLabel="Try again"
-            onAction={() => void load(null)}
+            onAction={() => {
+              if (error !== null) void load(null);
+              if (conversations.error !== null) void conversations.refetch();
+            }}
           />
-        ) : loading ? (
+        ) : loading || conversations.isPending ? (
           <ChannelDirectoryLoading />
-        ) : channels?.length === 0 ? (
+        ) : groups.length === 0 && channels?.length === 0 ? (
           <ChannelDirectoryState
             image="/chatpack/channel-empty.png"
             imageSize={55}
             imageHeight={52}
-            title="No channels yet"
-            description="A channel is a public group. Create one and anyone in your app can find and join it."
-            actionLabel="Create a channel"
-            onAction={() => router.push("/?new=group")}
+            title="No groups or channels yet"
+            description="Create a private group for selected members, or a public channel anyone can discover and join."
+            actionLabel="Create group or channel"
+            onAction={createChannel}
           />
         ) : (
           <div className="app-channel-directory-body">
-            {channels?.map((channel) => (
-              <div key={channel.conversationId} className="app-channel-directory-row">
-                <span className="app-channel-directory-icon" aria-hidden="true">
-                  <ChannelIcon name={channel.name} />
-                </span>
-                <span className="app-channel-directory-copy">
-                  <strong>{channel.name ?? "Unnamed channel"}</strong>
-                  <small>
-                    {channel.participantCount} members ·{" "}
-                    {channel.joinPolicy === "open" ? "open" : "approval needed"}
-                  </small>
-                </span>
-                {channel.requestPending ? (
-                  <span className="app-channel-directory-requested">Requested</span>
-                ) : (
-                  <Button
-                    size="sm"
-                    variant={channel.alreadyParticipant ? "ghost" : "default"}
-                    className={
-                      channel.alreadyParticipant
-                        ? "app-channel-directory-open"
-                        : "app-channel-directory-join"
-                    }
-                    disabled={joining === channel.conversationId}
-                    onClick={() => void join(channel)}
-                  >
-                    {channel.alreadyParticipant
-                      ? "Open"
-                      : channel.joinPolicy === "open"
-                        ? "Join"
-                        : "Request"}
-                  </Button>
-                )}
-              </div>
-            ))}
+            {groups.length > 0 && (
+              <ChannelDirectorySection title="Your groups">
+                {groups.map((group) => (
+                  <PrivateGroupRow
+                    key={group.id}
+                    group={group}
+                    onOpen={() => router.push(`/?conversation=${encodeURIComponent(group.id)}`)}
+                  />
+                ))}
+              </ChannelDirectorySection>
+            )}
+
+            {channels !== null && channels.length > 0 && (
+              <ChannelDirectorySection title="Public channels">
+                {channels.map((channel) => (
+                  <PublicChannelRow
+                    key={channel.conversationId}
+                    channel={channel}
+                    joining={joining}
+                    onJoin={() => void join(channel)}
+                  />
+                ))}
+              </ChannelDirectorySection>
+            )}
 
             {cursor !== null && (
               <Button variant="ghost" onClick={() => void load(cursor)}>
@@ -204,6 +220,72 @@ export function ChannelDirectory({
         )}
       </DialogContent>
     </Dialog>
+  );
+}
+
+function ChannelDirectorySection({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="app-channel-directory-section">
+      <h3>{title}</h3>
+      <div className="app-channel-directory-section-rows">{children}</div>
+    </section>
+  );
+}
+
+function PrivateGroupRow({ group, onOpen }: { group: ClientConversation; onOpen: () => void }) {
+  return (
+    <div className="app-channel-directory-row">
+      <span className="app-channel-directory-icon" aria-hidden="true">
+        <UsersRound />
+      </span>
+      <span className="app-channel-directory-copy">
+        <strong>{group.name ?? "Unnamed group"}</strong>
+        <small>Private group · {group.participants.length} members</small>
+      </span>
+      <Button size="sm" variant="ghost" className="app-channel-directory-open" onClick={onOpen}>
+        Open
+      </Button>
+    </div>
+  );
+}
+
+function PublicChannelRow({
+  channel,
+  joining,
+  onJoin,
+}: {
+  channel: ClientChannelPreview;
+  joining: string | null;
+  onJoin: () => void;
+}) {
+  return (
+    <div className="app-channel-directory-row">
+      <span className="app-channel-directory-icon" aria-hidden="true">
+        <ChannelIcon name={channel.name} />
+      </span>
+      <span className="app-channel-directory-copy">
+        <strong>{channel.name ?? "Unnamed channel"}</strong>
+        <small>
+          {channel.participantCount} members ·{" "}
+          {channel.joinPolicy === "open" ? "open" : "approval needed"}
+        </small>
+      </span>
+      {channel.requestPending ? (
+        <span className="app-channel-directory-requested">Requested</span>
+      ) : (
+        <Button
+          size="sm"
+          variant={channel.alreadyParticipant ? "ghost" : "default"}
+          className={
+            channel.alreadyParticipant ? "app-channel-directory-open" : "app-channel-directory-join"
+          }
+          disabled={joining === channel.conversationId}
+          onClick={onJoin}
+        >
+          {channel.alreadyParticipant ? "Open" : channel.joinPolicy === "open" ? "Join" : "Request"}
+        </Button>
+      )}
+    </div>
   );
 }
 
