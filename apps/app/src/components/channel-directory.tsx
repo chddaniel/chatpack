@@ -232,13 +232,7 @@ function ChannelDirectorySection({ title, children }: { title: string; children:
   );
 }
 
-function PrivateGroupRow({
-  group,
-  onOpen,
-}: {
-  group: ClientConversation;
-  onOpen: () => void;
-}) {
+function PrivateGroupRow({ group, onOpen }: { group: ClientConversation; onOpen: () => void }) {
   return (
     <div className="app-channel-directory-row">
       <span className="app-channel-directory-icon" aria-hidden="true">
@@ -283,18 +277,12 @@ function PublicChannelRow({
           size="sm"
           variant={channel.alreadyParticipant ? "ghost" : "default"}
           className={
-            channel.alreadyParticipant
-              ? "app-channel-directory-open"
-              : "app-channel-directory-join"
+            channel.alreadyParticipant ? "app-channel-directory-open" : "app-channel-directory-join"
           }
           disabled={joining === channel.conversationId}
           onClick={onJoin}
         >
-          {channel.alreadyParticipant
-            ? "Open"
-            : channel.joinPolicy === "open"
-              ? "Join"
-              : "Request"}
+          {channel.alreadyParticipant ? "Open" : channel.joinPolicy === "open" ? "Join" : "Request"}
         </Button>
       )}
     </div>
