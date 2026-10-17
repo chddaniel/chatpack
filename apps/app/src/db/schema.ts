@@ -1,5 +1,6 @@
 export * from "@chatpack/adapter-drizzle";
 export * from "@/db/auth-schema";
+export * from "@/db/thread-schema";
 
 // Filepack's four attachment tables are deliberately NOT re-exported here, and
 // that is load-bearing rather than an oversight.
@@ -13,7 +14,7 @@ export * from "@/db/auth-schema";
 // one that refuses to generate.
 //
 // Filepack owns that schema anyway. It ships the ordered, idempotent DDL as
-// `migrationStatements`, which `scripts/filepack-migrate.ts` applies and
+// `migrationStatements`, which `scripts/filepack-migrate.mts` applies and
 // `db:migrate` runs right after drizzle-kit. Keeping the tables out of this file
 // is also what stops drizzle-kit from trying to manage them: it diffs this file
 // against its own snapshot under `drizzle/meta`, so tables it has never seen are

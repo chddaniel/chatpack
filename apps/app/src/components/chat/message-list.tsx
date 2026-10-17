@@ -17,11 +17,13 @@ export function MessageList({
   conversationId,
   conversation,
   onReply,
+  onThread,
   onSayHello,
 }: {
   conversationId: string;
   conversation: ClientConversation | null;
   onReply: (message: ClientMessage) => void;
+  onThread: (message: ClientMessage) => void;
   onSayHello?: () => void;
 }) {
   const { client, viewer, directory } = useChat();
@@ -161,6 +163,7 @@ export function MessageList({
                 message={message}
                 conversation={conversation}
                 onReply={onReply}
+                onThread={onThread}
                 readByOthers={message.seq <= readSeq}
                 delivered={message.seq <= deliveredSeq}
               />

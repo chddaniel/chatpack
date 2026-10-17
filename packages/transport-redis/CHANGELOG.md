@@ -1,5 +1,12 @@
 # @chatpack/transport-redis
 
+## 0.2.1
+
+### Patch Changes
+
+- Updated dependencies [31fc33f]
+  - @chatpack/core@0.14.0
+
 ## 0.2.0
 
 ### Minor Changes
@@ -42,8 +49,7 @@
 ### Patch Changes
 
 - Fill in the `author` and `contributors` metadata, which was empty on every
-  published package. Yeabsra Habtu is credited as author (principal author of the
-  library), with chddaniel, Ikem Peter and chhddavid as contributors. Registry
+  published package. CH Daniel is credited as author, with Ikem Peter and chhddavid as contributors. Registry
   maintainers and publish rights are unchanged. No runtime or API changes —
   package metadata only, so authorship shows up on npm and in registry mirrors.
 - Updated dependencies

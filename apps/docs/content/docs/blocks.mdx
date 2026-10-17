@@ -1,11 +1,14 @@
 ---
 title: UI Blocks
 description: Reusable React blocks for Chatpack chat experiences.
+full: true
 ---
 
-`@chatpack/ui` provides reusable React components on top of the headless
-`@chatpack/client` package. It does not own authentication, profiles, routing,
-or a database.
+import { BlocksGallery } from "@/components/blocks-gallery";
+
+Browse layouts, input controls, realtime status, group tools, and message primitives from `@chatpack/ui`. Previews use sample content. Connected components need a `ChatpackUIProvider` and a client in your app.
+
+<BlocksGallery />
 
 ## Install
 
@@ -77,13 +80,11 @@ export function Chat({ conversationId, userId }: { conversationId: string; userI
 `ForwardedLabel`, `MentionChip`, `RoleTag`, `ErrorNotice`, `SystemMessage`,
 `SoftDeletedTombstone`, `EmptyInbox`, `EmojiPicker`
 
-Connected blocks use public client hooks and actions. Realtime blocks do not
-implement their own reconnect or polling logic. Host-controlled blocks accept
-callbacks or records instead of pretending to own application policy.
+All data comes from the public client hooks and actions. Realtime blocks do not
+implement their own reconnect or polling logic, and reactions are never copied
+into component state.
 
-Each block is exported from `@chatpack/ui` and has a corresponding catalog entry
-here. Blocks that depend on host policy accept callbacks instead of embedding
-authentication or user-database assumptions.
+The gallery highlights 42 exported components. The full list above covers the package. Blocks that depend on host policy accept callbacks instead of embedding authentication or user-database assumptions.
 
 ## Connected block contract
 
@@ -108,139 +109,78 @@ export function Chat({ conversationId, userId }: { conversationId: string; userI
 }
 ```
 
-Message blocks invoke `messages.edit`, `messages.delete`, `messages.react`,
-`messages.unreact`, and `messages.forward`. `MessageActions.canEdit` controls
-whether edit controls render; Chatpack core remains the authorization boundary
-for every mutation. `MessageComposer` sends on Enter and preserves Shift+Enter.
-Message lists reverse the client's newest-first page for display and call
-`markRead` for the newest item.
+Message actions call `messages.edit`, `messages.delete`, `messages.react`,
+`messages.unreact`, and `messages.forward`. Ownership is checked before edit
+and delete controls render; core remains the final authorization boundary.
+`MessageComposer` sends on Enter, preserves Shift+Enter, and throttles typing
+signals to one start action per three seconds. Message lists reverse the
+client's newest-first page for display and call `markRead` for the newest item.
 
-The main branch does not make every management surface client-connected. Invite
-acceptance and leaving a group call client actions. Participant management,
-channel settings, join requests, moderation, and several directory surfaces use
-host callbacks or host-provided records. This keeps authentication,
-authorization, profile lookup, navigation, and policy in the application.
+Group, channel, invite, join-request, and moderation blocks call their typed
+client actions. They do not accept fake report, mute, member, or channel arrays.
+Host callbacks remain for profile rendering, navigation, and success handling.
 
-## Media attachment boundary on `main`
+## Filepack attachments
 
-The `main` branch keeps file handling host-owned. `AttachmentComposer` and
-`AttachmentDropzone` return selected `File` objects through `onFiles`. The host
-uploads them, checks authorization, and passes records to the render blocks.
+Media metadata contains only `id`, `name`, `contentType`, and `size`. It never
+contains a URL. Configure `@chatpack/file` in the host and pass its authorized
+`resolveTarget` implementation to `ImageBubble`, `FileBubble`,
+`MessageAttachments`, or `AttachmentGallery`. A missing or failed target shows
+the unavailable state. UI must not call Chatpack routes directly or expose
+long-lived storage URLs.
 
-```ts
-interface ChatAttachment {
-  id: string;
-  name: string;
-  url?: string;
-  mimeType?: string;
-  size?: number;
-}
-```
+## Public API quick reference
 
-`ImageBubble`, `FileBubble`, `MessageAttachments`, and `AttachmentGallery`
-render a URL when one is present. They show `UnavailableAttachment` when it is
-missing. `@chatpack/ui` does not call storage routes or manage upload state
-beyond the presentational `UploadProgress` block.
+The blocks are small compositions around the public client. The props below are
+the main integration points; the TypeScript declarations remain the complete
+reference.
 
-## Main branch API matrix
+### Connected layout and input blocks
 
-Tables below record public props from `packages/ui/src` on `main`. They are the
-local reference for this page when the hosted gallery is unavailable.
+| Block              | Main props                                                                                 |
+| ------------------ | ------------------------------------------------------------------------------------------ |
+| `ConversationList` | `selectedId?`, `onSelect?`, `className?`, `renderUser?`                                    |
+| `MessageThread`    | `conversationId`, `onReply?`, `className?`, `showHeader?`, `onEmptyAction?`, `renderUser?` |
+| `ChatWindow`       | `conversationId`, `className?`                                                             |
+| `MessageComposer`  | `conversationId`, `replyTo?`, `disabled?`, `placeholder?`, `onSent?`, `onClearReply?`      |
+| `ConnectionStatus` | No props; reads the client's realtime status                                               |
+| `MessageActions`   | `message`, `canEdit?`, `onReply?`, `onForward?`, `onComplete?`                             |
+| `MessageSearch`    | `onSelect?`                                                                                |
+| `QuickReactions`   | `message`                                                                                  |
 
-### Layout and input
+`ConversationList` passes the selected `ClientConversation` to `onSelect`.
+`MessageThread` passes the selected `ClientMessage` to `onReply`. The composed
+blocks `CompactChatList`, `FlatMessageThread`, `GroupedMessageThread`,
+`InboxLayout`, `MobileChatSheet`, `FloatingChatWidget`, and `AssistantThread`
+wrap these connected blocks and preserve their client-backed behavior.
 
-| Block                  | Props                                                    |
-| ---------------------- | -------------------------------------------------------- |
-| `ConversationList`     | `selectedId?`, `onSelect?`, `className?`                 |
-| `ConversationHeader`   | `conversation`, `children?`                              |
-| `ConversationRow`      | `conversation`, `selected?`, `onSelect?`                 |
-| `MessageThread`        | `conversationId`, `onReply?`, `className?`               |
-| `MessageRow`           | `message`, `onReply?`, `children?`                       |
-| `InboxLayout`          | `conversationId`, `onSelect?`, `children?`               |
-| `MobileChatSheet`      | `open`, `onClose`, `conversationId`                      |
-| `FloatingChatWidget`   | `conversationId`, `label?`                               |
-| `JumpToLatest`         | `onClick`                                                |
-| `MessageComposer`      | `conversationId`, `replyTo?`, `onSent?`, `onClearReply?` |
-| `MentionComposer`      | Message composer props plus `children?`                  |
-| `MentionAutocomplete`  | `items`, `onSelect`                                      |
-| `ForwardDialog`        | `messageId`, `toConversationId`, `onForward?`            |
-| `ChatCommandPalette`   | `commands`                                               |
-| `StartDirectMessage`   | `otherUserId`, `onCreated?`                              |
-| `NewGroupForm`         | `onCreated?`                                             |
-| `MessageSearch`        | `onSelect?`                                              |
-| `MessageSearchResults` | `messages`, `onSelect?`                                  |
-| `QuickReactions`       | `messageId`, `emojis?`                                   |
-| `MessageReactions`     | `message`                                                |
+### Realtime, groups, and moderation
 
-`CompactChatList`, `FlatMessageThread`, `GroupedMessageThread`,
-`AssistantThread`, `ReplyComposer`, and `ChatComposerBar` compose or style the
-layout and input blocks listed above. Their props follow the wrapped block,
-with `ChatComposerBar` accepting `conversationId` and optional `replyTo`.
+| Block                                            | Main props                          |
+| ------------------------------------------------ | ----------------------------------- |
+| `TypingIndicator`, `TypingDots`                  | `conversationId`                    |
+| `PresenceIndicator`, `OnlineStatusChip`          | `userId`                            |
+| `PresenceBar`, `PresenceAvatarStack`             | `userIds`                           |
+| `ReadReceipts`                                   | `conversationId`, `messageSeq`      |
+| `UnreadInbox`                                    | `conversationId`, `onSelect?`       |
+| `MarkReadButton`                                 | `conversationId`, `messageId`       |
+| `ParticipantManager`, `JoinRequests`             | `conversationId`, `renderUser?`     |
+| `InviteManager`, `ChannelSettings`, `MuteToggle` | `conversationId`                    |
+| `InviteAccept`                                   | `code`, `onAccepted?`               |
+| `ChannelDirectory`                               | `onJoined?`                         |
+| `LeaveGroup`                                     | `conversationId`, `onLeft?`         |
+| `ReportDialog`                                   | `targetType`, `targetId`, `onDone?` |
+| `BlockedUsers`, `MutedList`                      | `renderUser?`                       |
 
-### Realtime and groups
+These blocks use typed client actions for conversations, invites, channels,
+join requests, moderation, and participant changes. The host still owns
+authentication, profile rendering, navigation, and any success or error
+workflow outside the block.
 
-| Block                                   | Props                          |
-| --------------------------------------- | ------------------------------ |
-| `TypingIndicator`, `TypingDots`         | `conversationId`               |
-| `PresenceIndicator`, `OnlineStatusChip` | `userId`                       |
-| `PresenceBar`                           | `userIds`                      |
-| `PresenceAvatarStack`                   | `userIds`, `renderFallback?`   |
-| `ReadReceipts`                          | `conversationId`, `messageSeq` |
-| `UnreadInbox`                           | `conversationId`, `onSelect?`  |
-| `MarkReadButton`                        | `conversationId`, `messageId`  |
-| `GroupList`                             | `onSelect?`                    |
-| `MembersList`                           | `conversation`                 |
-| `ParticipantManager`                    | `onAdd?`, `onRemove?`          |
-| `InviteManager`                         | `onCreate?`, `onRevoke?`       |
-| `InviteAccept`                          | `code`, `onAccepted?`          |
-| `JoinRequests`                          | `onResolve?`                   |
-| `ChannelDirectory`                      | `channels`, `onJoin?`          |
-| `ChannelSettings`                       | `onSave?`                      |
-| `LeaveGroup`                            | `conversationId`, `onLeft?`    |
+## Theme
 
-`ConnectionStatus` has no props. It reads `useRealtimeStatus` and renders
-nothing when status is `open`.
-
-### Moderation and media
-
-| Block                                     | Props                          |
-| ----------------------------------------- | ------------------------------ |
-| `BlockedUsers`                            | `userIds`, `onUnblock?`        |
-| `MuteToggle`                              | `muted`, `onToggle`            |
-| `MutedList`                               | `conversationIds`, `onSelect?` |
-| `ReportDialog`                            | `onSubmit?`                    |
-| `ModerationQueue`                         | `reports`, `onSelect?`         |
-| `BanManager`                              | `onBan?`, `onRevoke?`          |
-| `AttachmentComposer`                      | `onFiles`                      |
-| `AttachmentDropzone`                      | `onFiles`, `children?`         |
-| `MessageAttachments`, `AttachmentGallery` | `attachments`                  |
-| `ImageBubble`, `FileBubble`               | `attachment`                   |
-| `UploadProgress`                          | `value`                        |
-| `UnavailableAttachment`                   | None                           |
-
-### Primitives
-
-| Block                                                  | Props                                                   |
-| ------------------------------------------------------ | ------------------------------------------------------- |
-| `UserAvatarUnreadBadge`                                | `userId`, `unread?`                                     |
-| `ChatPrimitives`                                       | `children?`                                             |
-| `MessageBubble`                                        | `message`, `own`, `renderUser?`, `footer?`, `children?` |
-| `Timestamp`                                            | `date`                                                  |
-| `PresenceDot`                                          | `online`, `label?`                                      |
-| `ReadReceiptTicks`                                     | `read?`, `delivered?`                                   |
-| `ReactionPill`                                         | `reaction`, `pressed?`, `onClick?`                      |
-| `ReplyQuoteBar`                                        | `replyTo`                                               |
-| `MentionChip`                                          | `userId`                                                |
-| `RoleTag`                                              | `role`                                                  |
-| `ErrorNotice`                                          | `error`, `onRetry?`                                     |
-| `SystemMessage`                                        | `children`                                              |
-| `EmojiPicker`                                          | `onSelect`, `emojis?`                                   |
-| `ForwardedLabel`, `SoftDeletedTombstone`, `EmptyInbox` | None                                                    |
-
-## Theme and usage limits
-
-Import `styles.css` for package variables and layout classes. For small token
-overrides, wrap a subtree with `ChatpackUIThemeProvider`:
+Import `styles.css` for the package defaults. Override a subtree with
+`ChatpackUIThemeProvider` when the host needs a small token adjustment:
 
 ```tsx
 import { ChatpackUIThemeProvider, ChatWindow } from "@chatpack/ui";
@@ -250,15 +190,17 @@ import { ChatpackUIThemeProvider, ChatWindow } from "@chatpack/ui";
 </ChatpackUIThemeProvider>;
 ```
 
-Supported keys: `surface`, `panel`, `border`, `text`, `muted`, `accent`,
-`accentContrast`, `bubbleOther`, and `radius`.
+Theme keys include `surface`, `panel`, `sidebar`, `border`, `input`, `text`,
+`muted`, `mutedSurface`, `accent`, `accentContrast`, `highlight`,
+`highlightContrast`, `secondary`, `secondaryContrast`, `bubbleOwn`,
+`bubbleOwnMuted`, `bubbleOwnContrast`, `bubbleOther`, `destructive`, `online`,
+`mentionRing`, `controlShadow`, `panelShadow`, `dialogShadow`, `subtleShadow`,
+and `radius`.
 
-The catalog is not a Slack-style thread system. `replyToMessageId` creates a
-quote reply. True threads need separate root identity, pagination, unread
-state, and client surfaces. The separate threaded-replies design work keeps
-that model distinct.
+## Replies and threads
 
-The page documents source on `main`. The published gallery has 76 catalog names;
-the package also exports a few core blocks such as `GroupList`. Behavior is split
-between client-connected blocks and host-controlled presentation surfaces. Check
-the source and client version together when adding a block.
+`MessageComposer.replyTo` and `ReplyQuoteBar` describe a reply to one message.
+They do not replace a full threaded-replies surface. A threaded UI still needs
+root-message identity, thread pagination, unread state, and navigation. Use the
+client thread APIs and app-owned routing or panels for those surfaces until a
+dedicated thread block is exported.

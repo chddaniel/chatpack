@@ -33,6 +33,12 @@ export interface ChatContextValue {
   toggleBlock: (userId: string) => Promise<void>;
   /** Open a conversation in the message pane, or `null` to close it. */
   select: (conversationId: string | null) => void;
+  /** Open the thread containing a message, including a search result or direct link. */
+  openMessage: (message: {
+    id: string;
+    conversationId: string;
+    threadRootMessageId: string | null;
+  }) => void;
 }
 
 const ChatContext = createContext<ChatContextValue | null>(null);

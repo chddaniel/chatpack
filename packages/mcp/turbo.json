@@ -1,0 +1,16 @@
+{
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/llms.txt",
+        "$TURBO_ROOT$/apps/docs/content/docs/**",
+        "$TURBO_ROOT$/packages/*/package.json",
+        "$TURBO_ROOT$/packages/ui/src/**",
+        "$TURBO_ROOT$/packages/ui/styles.css"
+      ],
+      "outputs": ["dist/**", "src/catalog.generated.json"]
+    }
+  }
+}

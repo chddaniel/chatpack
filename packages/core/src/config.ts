@@ -275,6 +275,8 @@ export interface MessageHooks {
 export interface ChatpackOptions {
   /** Durable storage - e.g. `memoryAdapter()` or (from M4) `drizzleAdapter(db)`. */
   storage: StorageAdapter;
+  /** Enable one-level message threads for this Chatpack installation. Default: disabled. */
+  threads?: { enabled: boolean };
   /**
    * Resolve the current user from a request. Optional in M1 (core API takes
    * explicit user ids); required once the HTTP handler mounts in M2.

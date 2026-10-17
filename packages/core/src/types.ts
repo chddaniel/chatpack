@@ -270,6 +270,10 @@ export interface Message {
    * only ever change the body.
    */
   replyToMessageId: string | null;
+  /** Root message for a one-level thread. Null for main-timeline messages. */
+  threadRootMessageId: string | null;
+  /** Thread reply also shown in the main timeline. */
+  showInMain?: boolean;
   /**
    * The message this one was forwarded from, or `null` for an ordinary message
    * (`docs/decisions/0024`).
@@ -545,6 +549,8 @@ export interface ChannelPreview {
  * `StorageAdapter.listReactionsByMessageIds`, batched one call per page.
  */
 export type MessageWithDetails = Message & {
+  /** Count of replies in this message's thread when threads are enabled. */
+  threadReplyCount?: number;
   /**
    * Preview of the quoted parent, or `null` when this is not a reply (or the
    * parent row no longer exists at all - soft-deleted parents still resolve,

@@ -11,6 +11,7 @@ import { toast } from "sonner";
 
 import { useChat } from "@/components/chat/chat-context";
 import { SearchDialog } from "@/components/chat/search-dialog";
+import { ThreadInbox } from "@/components/chat/thread-inbox";
 import { AuthButton } from "@/components/auth-button";
 import { ProfileSearch } from "@/components/profile-search";
 import { ThemeSelector } from "@/components/theme-selector";
@@ -108,6 +109,10 @@ export function ConversationSidebar({
             )}
           </DropdownMenuContent>
         </DropdownMenu>
+      </div>
+
+      <div className="px-3 pb-2">
+        <ThreadInbox />
       </div>
 
       {conversations.error === null && !empty && (

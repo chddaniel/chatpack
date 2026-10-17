@@ -13,15 +13,15 @@ and real-time delivery - without rebuilding it from scratch.
 [![Discord](https://img.shields.io/badge/Discord-Join%20the%20community-5865F2?logo=discord&logoColor=white)](https://discord.gg/gY3GCTRv5Y)
 [![X](https://img.shields.io/badge/X-@chatpackdev-000000?logo=x&logoColor=white)](https://x.com/chatpackdev)
 [![npm](https://img.shields.io/npm/v/@chatpack/core?logo=npm&color=CB3837&label=@chatpack/core)](https://www.npmjs.com/package/@chatpack/core)
+[![AllMCPs Verified](https://allmcps.com/api/badge/chatpack-mcp)](https://allmcps.com/mcp/chatpack-mcp?verify=487b08d3-e285-4de5-a2b7-fc05dc12c352)
 
 **[Documentation → docs.chatpack.dev](https://docs.chatpack.dev)** -
 quickstart, concepts, real-time, storage adapters, framework guides, and the
 full REST reference. (Source in [`apps/docs`](./apps/docs); run locally with
 `pnpm --filter @chatpack/docs dev`.)
 
-A project by **[DanielCH](https://github.com/chddaniel)** and
-**[DavidCH](https://github.com/chhddavid)** · principal author
-**[Yeabsra Habtu](https://github.com/Yeabsra-Habtu)** ·
+A project by **[CH Daniel](https://github.com/chddaniel)** and
+**[DavidCH](https://github.com/chhddavid)** ·
 [all contributors](https://github.com/chddaniel/chatpack/graphs/contributors)
 
 </div>
@@ -158,6 +158,12 @@ export const chat = chatpack({
 });
 ```
 
+If your application already uses Prisma ORM 7, use the server-only
+[`@chatpack/adapter-prisma`](./packages/adapter-prisma) adapter. Copy its
+Prisma models and migration into your app, generate your own client, and pass
+it to `prismaAdapter(client)`. Verified provider is PostgreSQL 16; Prisma 8
+and other providers are not claimed compatible.
+
 > **No direct Postgres connection string?** Platforms that only expose a
 > database client (Supabase's JS client, Convex, and most AI-builder clouds)
 > are supported through a custom `StorageAdapter`. The full guide - reference
@@ -174,6 +180,12 @@ For Turso/libSQL, install `@chatpack/adapter-turso`, `@libsql/client`, and
 `drizzle-orm`, then run its exported migration statements before creating the
 Chatpack instance. See the [Turso adapter guide](./apps/docs/content/docs/storage/turso.mdx).
 
+For MySQL 8, install `@chatpack/adapter-mysql`, `mysql2`, and `drizzle-orm`,
+create a server-side transaction-capable pool, and run its exported migration
+statements before creating the Chatpack instance. See the [MySQL adapter
+guide](./apps/docs/content/docs/storage/mysql.mdx). This package does not claim
+MariaDB, PlanetScale, Aurora, serverless/HTTP drivers, or edge-runtime support.
+
 > Using a coding agent (Claude Code, Cursor, Codex)? Install the
 > [Chatpack agent skill](./skills) into your app's repo so the agent follows
 > the correct workflow automatically:
@@ -181,6 +193,10 @@ Chatpack instance. See the [Turso adapter guide](./apps/docs/content/docs/storag
 > ```sh
 > npx skills add chddaniel/chatpack
 > ```
+
+For MCP clients, [`@chatpack/mcp`](./packages/mcp) provides read-only tools for
+documentation search, framework guides, and React UI source. See its README for
+local setup and client configuration.
 
 ### 3. Mount the API (Next.js App Router)
 
@@ -839,6 +855,8 @@ threads. See [docs/MVP.md](./docs/MVP.md) for the full scope and reasoning.
 | ----------------------------------------------------------- | ------------------------------------------------ |
 | [`@chatpack/core`](./packages/core)                         | The chat engine: domain logic, permissions, API  |
 | [`@chatpack/adapter-drizzle`](./packages/adapter-drizzle)   | Drizzle/Postgres storage (production)            |
+| [`@chatpack/adapter-prisma`](./packages/adapter-prisma)     | Prisma 7/Postgres storage (server-only)          |
+| [`@chatpack/adapter-mysql`](./packages/adapter-mysql)       | MySQL 8 storage via Drizzle/mysql2 (server-side) |
 | [`@chatpack/adapter-turso`](./packages/adapter-turso)       | Turso/libSQL storage via Drizzle                 |
 | [`@chatpack/adapter-sqlite`](./packages/adapter-sqlite)     | Drizzle/SQLite storage (local, single node)      |
 | [`@chatpack/adapter-memory`](./packages/adapter-memory)     | In-memory storage (demos, tests)                 |
@@ -910,26 +928,19 @@ repo layout, dev workflow, and the adapter contract.
 
 ## Credits
 
-Chatpack is a project by **[DanielCH](https://github.com/chddaniel)** and
+Chatpack is a project by **[CH Daniel](https://github.com/chddaniel)** and
 **[DavidCH](https://github.com/chhddavid)**, who own and maintain it.
 
-The library itself was written by
-**[Yeabsra Habtu](https://github.com/Yeabsra-Habtu)** — the core engine and
-permission model, the HTTP handler, the storage adapter contract and both its
-memory and Drizzle/Postgres implementations, the real-time SSE transport and the
-ephemeral plugin trio, and the first-party browser client.
-
-**[Ikem Peter](https://github.com/ikemHood)** builds Chatpack alongside him — the
+**[Ikem Peter](https://github.com/ikemHood)** contributes to Chatpack — the
 moderation suite, the client's message search and its invite, join-request and
 channel wrappers, and the CLI refresh. **[DavidCH](https://github.com/chhddavid)**
 contributes to the code as well as co-owning the project.
 
-| Role                                                  |                                    |
-| ----------------------------------------------------- | ---------------------------------- |
-| **[DanielCH](https://github.com/chddaniel)**          | Project co-owner, maintainer       |
-| **[DavidCH](https://github.com/chhddavid)**           | Project co-owner, contributor      |
-| **[Yeabsra Habtu](https://github.com/Yeabsra-Habtu)** | Principal author, maintainer       |
-| **[Ikem Peter](https://github.com/ikemHood)**         | Contributing developer, maintainer |
+| Role                                          |                                    |
+| --------------------------------------------- | ---------------------------------- |
+| **[CH Daniel](https://github.com/chddaniel)** | Project co-owner, maintainer       |
+| **[DavidCH](https://github.com/chhddavid)**   | Project co-owner, contributor      |
+| **[Ikem Peter](https://github.com/ikemHood)** | Contributing developer, maintainer |
 
 Who wrote what is verifiable rather than asserted — see the
 [contributor graph](https://github.com/chddaniel/chatpack/graphs/contributors)

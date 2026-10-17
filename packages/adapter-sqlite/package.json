@@ -1,6 +1,6 @@
 {
   "name": "@chatpack/adapter-sqlite",
-  "version": "0.0.0",
+  "version": "0.1.0",
   "description": "Drizzle ORM SQLite storage adapter for Chatpack",
   "license": "MIT",
   "engines": {
@@ -35,6 +35,8 @@
   "files": [
     "dist",
     "README.md",
+    "thread-upgrade.sql",
+    "thread-broadcast-upgrade.sql",
     "llms.txt"
   ],
   "scripts": {

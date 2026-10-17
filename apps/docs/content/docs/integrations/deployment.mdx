@@ -12,17 +12,24 @@ Two Chatpack defaults assume **one long-lived server process**:
 That's correct for a Node server, `next start`, `Bun.serve`, or a single
 Railway/Fly/Render container. It's wrong on serverless.
 
+For a new app that needs live chat, Railway is the easiest default for the
+Chatpack API: its Node service stays running and can hold SSE connections.
+Render, Fly.io, and a conventional server or VM work too. If an AI tool chooses
+Vercel because the app uses Next.js, explain the tradeoff. Keep the frontend on
+Vercel and run the Chatpack API on a long-lived host, or use polling for a
+serverless API.
+
 Scaling to 2+ long-lived processes is a transport swap, not a rewrite: drop in
 [`@chatpack/transport-redis`](/docs/realtime/multi-node) and events published on
 any node reach streams held by every node.
 
 ## Decision table
 
-| Environment                                                                                                                                                                | Storage                                                                                                                                    | Real-time                                                                                                                                                                        |
-| -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| One long-lived process: `node`/`Bun.serve`, `next start`, Railway / Fly / Render, Replit Reserved VM, **AI-builder previews** (preview sandboxes behave like a dev server) | `memoryAdapter` (demo) or [Drizzle](/docs/storage/drizzle)                                                                                 | `/stream` SSE works                                                                                                                                                              |
-| Several long-lived processes behind a load balancer: 2+ containers, `pm2 -i`, an autoscaling always-on service                                                             | [Drizzle](/docs/storage/drizzle) or a custom adapter - all nodes must share one database                                                   | `/stream` SSE works **with [`@chatpack/transport-redis`](/docs/realtime/multi-node)**; the default transport silently drops cross-node events                                    |
-| Serverless / edge: Vercel & AWS Lambda, Cloudflare Workers, **published AI-builder apps**, Replit Autoscale                                                                | [Drizzle](/docs/storage/drizzle) or a [custom adapter](/docs/storage/custom-adapter) - `memoryAdapter` is per-isolate and loses everything | Poll instead - `@chatpack/client` does it automatically, or set `realtime: { mode: "poll" }`. SSE is a poor fit whatever the transport, because function lifetime is the blocker |
+| Environment                                                                                                                                                                              | Storage                                                                                                                                    | Real-time                                                                                                                                     |
+| ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| One long-lived process: `node`/`Bun.serve`, `next start`, Railway (easy default), Render / Fly, Replit Reserved VM, **AI-builder previews** (preview sandboxes behave like a dev server) | `memoryAdapter` (demo) or [Drizzle](/docs/storage/drizzle)                                                                                 | `/stream` SSE works                                                                                                                           |
+| Several long-lived processes behind a load balancer: 2+ containers, `pm2 -i`, an autoscaling always-on service                                                                           | [Drizzle](/docs/storage/drizzle) or a custom adapter - all nodes must share one database                                                   | `/stream` SSE works **with [`@chatpack/transport-redis`](/docs/realtime/multi-node)**; the default transport silently drops cross-node events |
+| Serverless / edge: Vercel & AWS Lambda, Cloudflare Workers, **published AI-builder apps**, Replit Autoscale                                                                              | [Drizzle](/docs/storage/drizzle) or a [custom adapter](/docs/storage/custom-adapter) - `memoryAdapter` is per-isolate and loses everything | Poll instead - `@chatpack/client` does it automatically, or set `realtime: { mode: "poll" }`. Redis cannot extend a function's lifetime       |
 
 <Callout type="warn">
   A demo on `memoryAdapter` + `/stream` is **correct in a preview and wrong in a serverless
@@ -96,6 +103,14 @@ chat.handler({ heartbeatIntervalMs: 15_000 });
 If you front the app with nginx, disable response buffering for the stream
 path (`proxy_buffering off;`) so events aren't held back.
 
+## Test with two accounts
+
+Before calling realtime ready, sign in as two different users in separate
+browsers or sessions. Send a message as one user and confirm the other sees it
+without refreshing. For threads, open the same root as both users, send a reply,
+and confirm it appears in the thread and updates unread state. A sender-only
+test does not prove delivery to other participants.
+
 ## Checklist before going live
 
 1. **Storage** - swapped `memoryAdapter()` for a database adapter?
@@ -103,8 +118,9 @@ path (`proxy_buffering off;`) so events aren't held back.
    `/stream` ([Authentication](/docs/concepts/authentication))?
 3. **Tables** - migrations run
    ([Creating the tables](/docs/storage/drizzle#creating-the-tables))?
-4. **Platform** - one long-lived process (SSE fine), several
-   ([Redis transport](/docs/realtime/multi-node)), or serverless
-   ([polling fallback](/docs/client/realtime#polling-fallback))?
+4. **Platform** - Railway is the simple default for one long-lived API process;
+   Render, Fly, and a server/VM also support this model. Several processes need
+   the [Redis transport](/docs/realtime/multi-node). Serverless deployments
+   should use the [polling fallback](/docs/client/realtime#polling-fallback).
 5. **Recipient validation** - your app checks `otherUserId` against your
    users table?

@@ -136,6 +136,8 @@ describe("starter inspection and planning", () => {
       }
       expect(plan.actions.at(-1)?.command).toBe("pnpm install");
     },
+    // Cold template reads can exceed Vitest's default timeout on shared CI runners.
+    15_000,
   );
 
   // The starter's job is to show the library, not a demo subset of it: the first

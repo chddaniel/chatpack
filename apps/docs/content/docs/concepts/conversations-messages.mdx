@@ -419,16 +419,13 @@ MESSAGE_NOT_FOUND` - the same wording as an unknown id, so a
   would be a race the sender cannot win.
 - **Deleting a parent leaves its replies alone.** Each keeps its pointer and
   renders a "message deleted" quote bar.
-- **A reply to a reply is flat.** One hop, no nesting, no depth limit, no
-  thread root - the transcript stays one `seq`-ordered list.
+- **A quote reply to another quote reply stays in the main list.** The pointer
+  names its immediate parent.
 - The pointer is **immutable**: `editMessage` only ever changes the body, so a
   reply can't be re-targeted.
 
-<Callout type="info">
-  This is deliberately **not** threads. A thread is a second axis of ordering - a message becomes a
-  container with its own reply list, unread count, and pagination. That stays out of scope; see the
-  [roadmap](/docs/project/roadmap).
-</Callout>
+To put a reply in a separate thread, use `threadRootMessageId`. See
+[Message threads](/docs/concepts/message-threads).
 
 ## Reactions
 

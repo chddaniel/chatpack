@@ -493,6 +493,52 @@ describe("message search", () => {
 });
 
 describe("messages", () => {
+  it("shows a broadcast reply in one thread and the main chat without duplicating it", async () => {
+    const chat = createChat({ threads: { enabled: true } });
+    const conversation = await chat.api.getOrCreateConversation({
+      userId: "alice",
+      otherUserId: "bob",
+    });
+    const root = await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "Root",
+    });
+    await chat.api.markRead({ userId: "bob", conversationId: conversation.id, messageId: root.id });
+    const reply = await chat.api.sendMessage({
+      userId: "alice",
+      conversationId: conversation.id,
+      body: "Shared reply",
+      threadRootMessageId: root.id,
+      alsoSendToMain: true,
+    });
+
+    const main = await chat.api.listMessages({ userId: "bob", conversationId: conversation.id });
+    const thread = await chat.api.listThread({
+      userId: "bob",
+      conversationId: conversation.id,
+      rootMessageId: root.id,
+    });
+    const [bobConversation] = (await chat.api.listConversations({ userId: "bob" })).conversations;
+    expect(main.messages.map((message) => message.id)).toEqual([reply.id, root.id]);
+    expect(thread.messages.map((message) => message.id)).toEqual([reply.id]);
+    expect(bobConversation!.unreadCount).toBe(1);
+    expect(
+      await chat.api.getMessage({
+        userId: "bob",
+        conversationId: conversation.id,
+        messageId: reply.id,
+      }),
+    ).toMatchObject({ id: reply.id, showInMain: true });
+    await expect(
+      chat.api.getMessage({
+        userId: "mallory",
+        conversationId: conversation.id,
+        messageId: reply.id,
+      }),
+    ).rejects.toMatchObject({ code: "FORBIDDEN_READ" });
+  });
+
   it("assigns a strictly increasing seq per conversation", async () => {
     const chat = createChat();
     const conversation = await chat.api.getOrCreateConversation({

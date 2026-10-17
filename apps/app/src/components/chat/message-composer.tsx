@@ -34,17 +34,20 @@ export function MessageComposer({
   conversation,
   replyTo,
   onClearReply,
+  threadRootMessageId,
 }: {
   conversationId: string;
   conversation: ClientConversation | null;
   replyTo: ClientMessage | null;
   onClearReply: () => void;
+  threadRootMessageId?: string;
 }) {
   const { client, files, viewer, directory } = useChat();
   const [body, setBody] = useState("");
   const [pending, setPending] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
   const [sending, setSending] = useState(false);
+  const [alsoSendToMain, setAlsoSendToMain] = useState(false);
   const [sendError, setSendError] = useState<{ code: string; message: string } | null>(null);
   const [mentionQuery, setMentionQuery] = useState<string | null>(null);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -74,6 +77,7 @@ export function MessageComposer({
   }, [conversation?.participants, directory, mentionQuery, viewer.id]);
 
   function signalTyping(): void {
+    if (threadRootMessageId !== undefined) return;
     const now = Date.now();
     if (now < typingSignalledUntil.current) return;
     typingSignalledUntil.current = now + TYPING_SIGNAL_INTERVAL_MS;
@@ -83,6 +87,7 @@ export function MessageComposer({
   }
 
   function stopTyping(): void {
+    if (threadRootMessageId !== undefined) return;
     typingSignalledUntil.current = 0;
     void client.typing.stop({ conversationId });
   }
@@ -183,6 +188,8 @@ export function MessageComposer({
       conversationId,
       body: text,
       ...(replyTo === null ? {} : { replyToMessageId: replyTo.id }),
+      ...(threadRootMessageId === undefined ? {} : { threadRootMessageId }),
+      ...(threadRootMessageId !== undefined && alsoSendToMain ? { alsoSendToMain: true } : {}),
       ...(mentions.length === 0 ? {} : { mentions }),
       ...(uploaded.length === 0 ? {} : { metadata: createFileAttachmentMetadata(uploaded) }),
     });
@@ -193,6 +200,7 @@ export function MessageComposer({
       return;
     }
     setBody("");
+    setAlsoSendToMain(false);
     setPending([]);
     setSendError(null);
     setMentionQuery(null);
@@ -347,6 +355,17 @@ export function MessageComposer({
             </InputGroupAddon>
           </InputGroup>
         </div>
+
+        {threadRootMessageId !== undefined && (
+          <label className="flex items-center gap-2 px-1 text-xs text-muted-foreground">
+            <input
+              type="checkbox"
+              checked={alsoSendToMain}
+              onChange={(event) => setAlsoSendToMain(event.target.checked)}
+            />
+            Also send to chat
+          </label>
+        )}
 
         <input
           ref={fileInputRef}

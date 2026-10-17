@@ -12,6 +12,8 @@ import {
   Check,
   CheckCheck,
   CornerUpLeft,
+  Link2,
+  MessageSquare,
   Forward,
   MoreHorizontal,
   Pencil,
@@ -42,12 +44,14 @@ export function MessageRow({
   message,
   conversation,
   onReply,
+  onThread,
   readByOthers,
   delivered,
 }: {
   message: ClientMessage;
   conversation: ClientConversation | null;
   onReply: (message: ClientMessage) => void;
+  onThread?: (message: ClientMessage) => void;
   /** Whether anyone else has read up to this message (own messages only). */
   readByOthers: boolean;
   /** Whether a recipient's live stream has received it (own messages only). */
@@ -93,6 +97,19 @@ export function MessageRow({
     // client can render a tombstone instead of a hole in the sequence.
     const result = await client.messages.delete({ messageId: message.id });
     if (result.error) toast.error(result.error.message);
+  }
+
+  async function copyLink(): Promise<void> {
+    const url = new URL("/", window.location.origin);
+    url.searchParams.set("conversation", message.conversationId);
+    url.searchParams.set("thread", message.threadRootMessageId ?? message.id);
+    if (message.threadRootMessageId !== null) url.searchParams.set("reply", message.id);
+    try {
+      await navigator.clipboard.writeText(url.toString());
+      toast.success("Message link copied.");
+    } catch {
+      toast.error("Could not copy message link.");
+    }
   }
 
   return (
@@ -196,6 +213,8 @@ export function MessageRow({
               isOwn={isOwn}
               onReact={toggleReaction}
               onReply={() => onReply(message)}
+              onThread={onThread === undefined ? undefined : () => onThread(message)}
+              onCopyLink={() => void copyLink()}
               onEdit={() => setDraft(message.body)}
               onDelete={remove}
               onForward={() => setForwarding(true)}
@@ -203,6 +222,19 @@ export function MessageRow({
             />
           )}
         </div>
+
+        {onThread !== undefined && (message.threadReplyCount ?? 0) > 0 && (
+          <button
+            type="button"
+            className="mt-1 flex items-center gap-1 text-xs text-primary hover:underline"
+            onClick={() => onThread(message)}
+          >
+            <MessageSquare className="size-3" />
+            {message.threadRootMessageId === null
+              ? `${message.threadReplyCount} ${message.threadReplyCount === 1 ? "reply" : "replies"}`
+              : "View thread"}
+          </button>
+        )}
 
         {message.reactions.length > 0 && (
           <div className="app-message-reactions mt-1 flex flex-wrap gap-1">
@@ -249,6 +281,8 @@ function MessageMenu({
   isOwn,
   onReact,
   onReply,
+  onThread,
+  onCopyLink,
   onEdit,
   onDelete,
   onForward,
@@ -257,6 +291,8 @@ function MessageMenu({
   isOwn: boolean;
   onReact: (emoji: string) => Promise<void>;
   onReply: () => void;
+  onThread?: () => void;
+  onCopyLink: () => void;
   onEdit: () => void;
   onDelete: () => Promise<void>;
   onForward: () => void;
@@ -292,6 +328,16 @@ function MessageMenu({
         <DropdownMenuItem onSelect={onReply}>
           <CornerUpLeft />
           Reply
+        </DropdownMenuItem>
+        {onThread !== undefined && (
+          <DropdownMenuItem onSelect={onThread}>
+            <MessageSquare />
+            Reply in thread
+          </DropdownMenuItem>
+        )}
+        <DropdownMenuItem onSelect={onCopyLink}>
+          <Link2 />
+          Copy link
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={onForward}>
           <Forward />

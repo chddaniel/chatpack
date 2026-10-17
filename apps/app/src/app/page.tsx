@@ -11,6 +11,8 @@ export default async function HomePage({
 }: {
   searchParams: Promise<{
     conversation?: string | string[];
+    thread?: string | string[];
+    reply?: string | string[];
     new?: string | string[];
   }>;
 }) {
@@ -24,6 +26,8 @@ export default async function HomePage({
     <ChatShell
       user={{ id: user.id, name: user.name ?? "User", image: user.image ?? null }}
       initialConversationId={initialConversationId}
+      initialThreadRootId={typeof params.thread === "string" ? params.thread : null}
+      initialReplyId={typeof params.reply === "string" ? params.reply : null}
       initialNewGroupOpen={initialNewGroupOpen}
       isModerator={moderator}
     />

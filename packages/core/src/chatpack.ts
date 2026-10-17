@@ -245,6 +245,10 @@ export interface SendMessageInput {
    * render and send.
    */
   replyToMessageId?: string;
+  /** Send into a one-level thread rooted at this main-timeline message. */
+  threadRootMessageId?: string;
+  /** Also show this thread reply in the conversation's main timeline. */
+  alsoSendToMain?: boolean;
   /**
    * User ids to mark as mentioned (`docs/decisions/0023`). Every id must be a
    * participant of this conversation, else `MENTION_NOT_PARTICIPANT`.
@@ -295,6 +299,18 @@ export interface ListMessagesApiInput {
   conversationId: string;
   limit?: number;
   cursor?: string;
+}
+
+/** Input for loading replies under one main-timeline message. */
+export interface ListThreadApiInput extends ListMessagesApiInput {
+  rootMessageId: string;
+}
+
+/** Input for fetching one message in a readable conversation. */
+export interface GetMessageApiInput {
+  userId: string;
+  conversationId: string;
+  messageId: string;
 }
 
 /** Result of {@link ChatpackApi.listMessages}. */
@@ -610,6 +626,11 @@ export interface ChatpackApi {
 
   /** List messages newest-first with cursor pagination. Requires read permission. */
   listMessages(input: ListMessagesApiInput): Promise<ListMessagesApiResult>;
+  /** List one root's replies newest-first. Requires installation threads and read permission. */
+  listThread(input: ListThreadApiInput): Promise<ListMessagesApiResult>;
+
+  /** Fetch one message, including its reply count and reactions. */
+  getMessage(input: GetMessageApiInput): Promise<MessageWithDetails>;
 
   /** Search non-tombstone messages in the user's participant conversations. */
   searchMessages(input: SearchMessagesApiInput): Promise<SearchMessagesApiResult>;
@@ -804,6 +825,12 @@ export interface ChatpackInstance {
  * ```
  */
 export function chatpack(options: ChatpackOptions): ChatpackInstance {
+  if (options.threads?.enabled && !options.storage.countThreadReplies) {
+    throw new ChatpackError(
+      "THREADS_UNSUPPORTED",
+      "This storage adapter does not support threads.",
+    );
+  }
   if (options.hooks?.afterMessageMutation && options.hooks.afterMessageSend) {
     throw new ChatpackError(
       "INVALID_INPUT",
@@ -1522,10 +1549,15 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
       ),
     ];
     const messageIds = messages.map((message) => message.id);
-    const [parents, reactions, mentions] = await Promise.all([
+    const [parents, reactions, mentions, threadCounts] = await Promise.all([
       parentIds.length === 0 ? Promise.resolve([]) : storage.getMessagesByIds(parentIds),
       storage.listReactionsByMessageIds(messageIds),
       storage.listMentionsByMessageIds(messageIds),
+      options.threads?.enabled && storage.countThreadReplies
+        ? storage.countThreadReplies([
+            ...new Set(messages.map((message) => message.threadRootMessageId ?? message.id)),
+          ])
+        : Promise.resolve({} as Record<string, number>),
     ]);
 
     const parentsById = new Map(parents.map((parent) => [parent.id, parent]));
@@ -1547,6 +1579,9 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
         message.replyToMessageId === null ? undefined : parentsById.get(message.replyToMessageId);
       return {
         ...message,
+        ...(options.threads?.enabled
+          ? { threadReplyCount: threadCounts[message.threadRootMessageId ?? message.id] ?? 0 }
+          : {}),
         replyTo: parent === undefined ? null : toReference(parent),
         reactions: summarize(reactionsByMessage.get(message.id) ?? []),
         mentions: mentionsByMessage.get(message.id) ?? [],
@@ -2274,6 +2309,34 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
       await requireWrite(input.userId, conversation);
       await requireDirectInteractionAllowed(input.userId, conversation);
 
+      if (input.threadRootMessageId !== undefined) {
+        if (!options.threads?.enabled) {
+          throw new ChatpackError(
+            "THREADS_DISABLED",
+            "Threads are disabled for this installation.",
+          );
+        }
+        requireNonEmptyId(input.threadRootMessageId, "threadRootMessageId");
+        const root = await storage.getMessage(input.threadRootMessageId);
+        if (!root || root.conversationId !== conversation.id || root.threadRootMessageId !== null) {
+          throw new ChatpackError(
+            "MESSAGE_NOT_FOUND",
+            "Thread root was not found in this conversation.",
+          );
+        }
+        if (input.alsoSendToMain === true && !storage.supportsThreadBroadcast) {
+          throw new ChatpackError(
+            "INVALID_INPUT",
+            "This storage adapter does not support broadcasting thread replies.",
+          );
+        }
+      } else if (input.alsoSendToMain === true) {
+        throw new ChatpackError(
+          "INVALID_INPUT",
+          "Only thread replies can also appear in the main timeline.",
+        );
+      }
+
       // A reply must point inside this conversation (ADR 0013 §1). Same error
       // as markRead uses, so a cross-conversation id can't be used to probe
       // whether a message exists somewhere the caller cannot read. Deleted
@@ -2315,6 +2378,8 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
         body: accepted.body,
         role: input.role ?? "user",
         replyToMessageId: input.replyToMessageId ?? null,
+        threadRootMessageId: input.threadRootMessageId ?? null,
+        showInMain: input.alsoSendToMain === true,
         forwardedFromMessageId: null,
         forwardedFromConversationId: null,
         forwardedFromSenderId: null,
@@ -2405,6 +2470,7 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
         role: input.role ?? "user",
         // Not a reply, and the source's parent is not in this conversation.
         replyToMessageId: null,
+        threadRootMessageId: null,
         forwardedFromMessageId: provenance.messageId,
         forwardedFromConversationId: provenance.conversationId,
         forwardedFromSenderId: provenance.senderId,
@@ -2441,6 +2507,44 @@ export function chatpack(options: ChatpackOptions): ChatpackInstance {
         cursor: input.cursor,
       });
       return { messages: await withDetails(messages), nextCursor };
+    },
+
+    async listThread(input) {
+      if (!options.threads?.enabled) {
+        throw new ChatpackError("THREADS_DISABLED", "Threads are disabled for this installation.");
+      }
+      requireNonEmptyId(input.userId, "userId");
+      await requireActiveUser(input.userId);
+      const conversation = await requireConversation(input.conversationId);
+      await requireRead(input.userId, conversation);
+      requireNonEmptyId(input.rootMessageId, "rootMessageId");
+      const root = await storage.getMessage(input.rootMessageId);
+      if (!root || root.conversationId !== conversation.id || root.threadRootMessageId !== null) {
+        throw new ChatpackError(
+          "MESSAGE_NOT_FOUND",
+          "Thread root was not found in this conversation.",
+        );
+      }
+      const { messages, nextCursor } = await storage.listMessages({
+        conversationId: conversation.id,
+        threadRootMessageId: root.id,
+        limit: normalizeLimit(input.limit),
+        cursor: input.cursor,
+      });
+      return { messages: await withDetails(messages), nextCursor };
+    },
+
+    async getMessage(input) {
+      requireNonEmptyId(input.userId, "userId");
+      await requireActiveUser(input.userId);
+      const conversation = await requireConversation(input.conversationId);
+      await requireRead(input.userId, conversation);
+      requireNonEmptyId(input.messageId, "messageId");
+      const message = await storage.getMessage(input.messageId);
+      if (!message || message.conversationId !== conversation.id) {
+        throw new ChatpackError("MESSAGE_NOT_FOUND", "Message was not found in this conversation.");
+      }
+      return withDetailsOne(message);
     },
 
     async searchMessages(input) {

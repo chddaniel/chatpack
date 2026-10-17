@@ -232,6 +232,8 @@ function toMessage(row: MessageRow): Message {
     editedAt: row.editedAt,
     deletedAt: row.deletedAt,
     replyToMessageId: row.replyToMessageId,
+    threadRootMessageId: row.threadRootMessageId,
+    showInMain: row.showInMain,
     forwardedFromMessageId: row.forwardedFromMessageId,
     forwardedFromConversationId: row.forwardedFromConversationId,
     forwardedFromSenderId: row.forwardedFromSenderId,
@@ -773,6 +775,7 @@ export function drizzleAdapter<TQueryResult extends PgQueryResultHKT>(
 
   return {
     moderation,
+    supportsThreadBroadcast: true,
     async getOrCreateDirectConversation(
       input: GetOrCreateDirectConversationInput,
     ): Promise<GetOrCreateDirectConversationResult> {
@@ -966,7 +969,9 @@ export function drizzleAdapter<TQueryResult extends PgQueryResultHKT>(
           .update(conversations)
           .set({
             lastSeq: sql`${conversations.lastSeq} + 1`,
-            lastActivityAt: now,
+            ...(input.threadRootMessageId === null || input.showInMain === true
+              ? { lastActivityAt: now }
+              : {}),
           })
           .where(eq(conversations.id, input.conversationId))
           .returning({ seq: conversations.lastSeq });
@@ -988,6 +993,8 @@ export function drizzleAdapter<TQueryResult extends PgQueryResultHKT>(
             editedAt: null,
             deletedAt: null,
             replyToMessageId: input.replyToMessageId,
+            threadRootMessageId: input.threadRootMessageId,
+            showInMain: input.showInMain ?? false,
             // Frozen at write time, never re-resolved (ADR 0024 §2).
             forwardedFromMessageId: input.forwardedFromMessageId,
             forwardedFromConversationId: input.forwardedFromConversationId,
@@ -1024,7 +1031,12 @@ export function drizzleAdapter<TQueryResult extends PgQueryResultHKT>(
       // Newest-first keyset pagination: the cursor is the seq of the last
       // message on the previous page.
       const cursorSeq = input.cursor === undefined ? undefined : Number(input.cursor);
-      const conversationFilter = eq(messages.conversationId, input.conversationId);
+      const conversationFilter = and(
+        eq(messages.conversationId, input.conversationId),
+        input.threadRootMessageId === undefined
+          ? or(isNull(messages.threadRootMessageId), eq(messages.showInMain, true))
+          : eq(messages.threadRootMessageId, input.threadRootMessageId),
+      );
 
       const rows = await db
         .select()
@@ -1043,6 +1055,21 @@ export function drizzleAdapter<TQueryResult extends PgQueryResultHKT>(
       const nextCursor = hasMore && last ? String(last.seq) : null;
 
       return { messages: page.map(toMessage), nextCursor };
+    },
+
+    async countThreadReplies(rootMessageIds: string[]): Promise<Record<string, number>> {
+      const counts = Object.fromEntries(rootMessageIds.map((id) => [id, 0]));
+      if (rootMessageIds.length === 0) return counts;
+      const rows = await db
+        .select({
+          rootId: messages.threadRootMessageId,
+          count: sql`count(*)`.mapWith(Number),
+        })
+        .from(messages)
+        .where(inArray(messages.threadRootMessageId, rootMessageIds))
+        .groupBy(messages.threadRootMessageId);
+      for (const row of rows) if (row.rootId !== null) counts[row.rootId] = row.count;
+      return counts;
     },
 
     async searchMessages(input: SearchMessagesInput): Promise<SearchMessagesResult> {
@@ -1195,6 +1222,7 @@ export function drizzleAdapter<TQueryResult extends PgQueryResultHKT>(
             or(...input.conversationIds.map((id) => eq(messages.conversationId, id))),
             // A viewer's own messages are never unread; tombstones count.
             ne(messages.senderId, input.userId),
+            or(isNull(messages.threadRootMessageId), eq(messages.showInMain, true)),
             sql`${messages.seq} > coalesce(${readMsg.seq}, 0)`,
           ),
         )

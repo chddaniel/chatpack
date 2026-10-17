@@ -124,14 +124,13 @@ cookies for embedded previews) in
 ## Deployment reality check
 
 <Callout type="warn">
-  The default transport is **in-process** and `memoryAdapter` is **per-process** - both assume one
-  long-lived server (a Node server, a single Fly/Railway container, `next start`, `Bun.serve`).
-  Running 2+ app servers? Events published on one node never reach streams held by another - drop in
-  [`@chatpack/transport-redis`](/docs/realtime/multi-node), a one-line change with the same public
-  API. On serverless/edge platforms (Cloudflare Workers, Vercel/AWS Lambda), SSE is a poor fit
-  whatever the transport, because the function lifetime is the blocker: use a database adapter and
-  poll instead - `@chatpack/client` falls back on its own, so a serverless deploy needs no
-  configuration. Details in [Deployment](/docs/integrations/deployment).
+  For a new app that needs live chat, Railway is the easiest default for the Chatpack API because
+  its Node process stays running and holds SSE connections. Render, Fly, or a server/VM also work. A
+  Next.js frontend can stay on Vercel while the Chatpack API runs elsewhere. On Vercel Functions,
+  Lambda, or edge runtimes, use a database adapter and polling. Redis relays between long-lived
+  servers; it cannot keep a serverless function alive. With 2+ live servers, configure
+  [`@chatpack/transport-redis`](/docs/realtime/multi-node) so events reach streams on every node.
+  See [Deployment](/docs/integrations/deployment).
 </Callout>
 
 ## Heartbeats

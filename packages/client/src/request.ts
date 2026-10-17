@@ -58,6 +58,8 @@ function errorCodeForStatus(status: number): ChatpackClientErrorCode {
  */
 const serverErrorCodes = {
   SEARCH_UNSUPPORTED: true,
+  THREADS_UNSUPPORTED: true,
+  THREADS_DISABLED: true,
   FORBIDDEN_READ: true,
   FORBIDDEN_WRITE: true,
   CONVERSATION_NOT_FOUND: true,

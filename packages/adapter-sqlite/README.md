@@ -42,6 +42,12 @@ SQLite stores dates as millisecond integers, JSON as text, and booleans as
 integers. The adapter converts database rows back to real `Date` instances and
 plain metadata objects before returning them to Chatpack.
 
+For an existing database, run [`thread-upgrade.sql`](./thread-upgrade.sql) once
+before enabling `threads`. New databases get the column from `migrationSql`.
+Run [`thread-broadcast-upgrade.sql`](./thread-broadcast-upgrade.sql) before using
+`alsoSendToMain` on an existing database. New databases get this column from
+`migrationSql`.
+
 SQLite write concurrency is serialized by SQLite's transaction and locking
 model. Use a database-backed adapter with an appropriate deployment topology
 for multi-process or multi-region workloads.

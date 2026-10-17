@@ -10,3 +10,860 @@ html > body[data-scroll-locked] {
   margin-right: 0px !important;
   --removed-body-scroll-bar-size: 0px !important;
 }
+
+#nd-page:has(.chatpack-gallery-selected) > h1,
+#nd-page:has(.chatpack-gallery-selected) > p,
+#nd-page:has(.chatpack-gallery-selected) > .flex.flex-row,
+#nd-page:has(.chatpack-gallery-selected) > .prose > p:first-child {
+  display: none;
+}
+
+.chatpack-gallery {
+  --gallery-bg: #0b0b0d;
+  --gallery-panel: #151518;
+  --gallery-border: #2a2a2f;
+  --gallery-text: #f5f5f6;
+  --gallery-muted: #a1a1aa;
+  --gallery-blue: #0869ec;
+  width: 100%;
+  min-width: 0;
+  margin: 1.75rem 0 4rem;
+  color: var(--gallery-text);
+  font-size: 0.875rem;
+}
+
+.chatpack-gallery * {
+  box-sizing: border-box;
+}
+.chatpack-gallery button {
+  color: inherit;
+  font: inherit;
+}
+.chatpack-gallery button:focus-visible {
+  outline: 2px solid #77a9ff;
+  outline-offset: 3px;
+}
+.chatpack-gallery-section-heading,
+.chatpack-gallery-catalog-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin: 2rem 0 0.95rem;
+}
+
+.chatpack-gallery-section-heading {
+  display: block;
+}
+.chatpack-gallery-section-heading span,
+.chatpack-gallery-catalog-heading > div > span,
+.chatpack-gallery-selected-heading > span {
+  display: block;
+  color: #85858d;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+.chatpack-gallery h3 {
+  margin: 0.25rem 0 0;
+  color: var(--gallery-text);
+  font-size: 1.16rem;
+  font-weight: 650;
+  letter-spacing: -0.025em;
+}
+.chatpack-gallery-featured,
+.chatpack-gallery-grid {
+  display: grid;
+  gap: 0.85rem;
+}
+.chatpack-gallery-featured {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.chatpack-gallery-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.chatpack-gallery-feature-card,
+.chatpack-gallery-card {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid var(--gallery-border);
+  border-radius: 0.7rem;
+  background: #0a0a0c;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    border-color 150ms ease,
+    transform 150ms ease,
+    box-shadow 150ms ease;
+}
+.chatpack-gallery-feature-card:hover,
+.chatpack-gallery-card:hover {
+  transform: translateY(-2px);
+  border-color: #66666e;
+  box-shadow: 0 10px 25px #0005;
+}
+.chatpack-gallery-card-stage {
+  position: relative;
+  display: block;
+  min-width: 0;
+  height: 13.5rem;
+  overflow: hidden;
+  padding: 0.8rem;
+  background-color: #0c0c0f;
+  background-image: radial-gradient(#35353b 0.7px, transparent 0.7px);
+  background-size: 10px 10px;
+}
+.chatpack-gallery-feature-card .chatpack-gallery-card-stage {
+  height: 18rem;
+}
+.chatpack-gallery-card-category {
+  position: absolute;
+  z-index: 2;
+  top: 0.7rem;
+  left: 0.75rem;
+  color: #b6b6bc;
+  font-size: 0.63rem;
+  font-weight: 700;
+  letter-spacing: 0.075em;
+  text-transform: uppercase;
+}
+.chatpack-gallery-card-stage > .chatpack-preview {
+  width: 100%;
+  height: calc(100% - 0.7rem);
+  margin-top: 0.7rem;
+}
+.chatpack-gallery-card-copy {
+  display: block;
+  min-height: 5.7rem;
+  padding: 0.85rem 0.95rem 0.95rem;
+  border-top: 1px solid var(--gallery-border);
+}
+.chatpack-gallery-feature-card .chatpack-gallery-card-copy {
+  min-height: 5.15rem;
+}
+.chatpack-gallery-card-copy strong,
+.chatpack-gallery-card-copy small {
+  display: block;
+}
+.chatpack-gallery-card-copy strong {
+  color: #f3f3f4;
+  font-size: 0.88rem;
+  font-weight: 650;
+  line-height: 1.35;
+}
+.chatpack-gallery-card-copy small {
+  margin-top: 0.28rem;
+  color: #898990;
+  font-size: 0.73rem;
+  line-height: 1.4;
+}
+.chatpack-gallery-tabs,
+.chatpack-gallery-mode-tabs,
+.chatpack-gallery-device-tabs {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.25rem;
+  border: 1px solid var(--gallery-border);
+  border-radius: 0.55rem;
+  background: #151518;
+}
+.chatpack-gallery-tabs {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.chatpack-gallery-tabs button,
+.chatpack-gallery-mode-tabs button,
+.chatpack-gallery-device-tabs button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  min-height: 2rem;
+  padding: 0.35rem 0.65rem;
+  border: 0;
+  border-radius: 0.35rem;
+  background: transparent;
+  color: #aaaab1;
+  font-size: 0.75rem;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.chatpack-gallery-tabs button:hover,
+.chatpack-gallery-mode-tabs button:hover,
+.chatpack-gallery-device-tabs button:hover {
+  color: #fff;
+  background: #242428;
+}
+.chatpack-gallery-tabs button.is-active,
+.chatpack-gallery-mode-tabs button.is-active,
+.chatpack-gallery-device-tabs button.is-active {
+  color: #18181b;
+  background: #f4f4f5;
+}
+.chatpack-gallery-selected {
+  min-width: 0;
+}
+.chatpack-gallery-back {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin-bottom: 1.25rem;
+  padding: 0.25rem 0;
+  border: 0;
+  background: transparent;
+  color: #a8a8b0 !important;
+  font-size: 0.78rem !important;
+  cursor: pointer;
+}
+.chatpack-gallery-back:hover {
+  color: #fff !important;
+}
+.chatpack-gallery-selected-heading h1 {
+  margin: 0.5rem 0 0;
+  color: #fafafa;
+  font-size: clamp(1.7rem, 3vw, 2.3rem);
+  line-height: 1.16;
+  letter-spacing: -0.035em;
+}
+.chatpack-gallery-selected-heading p {
+  margin: 0.8rem 0 1.3rem;
+  color: #a1a1aa;
+  font-size: 1rem;
+  line-height: 1.55;
+}
+.chatpack-gallery-note {
+  margin: 0 0 1.4rem !important;
+  padding: 0.85rem 1rem;
+  border: 1px dashed #39393e;
+  border-radius: 0.65rem;
+  color: #aaaab2;
+  background: #111113;
+  font-size: 0.82rem;
+  line-height: 1.55;
+}
+.chatpack-gallery-note code,
+.chatpack-gallery-source-note code {
+  padding: 0 0.2rem;
+  color: #d2d2d8;
+  font-size: 0.93em;
+}
+.chatpack-gallery-detail {
+  overflow: hidden;
+  border: 1px solid var(--gallery-border);
+  border-radius: 0.7rem;
+  background: #0b0b0d;
+}
+.chatpack-gallery-detail-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-height: 3.6rem;
+  padding: 0.48rem 0.65rem;
+  border-bottom: 1px solid var(--gallery-border);
+  background: #101013;
+}
+.chatpack-gallery-mode-tabs {
+  border: 0;
+  padding: 0;
+  background: transparent;
+}
+.chatpack-gallery-device-tabs {
+  margin-left: auto;
+  border: 0;
+  background: transparent;
+}
+.chatpack-gallery-device-tabs button {
+  width: 2.2rem;
+  padding-inline: 0;
+}
+.chatpack-gallery-copy-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.42rem;
+  min-height: 2.1rem;
+  padding: 0.35rem 0.68rem;
+  border: 1px solid #38383e;
+  border-radius: 0.4rem;
+  background: #17171a;
+  color: #e1e1e4;
+  font-size: 0.76rem !important;
+  font-weight: 600 !important;
+  white-space: nowrap;
+  cursor: pointer;
+  margin-left: auto;
+}
+
+.chatpack-gallery-detail-toolbar:has(.chatpack-gallery-device-tabs) .chatpack-gallery-copy-button {
+  margin-left: 0;
+}
+.chatpack-gallery-copy-button:hover {
+  border-color: #777780;
+}
+.chatpack-gallery-detail-preview {
+  display: flex;
+  min-height: 31rem;
+  justify-content: center;
+  padding: 1.25rem;
+  overflow: auto;
+  background-color: #0a0a0d;
+  background-image: radial-gradient(#303036 0.7px, transparent 0.7px);
+  background-size: 10px 10px;
+}
+.chatpack-gallery-detail-canvas {
+  width: min(100%, 65rem);
+  min-height: 28rem;
+  transition: width 180ms ease;
+}
+.chatpack-gallery-detail-preview.is-tablet .chatpack-gallery-detail-canvas {
+  width: min(100%, 44rem);
+}
+.chatpack-gallery-detail-preview.is-mobile .chatpack-gallery-detail-canvas {
+  width: min(100%, 23rem);
+}
+.chatpack-gallery-detail-canvas > .chatpack-preview {
+  height: 100%;
+  min-height: 28rem;
+  font-size: 0.9rem;
+}
+.chatpack-gallery-code {
+  min-height: 30rem;
+  max-height: 42rem;
+  margin: 0;
+  padding: 1.25rem 1.5rem;
+  overflow: auto;
+  background: #09090b;
+  color: #d5d5dc;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.76rem;
+  line-height: 1.65;
+  tab-size: 2;
+}
+
+.chatpack-gallery-code code {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font-size: inherit;
+}
+.chatpack-gallery-source-note {
+  margin: 0.7rem 0 0 !important;
+  color: #85858d;
+  font-size: 0.72rem;
+  line-height: 1.5;
+}
+
+.chatpack-preview {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #27272c;
+  border-radius: 0.62rem;
+  background: #151518;
+  color: #e4e4e7;
+  font-size: 0.74rem;
+  line-height: 1.35;
+}
+.chatpack-preview strong {
+  font-weight: 650;
+}
+.chatpack-preview small {
+  color: #898991;
+  font-size: 0.8em;
+}
+.chatpack-avatar {
+  display: inline-grid;
+  flex: 0 0 auto;
+  width: 2rem;
+  height: 2rem;
+  place-items: center;
+  border-radius: 50%;
+  background: #34343a;
+  color: #c6c6cb;
+  font-size: 0.7em;
+  font-weight: 700;
+}
+.chatpack-avatar.is-blue {
+  background: #1d3766;
+  color: #dceaff;
+}
+.chatpack-open-badge,
+.chatpack-live-badge {
+  color: #a4a4ad;
+  font-size: 0.72em;
+  white-space: nowrap;
+}
+.chatpack-open-badge {
+  color: #0fbd92;
+}
+.chatpack-live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.48rem;
+  border-radius: 999px;
+  background: #222226;
+}
+.chatpack-live-badge > span,
+.chatpack-presence-dot {
+  display: inline-block;
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 50%;
+  background: #10c99b;
+  box-shadow: 0 0 0 2px #10c99b22;
+}
+.chatpack-preview-header {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-height: 3.6rem;
+  padding: 0.65rem 0.8rem;
+  background: #1b1b1e;
+}
+.chatpack-preview-header > span:nth-child(2) {
+  display: grid;
+  gap: 0.05rem;
+}
+.chatpack-preview-header small {
+  display: block;
+}
+.chatpack-header-action {
+  margin-left: auto;
+  color: #aaaab2;
+  font-size: 1.3em;
+}
+.chatpack-preview-center {
+  display: grid;
+  align-content: center;
+}
+.chatpack-list-header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  padding: 0.75rem;
+  border-bottom: 1px solid #2c2c31;
+}
+.chatpack-list-header > span:first-child {
+  display: grid;
+  gap: 0.08rem;
+}
+.chatpack-conversation-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-height: 2.7rem;
+  padding: 0.35rem 0.75rem;
+}
+.chatpack-conversation-row > span:nth-child(2) {
+  display: grid;
+  gap: 0.05rem;
+  min-width: 0;
+}
+.chatpack-conversation-row b {
+  margin-left: auto;
+  padding: 0.1rem 0.35rem;
+  border-radius: 999px;
+  background: #0871f9;
+  color: white;
+  font-size: 0.7em;
+}
+.chatpack-preview-compact,
+.chatpack-preview-widget {
+  display: grid;
+  grid-template-columns: 3.6rem 1fr;
+  height: 100%;
+}
+.chatpack-compact-rail,
+.chatpack-widget-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 0.2rem;
+  border-right: 1px solid #2c2c31;
+}
+.chatpack-compact-rail strong,
+.chatpack-widget-rail strong {
+  color: #c5c5cc;
+  font-size: 0.65em;
+}
+.chatpack-compact-pane,
+.chatpack-inbox-empty {
+  display: grid;
+  place-items: center;
+  min-height: 7rem;
+  color: #909099;
+  text-align: center;
+}
+.chatpack-thread-title {
+  padding: 0.6rem 0.75rem;
+  border-bottom: 1px solid #2b2b30;
+  font-weight: 650;
+}
+.chatpack-thread-rows {
+  display: grid;
+  align-content: end;
+  gap: 0.65rem;
+  min-height: 9rem;
+  padding: 0.8rem;
+}
+.chatpack-thread-rows > div {
+  display: flex;
+  align-items: start;
+  gap: 0.5rem;
+}
+.chatpack-thread-rows > div > span {
+  display: grid;
+  gap: 0.2rem;
+}
+.chatpack-thread-rows > .chatpack-message {
+  justify-self: end;
+}
+.chatpack-preview-thread.is-flat .chatpack-message {
+  border-radius: 0.3rem;
+  background: transparent;
+  padding: 0.15rem;
+}
+.chatpack-message {
+  display: block;
+  width: fit-content;
+  max-width: 78%;
+  padding: 0.52rem 0.7rem;
+  border-radius: 0.7rem;
+  background: #29292e;
+  color: #e9e9ec;
+}
+.chatpack-message small {
+  display: block;
+  margin-bottom: 0.2rem;
+  color: #c0c0c8;
+}
+.chatpack-message.is-own {
+  margin-left: auto;
+  background: #0869ec;
+  color: white;
+}
+.chatpack-message.is-own small {
+  color: #cfdeff;
+}
+.chatpack-reaction {
+  display: table;
+  margin-top: 0.3rem;
+  padding: 0.08rem 0.35rem;
+  border: 1px solid #ffffff8c;
+  border-radius: 999px;
+  font-size: 0.82em;
+}
+.chatpack-preview-window {
+  display: flex;
+  flex-direction: column;
+  background: #0b0b0d;
+}
+.chatpack-window-status {
+  display: flex;
+  justify-content: end;
+  padding: 0.35rem 0.6rem;
+  border-bottom: 1px solid #2b2b30;
+}
+.chatpack-preview-messages {
+  display: flex;
+  flex: 1;
+  min-height: 5rem;
+  flex-direction: column;
+  justify-content: end;
+  gap: 0.45rem;
+  padding: 0.75rem;
+  overflow: hidden;
+}
+
+.chatpack-gallery-card-stage .chatpack-preview-messages {
+  justify-content: flex-start;
+}
+.chatpack-preview-composer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  min-height: 2.4rem;
+  margin: 0.55rem 0.7rem 0;
+  padding: 0.3rem 0.4rem 0.3rem 0.65rem;
+  border: 1px solid #303036;
+  border-radius: 0.55rem;
+  color: #888890;
+}
+.chatpack-send {
+  display: inline-grid;
+  width: 1.7rem;
+  height: 1.7rem;
+  place-items: center;
+  border-radius: 0.48rem;
+  background: #0768ea;
+  color: white;
+  font-size: 0.9em;
+}
+.chatpack-preview-help {
+  display: block;
+  padding: 0.25rem 0.75rem 0.55rem;
+}
+.chatpack-preview-inbox {
+  display: grid;
+  grid-template-columns: 36% 1fr;
+}
+.chatpack-preview-inbox > .chatpack-preview-list {
+  border: 0;
+  border-right: 1px solid #2b2b30;
+  border-radius: 0;
+}
+.chatpack-preview-mobile-sheet {
+  display: flex;
+  flex-direction: column;
+}
+.chatpack-mobile-heading {
+  padding: 0.65rem;
+  border-bottom: 1px solid #2b2b30;
+}
+.chatpack-preview-mobile-sheet .chatpack-preview-thread {
+  flex: 1;
+  border: 0;
+  border-radius: 0;
+}
+.chatpack-preview-mobile-sheet .chatpack-preview-composer {
+  margin-bottom: 0.5rem;
+}
+.chatpack-widget-window {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.chatpack-widget-window .chatpack-preview-header {
+  justify-content: space-between;
+  min-height: 2.4rem;
+}
+.chatpack-widget-status {
+  display: flex;
+  justify-content: end;
+  padding: 0.35rem 0.6rem;
+  border-bottom: 1px solid #2b2b30;
+}
+.chatpack-widget-window .chatpack-inbox-empty {
+  flex: 1;
+}
+.chatpack-preview-input,
+.chatpack-preview-realtime,
+.chatpack-preview-group,
+.chatpack-preview-moderation,
+.chatpack-preview-media,
+.chatpack-preview-primitive {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0.55rem;
+  padding: 0.85rem;
+}
+.chatpack-preview-input > .chatpack-message {
+  max-width: 100%;
+}
+.chatpack-preview-input .chatpack-preview-composer {
+  margin: 0;
+}
+.chatpack-action-row,
+.chatpack-presence-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+.chatpack-action-row > span,
+.chatpack-reaction-pill {
+  display: inline-block;
+  padding: 0.28rem 0.48rem;
+  border: 1px solid #3c3c44;
+  border-radius: 0.42rem;
+  background: #222226;
+  font-size: 0.82em;
+}
+.chatpack-reply-bar {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.45rem 0.65rem;
+  border-left: 2px solid #3888ff;
+  background: #222226;
+}
+.chatpack-reply-bar small {
+  color: #aaaab2;
+}
+.chatpack-mention-menu,
+.chatpack-form {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.6rem;
+  border: 1px solid #35353a;
+  border-radius: 0.55rem;
+  background: #111113;
+}
+.chatpack-mention-menu > span {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.15rem;
+}
+.chatpack-form > span {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.45rem;
+  border-radius: 0.35rem;
+  background: #1b1b1f;
+}
+.chatpack-form p {
+  margin: 0;
+  color: #a1a1aa;
+  font-size: 0.9em;
+}
+.chatpack-form small {
+  color: #76abff;
+  white-space: nowrap;
+}
+.chatpack-sample-action {
+  width: fit-content;
+  background: #0869ec !important;
+  color: white;
+}
+.chatpack-preview-realtime > .chatpack-message {
+  align-self: end;
+}
+.chatpack-presence-row .chatpack-avatar + .chatpack-avatar {
+  margin-left: -0.45rem;
+  border: 2px solid #151518;
+}
+.chatpack-presence-row > span:last-child {
+  margin-left: 0.45rem;
+  color: #a1a1aa;
+}
+.chatpack-connection {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.chatpack-typing-dots,
+.chatpack-typing-text {
+  width: fit-content;
+  padding: 0.5rem 0.8rem;
+  border: 1px solid #33333a;
+  border-radius: 0.65rem;
+  background: #222226;
+}
+.chatpack-typing-dots {
+  color: #9999a2;
+  letter-spacing: 0.2rem;
+}
+.chatpack-receipt,
+.chatpack-ticks {
+  color: #67a1ff !important;
+}
+.chatpack-media-art {
+  display: grid;
+  width: 2.5rem;
+  height: 2.5rem;
+  place-items: center;
+  border: 1px dashed #565662;
+  border-radius: 0.5rem;
+  color: #76aaff;
+  font-size: 1.45rem;
+}
+.chatpack-preview-media small {
+  color: #93939b;
+}
+.chatpack-preview-primitive {
+  align-items: center;
+  flex-direction: row;
+}
+.chatpack-preview-primitive .chatpack-message {
+  margin: 0;
+}
+.chatpack-time {
+  color: #aaaab2;
+  font-size: 0.85em;
+}
+
+@media (max-width: 1050px) {
+  .chatpack-gallery-catalog-heading {
+    align-items: start;
+    flex-direction: column;
+  }
+  .chatpack-gallery-tabs {
+    width: 100%;
+  }
+}
+@media (max-width: 740px) {
+  .chatpack-gallery-featured,
+  .chatpack-gallery-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .chatpack-gallery-card-stage {
+    height: 12rem;
+  }
+  .chatpack-gallery-feature-card .chatpack-gallery-card-stage {
+    height: 15rem;
+  }
+}
+@media (max-width: 560px) {
+  .chatpack-gallery {
+    margin-top: 1.25rem;
+  }
+  .chatpack-gallery-featured,
+  .chatpack-gallery-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .chatpack-gallery-card-stage {
+    height: 13rem;
+  }
+  .chatpack-gallery-catalog-heading {
+    gap: 0.7rem;
+  }
+  .chatpack-gallery-tabs {
+    gap: 0.1rem;
+    padding: 0.2rem;
+  }
+  .chatpack-gallery-detail-toolbar {
+    flex-wrap: wrap;
+  }
+  .chatpack-gallery-device-tabs {
+    margin-left: 0;
+  }
+  .chatpack-gallery-copy-button {
+    margin-left: auto;
+  }
+
+  .chatpack-gallery-detail-toolbar:has(.chatpack-gallery-device-tabs)
+    .chatpack-gallery-copy-button {
+    margin-left: auto;
+  }
+  .chatpack-gallery-detail-preview {
+    min-height: 24rem;
+    padding: 0.65rem;
+  }
+  .chatpack-gallery-detail-canvas,
+  .chatpack-gallery-detail-canvas > .chatpack-preview {
+    min-height: 23rem;
+  }
+  .chatpack-gallery-code {
+    font-size: 0.68rem;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chatpack-gallery-feature-card,
+  .chatpack-gallery-card,
+  .chatpack-gallery-detail-canvas {
+    transition: none;
+  }
+}

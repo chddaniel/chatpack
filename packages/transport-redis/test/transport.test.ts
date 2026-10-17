@@ -32,6 +32,7 @@ function message(overrides: Partial<MessageWithDetails> = {}): MessageWithDetail
     editedAt: null,
     deletedAt: null,
     replyToMessageId: null,
+    threadRootMessageId: null,
     forwardedFromMessageId: null,
     forwardedFromConversationId: null,
     forwardedFromSenderId: null,
